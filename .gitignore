@@ -91,3 +91,7 @@ docs/TELEGRAM_ANNOUNCEMENTS.md
 
 # Written by scripts/download_count.py when the site is deployed
 site/assets/downloads.json
+
+# Qonecta Unit: la clave de firma y los APK viajan con la carpeta, nunca a git
+firma/
+apk/

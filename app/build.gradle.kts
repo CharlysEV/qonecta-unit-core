@@ -105,6 +105,16 @@ android {
             // storePassword = property("HEADUNIT_KEYSTORE_PASSWORD") as String
             // keyAlias = property("HEADUNIT_KEYSTORE_ALIAS") as String
             // keyPassword = property("HEADUNIT_KEYSTORE_PASSWORD") as String
+
+            // Qonecta Unit: la clave viaja con la carpeta (firma/, fuera de git) para que cualquier copia firme
+            // igual y el coche deje actualizar encima. Sin ella, la clave de depuración de este PC.
+            val portable = rootProject.file("firma/debug.keystore")
+            if (portable.exists()) {
+                storeFile = portable
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
         }
         create("release") {
             val defaultStoreFile = when {
