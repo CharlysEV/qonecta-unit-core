@@ -59,6 +59,8 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.andrerinas.openheadunit.main.QuickSettingsFragment
 import com.andrerinas.openheadunit.main.RenameNotice
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.headqlink.unit.extended.ExtendedMarginsController
+import com.headqlink.unit.extended.ExtendedUi
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -94,6 +96,10 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
     private var fpsTextView: TextView? = null
     private var touchOverlayView: OverlayTouchView? = null
     private var currentFps: Int? = null
+
+    // Qonecta Unit: modo Extendido (nuestro panel a la derecha) y su conmutador. Todo lo nuestro va en
+    // ExtendedUi; aquí solo hay ganchos.
+    private var extendedUi: ExtendedUi? = null
 
     // Named rather than inline so onDestroy can tell this instance's listener apart from a
     // relaunched instance's before clearing it - lambdas have no usable identity across instances.
@@ -452,6 +458,9 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
                 fpsTextView?.visibility = View.VISIBLE
                 startPerformanceOverlayUpdates()
             }
+
+            // Qonecta Unit: p. ej. el espejo HUD quita el Extendido
+            extendedUi?.recompute("ajustes rápidos")
         }
     }
 
@@ -796,6 +805,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
                     when (state) {
                         is CommManager.ConnectionState.Disconnected -> {
                             watchdogHandler.removeCallbacksAndMessages(null)
+                            ExtendedMarginsController.onDisconnected()
                             // Don't leave the renderer bar floating over the reconnecting/exit UI;
                             // if the renderer is still broken after a reconnect it re-offers itself.
                             dismissRendererConfirmBanner()
@@ -819,6 +829,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
                                 videoDecoder.onFirstFrameListener = {
                                     runOnUiThread {
                                         hideReconnectingOverlay()
+                                        // Qonecta Unit: los márgenes del modo, con la primera imagen de la conexión nueva
+                                        ExtendedMarginsController.onFirstFrame()
                                     }
                                 }
 
@@ -846,6 +858,9 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
                         }
                         is CommManager.ConnectionState.TransportStarted -> {
                             watchdogHandler.removeCallbacks(exitRunnable)
+                            // Qonecta Unit: conexión de AA lista; sus márgenes salen con su primera imagen
+                            ExtendedMarginsController.onTransportStarted()
+                            extendedUi?.recompute("transporte")
                         }
                         else -> {}
                     }
@@ -880,9 +895,6 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
 
         container.addView(overlayView)
         overlayView.requestFocus()
-        // DiLink (byd-freeform) hides the bottom ~96px of the window from the decor;
-        // claim it back so projection is true fullscreen and bottom-bar touches land.
-        bydFullscreen.expand(this, container, overlayView)
         setFullscreen() // Call setFullscreen here as well
 
         val loadingOverlay = findViewById<View>(R.id.loading_overlay)
@@ -903,6 +915,10 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         // Set up custom loading screen if configured
         setupCustomLoadingScreen()
 
+        // Qonecta Unit: el panel del modo Extendido y el botón flotante, por encima de la capa de carga
+        // (el reloj se ve desde el arranque). Lee el modo guardado y, en debug, los extras DEMO.
+        extendedUi = ExtendedUi(this, container, settings, commManager, videoDecoder).also { it.attach(intent) }
+
         findViewById<Button>(R.id.disconnect_button)?.setOnClickListener {
             commManager.disconnect()
             finish()
@@ -911,6 +927,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         videoDecoder.onFirstFrameListener = {
             runOnUiThread {
                 hideLoadingOverlay(loadingOverlay)
+                // Qonecta Unit: los márgenes del modo, con la primera imagen de esta conexión de AA
+                ExtendedMarginsController.onFirstFrame()
 
                 // The wizard changed the renderer: the picture is up, so ask the user to confirm it
                 // (issue #767). If they don't, the auto-offer above still catches a broken renderer.
@@ -926,24 +944,18 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             }
         }
 
-        commManager.onUpdateUiConfigReplyReceived = {
-            AppLog.i("[UI_DEBUG_FIX] UpdateUiConfig reply received. AA acknowledged new margins.")
-        }
+        // Qonecta Unit: la respuesta de AA a los márgenes confirma el envío en curso (y conserva la
+        // línea de log que había aquí)
+        ExtendedMarginsController.hookReply(commManager)
     }
 
     override fun onStart() {
         super.onStart()
-        // Opens the dashboard map. It normally stays up when this screen is hidden (camera, other
-        // apps) and closes with the session; see ClusterMapScreen.show.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            com.andrerinas.openheadunit.hud.ClusterMapScreen.show(this)
-        }
+        extendedUi?.onStart()
     }
 
     override fun onStop() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            com.andrerinas.openheadunit.hud.ClusterMapScreen.onScreenHidden()
-        }
+        extendedUi?.onStop()
         super.onStop()
     }
 
@@ -1016,12 +1028,16 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         })
 
         setFullscreen()
+        // Qonecta Unit: al volver (p. ej. de Ajustes) se releen el modo y la DEMO
+        extendedUi?.onResume()
     }
 
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         AppLog.i("AapProjectionActivity: onNewIntent received")
+        // Qonecta Unit: singleTask, así que los extras DEMO de un am start posterior llegan aquí (solo debug)
+        extendedUi?.applyIntent(intent)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -1354,6 +1370,13 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
 
         options.add(ExitOption(R.string.exit_dialog_background, R.drawable.ic_home, Color.LTGRAY))
         options.add(ExitOption(R.string.exit_dialog_settings, R.drawable.ic_settings_quick, Color.LTGRAY))
+        // Qonecta Unit: «Extendido / Pantalla completa», de reserva del botón del panel y del flotante
+        extendedUi?.takeIf { it.canToggle }?.let { ui ->
+            options.add(
+                if (ui.extended) ExitOption(R.string.qu_fullscreen, R.drawable.hql_ic_expand, Color.LTGRAY)
+                else ExitOption(R.string.qu_extended, R.drawable.hql_ic_split, Color.LTGRAY)
+            )
+        }
 
         val adapter = object : android.widget.BaseAdapter() {
             override fun getCount(): Int = options.size
@@ -1391,6 +1414,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
                     R.string.exit_dialog_settings -> {
                         showQuickSettings()
                     }
+                    R.string.qu_fullscreen -> extendedUi?.requestMode(false, "menú")
+                    R.string.qu_extended -> extendedUi?.requestMode(true, "menú")
                 }
             }
             .setNegativeButton(R.string.cancel, null)
@@ -1466,6 +1491,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             fpsTextView?.visibility = if (settings.showFpsCounter) View.VISIBLE else View.GONE
             setFullscreen()
         }
+        // Qonecta Unit: en PiP se esconden el panel y el botón flotante, sin tocar los márgenes
+        extendedUi?.onPiP(isInPictureInPictureMode)
     }
 
     override fun onUserLeaveHint() {
@@ -1514,7 +1541,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         }
 
         // 2. Legacy Touch handling for older devices (API < 19)
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+        // Qonecta Unit: salvo los gestos que empiezan en nuestro panel o en el botón flotante
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT && extendedUi?.isOwnGesture(ev) != true) {
             sendTouchEvent(ev)
         }
 
@@ -1555,7 +1583,13 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             settings.cachedSurfaceHeight = height
             settings.cachedSurfaceSettingsHash = HeadUnitScreenConfig.computeSettingsHash(settings)
 
-            if (commManager.connectionState.value is CommManager.ConnectionState.TransportStarted) {
+            val ui = extendedUi
+            if (ui != null) {
+                // Qonecta Unit: los márgenes corregidos van por ExtendedUi, que en Extendido conserva el
+                // hueco del panel (los simétricos de abajo lo borrarían). Con AA en marcha se mandan ya;
+                // si no, quedan pendientes para la primera imagen.
+                ui.recompute("superficie")
+            } else if (commManager.connectionState.value is CommManager.ConnectionState.TransportStarted) {
                 // AA is already running → send corrected per-side margins dynamically
                 commManager.sendUpdateUiConfigRequest(
                     HeadUnitScreenConfig.getLeftMargin(),
@@ -1633,6 +1667,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
     }
 
     private fun sendTouchEvent(event: MotionEvent) {
+        // Qonecta Unit: un toque en AA trae 6 s el botón flotante (en Pantalla completa)
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) extendedUi?.onAaTouch()
         val action = TouchEvent.motionEventToAction(event) ?: return
         val ts = SystemClock.elapsedRealtime()
 
@@ -1738,7 +1774,11 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             }
         }
 
-        commManager.send(TouchEvent(ts, action, event.actionIndex, pointerData))
+        // Qonecta Unit: en Extendido la x se topa en el borde de AA, para las dos ramas de arriba: un
+        // arrastre que empieza en AA y cruza el panel no se sale de su contenido
+        val ui = extendedUi
+        val pointers = if (ui == null) pointerData else pointerData.map { Triple(it.first, ui.clampX(it.second), it.third) }
+        commManager.send(TouchEvent(ts, action, event.actionIndex, pointers))
     }
 
 
@@ -1788,10 +1828,10 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         }
     }
 
-    private val bydFullscreen = com.andrerinas.openheadunit.utils.BydFullscreen()
-
     override fun onDestroy() {
-        bydFullscreen.release()
+        // Qonecta Unit: suelta sus temporizadores y, si sigue siendo suyo, el aviso de márgenes confirmados
+        extendedUi?.detach()
+        extendedUi = null
         super.onDestroy()
         if (isFinishReceiverRegistered) {
             unregisterReceiver(finishReceiver)
@@ -1903,7 +1943,10 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         HeadUnitScreenConfig.init(this, displayMetrics, settings)
 
         val view = projectionView as View
-        container.addView(view)
+        // Qonecta Unit: siempre la primera (debajo de todo). Si no, una vista rehecha por
+        // recreateProjectionView (recuperación #650 o cambio de renderizador) quedaría encima del panel
+        // del modo Extendido; con SurfaceView o GLES, su agujero lo borraría.
+        container.addView(view, 0)
         videoDecoder.softwareYuvFrameSink = projectionView as? SoftwareYuvFrameSink
         if (videoDecoder.softwareYuvFrameSink != null) {
             AppLog.i("Using GLES YUV sink for bundled software HEVC")

@@ -142,10 +142,7 @@ class ServiceDiscoveryResponse(private val context: Context)
 
             services.add(input)
 
-            // The BYD dashboard as a second display, only when the user turned it on.
-            services.addAll(ClusterDisplayServices.build(context, settings))
-
-            val audioType = if (settings.useAacAudio) Media.MediaCodecType.MEDIA_CODEC_AUDIO_AAC_LC else Media.MediaCodecType.MEDIA_CODEC_AUDIO_PCM
+            val audioType =if (settings.useAacAudio) Media.MediaCodecType.MEDIA_CODEC_AUDIO_AAC_LC else Media.MediaCodecType.MEDIA_CODEC_AUDIO_PCM
 
             // Always add Audio2 (System Sounds) to keep connection alive
             val audio2 = Control.Service.newBuilder().also { service ->

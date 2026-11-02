@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Qonecta Unit: textos propios (prefijo qu_). Modo de pantalla (bloque A) y panel del Extendido (bloque B). -->
+<resources>
+    <string name="qu_extended">Extendido</string>
+    <string name="qu_fullscreen">Pantalla completa</string>
+
+    <!-- Tarjeta Batería -->
+    <string name="qu_battery">Batería</string>
+    <string name="qu_range">Autonomía</string>
+
+    <!-- Antigüedad del dato del coche -->
+    <string name="qu_ago_now">ahora</string>
+    <string name="qu_ago_s">hace %1$d s</string>
+    <string name="qu_ago_min">hace %1$d min</string>
+    <string name="qu_ago_h">hace %1$d h</string>
+    <string name="qu_ago_d">hace %1$d d</string>
+
+    <!-- Estados de la cuenta de Leapmotor -->
+    <string name="qu_state_no_account_title">Sin cuenta de Leapmotor</string>
+    <string name="qu_state_no_account_text">Es opcional. Con ella, este panel enseña la batería y la autonomía reales del coche.</string>
+    <string name="qu_state_off_title">Datos del coche desactivados</string>
+    <string name="qu_state_off_text">La lectura de la cuenta de Leapmotor está apagada.</string>
+    <string name="qu_state_expired_title">La sesión de Leapmotor ha caducado</string>
+    <string name="qu_state_expired_text">Vuelve a entrar en Datos del coche.</string>
+    <string name="qu_state_server_key_title">El servidor de Leapmotor ha cambiado de clave</string>
+    <string name="qu_state_server_key_text">Por seguridad, no se lee nada hasta que la revises en Datos del coche.</string>
+    <string name="qu_state_unsupported_title">Necesita Android 6 o superior</string>
+    <string name="qu_state_unsupported_text">El certificado y la sesión se guardan cifrados con el Keystore de Android, que esta unidad no tiene.</string>
+    <string name="qu_state_error_title">Aún sin datos del coche</string>
+    <string name="qu_state_error_text">No se pudo leer la nube (sin conexión o no contesta). Reintento en %1$d min.</string>
+    <string name="qu_state_waiting">Leyendo el estado del coche…</string>
+    <string name="qu_retry_in">Sin conexión con la nube: reintento en %1$d min.</string>
+    <string name="qu_open_car_data">Toca para abrir Datos del coche</string>
+
+    <!-- Ajustes de la app -->
+    <string name="qu_settings_mode">Modo de pantalla</string>
+    <string name="qu_settings_car_data">Datos del coche (cuenta Leapmotor)</string>
+    <string name="qu_settings_car_data_pending">Llegará con la nube</string>
+    <string name="qu_settings_demo">Panel con datos inventados (DEMO)</string>
+    <string name="qu_settings_demo_desc">Para capturas: el panel enseña datos de batería inventados con la ficha DEMO y nunca usa la red.</string>
+
+    <!-- Sonda del coche (Diagnóstico) -->
+    <string name="qu_probe">Sonda del coche (solo lectura)</string>
+    <string name="qu_probe_hint">Mira qué servicios de Leapmotor tiene la unidad y si Qonecta Unit puede conectarse a ellos para leer la batería. También mira las pantallas (para el mapa en el cuadro) y de dónde vino Vivaldi. No manda ninguna orden al coche. Al terminar, guarda el resultado en el pen.</string>
+    <string name="qu_probe_running">Mirando el coche…</string>
+    <string name="qu_probe_saved">Sonda guardada</string>
+
+    <!-- Archivos del coche (Diagnóstico) -->
+    <string name="qu_files">Archivos del coche</string>
+    <string name="qu_files_hint">Abre el explorador de archivos de la unidad, sin necesidad de Vivaldi. Al tocar un APK del pen, se instala o se actualiza. Si en vez del explorador se abre el selector de archivos, usa el icono ⤢ del APK.</string>
+    <string name="qu_files_none">Este coche no deja abrir el explorador de archivos</string>
+</resources>

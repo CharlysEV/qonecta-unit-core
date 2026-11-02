@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">DiAuto</string>
+    <string name="app_name">Qonecta Unit</string>
     <string name="menu">القائمة</string>
     <string name="settings">الإعدادات</string>
 
@@ -12,7 +12,7 @@
     <string name="video">Android Auto</string>
     <string name="self_mode">الوضع الذاتي</string>
     <string name="to_android_auto">إلى Android Auto</string>
-    <string name="title">DiAuto</string>
+    <string name="title">Qonecta Unit</string>
     <string name="remove">إزالة</string>
     <string name="usb">USB</string>
     <string name="wifi">واي فاي</string>
@@ -151,9 +151,9 @@
     <string name="usb_auto_connect">الاتصال التلقائي بـ USB</string>
     <string name="usb_auto_connect_description">الاتصال تلقائيا بجهاز USB معروف عند فتح التطبيق.</string>
     <string name="auto_start_bt_label">التشغيل التلقائي عبر البلوتوث</string>
-    <string name="auto_start_bt_description">فتح Open Headunit تلقائيا عند اتصال جهاز بلوتوث محدد.</string>
+    <string name="auto_start_bt_description">فتح Qonecta Unit تلقائيا عند اتصال جهاز بلوتوث محدد.</string>
     <string name="auto_start_wifi_label">تشغيل تلقائي عبر الواي فاي</string>
-    <string name="auto_start_wifi_description">فتح Open Headunit تلقائياً عند الاتصال بشبكة واي فاي محددة (SSID).</string>
+    <string name="auto_start_wifi_description">فتح Qonecta Unit تلقائياً عند الاتصال بشبكة واي فاي محددة (SSID).</string>
     <string name="auto_start_wifi_ssid_label">اسم شبكة الواي فاي (SSID)</string>
     <string name="auto_start_wifi_ssid_description">الاتصال فقط عند الارتباط بشبكة الواي فاي هذه</string>
     <string name="auto_start_wifi_warning">ميزة قديمة: قد لا تعمل بشكل موثوق على Android 8+ بسبب قيود الخلفية. تأكد من استثناء التطبيق من تحسين البطارية.</string>
@@ -178,7 +178,7 @@
     <string name="bt_permission_denied_title">مطلوب إذن البلوتوث</string>
     <string name="bt_permission_denied_message">إذن البلوتوث مطلوب لاختيار الأجهزة المقترنة. يرجى منحه في إعدادات التطبيق.</string>
     <string name="overlay_permission_title">إذن البدء في الخلفية</string>
-    <string name="overlay_permission_description">للسماح لـ Open Headunit بالفتح التلقائي عند اتصال البلوتوث، يرجى تفعيل إذن \"العرض فوق التطبيقات الأخرى\" في الشاشة التالية.</string>
+    <string name="overlay_permission_description">للسماح لـ Qonecta Unit بالفتح التلقائي عند اتصال البلوتوث، يرجى تفعيل إذن \"العرض فوق التطبيقات الأخرى\" في الشاشة التالية.</string>
     <string name="open_settings">الإعدادات</string>
     <string name="wireless_connection_settings">اتصال لاسلكي</string>
     <string name="right_hand_drive">القيادة على اليمين</string>
@@ -258,9 +258,9 @@
     <!-- Info Settings -->
     <string name="category_info">المعلومات</string>
     <string name="about">حول &amp; الدعم</string>
-    <string name="about_description">الحصول على مزيد من المعلومات حول Open Headunit</string>
+    <string name="about_description">الحصول على مزيد من المعلومات حول Qonecta Unit</string>
     <string name="version">الإصدار</string>
-    <string name="about_title">حول Open Headunit</string>
+    <string name="about_title">حول Qonecta Unit</string>
     <string name="copyright">© 2025-%d André Rinas</string>
 
     <!-- Safety Disclaimer -->
@@ -271,7 +271,7 @@
         <b>١. التركيز على الطريق</b><br/>
         استخدام هذا البرنامج أثناء القيادة قد يشتت الانتباه ويكون خطيرا. أول الأولوية دائما للقيادة الآمنة والالتزام بأنظمة المرور المحلية. استخدم هذا التطبيق فقط عند الأمان التام.<br/><br/>
         <b>٢. تحديد المسؤولية</b><br/>
-        يقدم Open Headunit "كما هو" دون أي ضمان من أي نوع. لا يتحمل المطورون أي مسؤولية عن الحوادث أو الأضرار التي تلحق بسيارتك/جهازك أو أي تبعات قانونية ناجمة عن استخدام هذا البرنامج.<br/><br/>
+        يقدم Qonecta Unit "كما هو" دون أي ضمان من أي نوع. لا يتحمل المطورون أي مسؤولية عن الحوادث أو الأضرار التي تلحق بسيارتك/جهازك أو أي تبعات قانونية ناجمة عن استخدام هذا البرنامج.<br/><br/>
         <b>٣. عدم الانتساب</b><br/>
         هذا المشروع مبادرة مفتوحة المصدر مستقلة، وليس له أي صلة أو اعتماد أو ارتباط بشركة Google LLC أو علامة Android Auto التجارية.
     ]]></string>
@@ -317,7 +317,7 @@
     <string name="connection_interrupted">فُقد الاتصال</string>
     <string name="connection_interrupted_detail">جارٍ إعادة المحاولة…</string>
     <string name="wifi_disconnect_toast">تم قطع اتصال Android Auto: إذا كنت تستخدم AA لاسلكي، عطّل \"التبديل بين الشبكات\" أو \"تسريع الشبكة\" في إعدادات WiFi الهاتف</string>
-    <string name="notification_service_running">Open Headunit يعمل</string>
+    <string name="notification_service_running">Qonecta Unit يعمل</string>
     <string name="notification_projection_active">Android Auto قيد الإسقاط</string>
     <string name="shortcut_connect_title">اتصال</string>
     <string name="shortcut_connect_desc">الاتصال بآخر جهاز معروف</string>
@@ -565,7 +565,7 @@
     <string name="settings_backup_saved_to">تم حفظ النسخة الاحتياطية في:\n%1$s</string>
     <string name="share_settings_backup">مشاركة النسخة الاحتياطية</string>
     <string name="import_settings">استيراد الإعدادات</string>
-    <string name="import_settings_description">استعادة الإعدادات من نسخة احتياطية لـ Open Headunit</string>
+    <string name="import_settings_description">استعادة الإعدادات من نسخة احتياطية لـ Qonecta Unit</string>
     <string name="import_settings_app_folder">استيراد من مجلد نسخ التطبيق</string>
     <string name="import_settings_downloads">استيراد من التنزيلات</string>
     <string name="import_settings_choose_file">اختر ملف النسخة الاحتياطية</string>
@@ -573,8 +573,8 @@
     <string name="settings_imported">تم استيراد الإعدادات: %1$d مطبَّقة، %2$d تم تجاوزها</string>
     <string name="settings_import_failed">فشل استيراد الإعدادات: %1$s</string>
     <string name="no_settings_backups_title">لا توجد نسخ احتياطية</string>
-    <string name="no_settings_backups_message">لم يتم العثور على أي نسخ احتياطية لـ Open Headunit في مجلد نسخ التطبيق. قم بتصدير نسخة احتياطية أولاً ثم استوردها من هنا.</string>
-    <string name="no_settings_backups_downloads_message">لم يتم العثور على أي نسخ احتياطية لـ Open Headunit في التنزيلات. قم بتصدير نسخة احتياطية إلى التنزيلات أولاً ثم استوردها من هنا.</string>
+    <string name="no_settings_backups_message">لم يتم العثور على أي نسخ احتياطية لـ Qonecta Unit في مجلد نسخ التطبيق. قم بتصدير نسخة احتياطية أولاً ثم استوردها من هنا.</string>
+    <string name="no_settings_backups_downloads_message">لم يتم العثور على أي نسخ احتياطية لـ Qonecta Unit في التنزيلات. قم بتصدير نسخة احتياطية إلى التنزيلات أولاً ثم استوردها من هنا.</string>
     <string name="no_file_picker_title">لا يوجد منتقي ملفات</string>
     <string name="no_file_picker_message">هذا الجهاز لا يحتوي على منتقي ملفات متوافق. يمكنك استخدام التنزيلات أو مجلد نسخ التطبيق بدلاً من ذلك.</string>
     <string name="storage_permission_denied_backup">تم رفض إذن التخزين. تعذر استخدام التنزيلات.</string>
@@ -670,7 +670,7 @@
     <string name="onb_next">التالي</string>
     <string name="onb_skip">تخطي</string>
     <string name="onb_ready_finish">إنهاء</string>
-    <string name="onb_welcome_title">مرحبا بك في Open Headunit</string>
+    <string name="onb_welcome_title">مرحبا بك في Qonecta Unit</string>
     <string name="onb_welcome_body">يفحص هذا الإعداد السريع جهازك ويختار لك أفضل إعدادات الفيديو والعرض والوضع الداكن. يمكنك تغيير كل شيء لاحقا في الإعدادات.</string>
     <string name="onb_safety_title">السلامة أولا</string>
     <string name="onb_safety_accept">لقد قرأت الشروط وأوافق عليها</string>
@@ -764,7 +764,7 @@
     <string name="support_rules_connection_title">اذكر طريقة الاتصال</string>
     <string name="support_rules_connection_desc">كابل USB، أو محول USB لاسلكي، أو WiFi Direct، أو WiFi (خادم وحدة السيارة)، أو Self Mode. إن كان الاتصال لاسلكيًا، أضف طراز المحول أو الدونغل.</string>
     <string name="support_rules_appversion_title">أرفق إصدار التطبيق</string>
-    <string name="support_rules_appversion_desc">إصدار Open Headunit، المعروض في شاشة حول.</string>
+    <string name="support_rules_appversion_desc">إصدار Qonecta Unit، المعروض في شاشة حول.</string>
     <string name="support_rules_logs_title">أرفق السجلات فور حدوث المشكلة</string>
     <string name="support_rules_logs_desc">انتقل إلى الإعدادات وافتح تبويب متقدم، ثم فعّل وضع التصحيح في قسم تصحيح الأخطاء، وأعد إنتاج المشكلة، ثم اضغط تصدير السجلات مباشرة بعدها حتى يغطي السجل لحظة الخلل لا مجرد بداية التشغيل. أرفق الملف بمشكلتك.</string>
     <string name="support_rules_search_title">لا تكرار</string>
@@ -775,8 +775,8 @@
     <string name="support_rules_describe_desc">ما الذي فعلته، وما الذي توقعت حدوثه، وما الذي حدث فعلًا. لقطة شاشة أو مقطع فيديو قصير تساعد كثيرًا في المشكلات المرئية.</string>
     <string name="support_rules_oneissue_title">مشكلة واحدة لكل تقرير</string>
     <string name="support_rules_oneissue_desc">خصص كل تقرير لمشكلة واحدة حتى يمكن تتبعها وإصلاحها. افتح تقارير منفصلة للمشكلات غير المرتبطة ببعضها.</string>
-    <string name="rename_notice_title">اسمنا يتغيّر إلى Open Headunit</string>
-    <string name="rename_notice_message">ينمو Headunit Revived بفضلكم، وهو يتحوّل إلى شيء خاص به: Open Headunit. سنطرح الاسم الجديد تدريجيًا على مدى التحديثات القادمة، لذا قد ترون الاسم القديم في بعض الأماكن لفترة.\n\nنفس التطبيق، ونفس الأشخاص خلفه، وكل إعداداتك تبقى كما هي تمامًا.</string>
+    <string name="rename_notice_title">اسمنا يتغيّر إلى Qonecta Unit</string>
+    <string name="rename_notice_message">ينمو Headunit Revived بفضلكم، وهو يتحوّل إلى شيء خاص به: Qonecta Unit. سنطرح الاسم الجديد تدريجيًا على مدى التحديثات القادمة، لذا قد ترون الاسم القديم في بعض الأماكن لفترة.\n\nنفس التطبيق، ونفس الأشخاص خلفه، وكل إعداداتك تبقى كما هي تمامًا.</string>
     <string name="rename_notice_button">حسنًا</string>
 
     <string name="onb_summary_permissions_format">الأذونات: تم منح %1$d من %2$d</string>
@@ -804,7 +804,7 @@
     <string name="perm_write_settings_help">يتيح للتطبيق تشغيل نقطة الاتصال تلقائياً للاتصالات اللاسلكية.</string>
     <string name="perm_storage_title">التخزين</string>
     <string name="perm_storage_help">مطلوب لنسخ الإعدادات احتياطياً واستعادتها واختيار صورة تحميل مخصصة.</string>
-    <string name="onb_vehicle_help_sideload">اختيار علامة سيارة حقيقية يعرض شعارها على زر الخروج في Android Auto، لكنه يخفي التطبيقات المثبتة من خارج Play Store. أبقِ Google أو Open Headunit إذا كنت تستخدم تلك التطبيقات.</string>
+    <string name="onb_vehicle_help_sideload">اختيار علامة سيارة حقيقية يعرض شعارها على زر الخروج في Android Auto، لكنه يخفي التطبيقات المثبتة من خارج Play Store. أبقِ Google أو Qonecta Unit إذا كنت تستخدم تلك التطبيقات.</string>
     <string-array name="vehicle_brands">
         <item>Google</item>
         <item>Android</item>
@@ -863,8 +863,8 @@
     <string name="github_issues_url">https://github.com/shihabal3amri/DiAuto/issues</string>
     <string name="support_rules_english_title">All posts in English</string>
     <string name="boot_loop_paused_title">تم إيقاف بدء الاتصال اللاسلكي مؤقتاً</string>
-    <string name="boot_loop_paused_generic">أُعيد تشغيل هذا الجهاز ثلاث مرات متتالية بعد بدء الاتصال اللاسلكي في Open Headunit، لذلك لم يُفعّل هذه المرة. ما زال USB يعمل. افتح التطبيق لإعادة تفعيله.</string>
-    <string name="boot_loop_paused_native_wifi_direct">أُعيد تشغيل الجهاز ثلاث مرات متتالية بعد بدء الاتصال اللاسلكي في Open Headunit، لذلك أُوقف هذه المرة. في بعض وحدات القيادة، تتسبب شريحة Wi-Fi في تعطل النظام عند انضمام الهاتف إلى شبكة Wi-Fi Direct. جرّب وضع نقطة اتصال وحدة القيادة في Android Auto. ما زال USB يعمل.</string>
+    <string name="boot_loop_paused_generic">أُعيد تشغيل هذا الجهاز ثلاث مرات متتالية بعد بدء الاتصال اللاسلكي في Qonecta Unit، لذلك لم يُفعّل هذه المرة. ما زال USB يعمل. افتح التطبيق لإعادة تفعيله.</string>
+    <string name="boot_loop_paused_native_wifi_direct">أُعيد تشغيل الجهاز ثلاث مرات متتالية بعد بدء الاتصال اللاسلكي في Qonecta Unit، لذلك أُوقف هذه المرة. في بعض وحدات القيادة، تتسبب شريحة Wi-Fi في تعطل النظام عند انضمام الهاتف إلى شبكة Wi-Fi Direct. جرّب وضع نقطة اتصال وحدة القيادة في Android Auto. ما زال USB يعمل.</string>
     <string name="vehicle_make_hint">تعرض علامة السيارة شعارها على زر الخروج في Android Auto، لكنها تخفي التطبيقات المثبتة من خارج Play Store. أعد اختيار Google لإظهار تلك التطبيقات.</string>
     <string name="external_bt_nativeaa">الاتصال اللاسلكي الأصلي غير مدعوم على هذه الوحدة</string>
     <string name="external_bt_nativeaa_desc">تستخدم هذه الوحدة وحدة Bluetooth خاصة (%1$s) بدلاً من الواجهة التي يتيحها Android للتطبيقات. يقترن الهاتف بها، لذا لا تصل إليه بيانات Bluetooth من التطبيق؛ وقد يبدو الاتصال جارياً ثم يتوقف.\n\nهذا قيد في العتاد ولا يمكن تجاوزه من التطبيق. استخدم USB أو وضع Wireless Helper أو Auto (Headunit Server)، فهي لا تحتاج إلى مصافحة Bluetooth.</string>
@@ -894,7 +894,7 @@
     <string name="setup_wi_fi_direct">Wi-Fi Direct</string>
     <string name="setup_wifi_direct_hint">خيار بديل · يتطلب تشغيل Wi-Fi في السيارة. قد يتقطع الاتصال بتردد 2.4 غيغاهرتز.</string>
     <string name="setup_configure_hotspot">2 · إعداد نقطة اتصال السيارة</string>
-    <string name="setup_hotspot_instructions">شغّل نقطة الاتصال في إعدادات السيارة واختر 5 غيغاهرتز إن توفر. انسخ الاسم وكلمة المرور بدقة واترك نقطة الاتصال قيد التشغيل أثناء الاتصال. لا يلزم الانضمام إليها يدوياً من الهاتف؛ يرسل DiAuto البيانات عبر Bluetooth بعد الضغط على توصيل الهاتف.</string>
+    <string name="setup_hotspot_instructions">شغّل نقطة الاتصال في إعدادات السيارة واختر 5 غيغاهرتز إن توفر. انسخ الاسم وكلمة المرور بدقة واترك نقطة الاتصال قيد التشغيل أثناء الاتصال. لا يلزم الانضمام إليها يدوياً من الهاتف؛ يرسل Qonecta Unit البيانات عبر Bluetooth بعد الضغط على توصيل الهاتف.</string>
     <string name="setup_hotspot_on">نقطة اتصال السيارة تعمل · تأكد من اختيار 5 غيغاهرتز في إعداداتها.</string>
     <string name="setup_hotspot_off">نقطة اتصال السيارة متوقفة · شغّلها قبل الاتصال.</string>
     <string name="setup_hotspot_unknown">حالة نقطة الاتصال غير متاحة · تحقق منها في إعدادات السيارة.</string>
@@ -911,12 +911,12 @@
     <string name="setup_prepare_car">2 · تجهيز السيارة</string>
     <string name="setup_wifi_direct_instructions">شغّل Wi-Fi في السيارة. اسمح بالموقع والأجهزة القريبة عند الطلب، وفعّل الموقع عندما يطلب Android ذلك. إذا تقطع التشغيل، جرّب نقطة اتصال السيارة بتردد 5 غيغاهرتز.</string>
     <string name="setup_pair_and_connect">3 · الاقتران والاتصال</string>
-    <string name="setup_pair_instructions">أبقِ Bluetooth وWi-Fi مفعّلين على هاتف Android واقترن ببلوتوث السيارة. ارجع إلى DiAuto واضغط توصيل الهاتف واختر هاتفك. وافق على مطالبات Android Auto على الهاتف. لا تحتاج إلى اشتراك إنترنت للسيارة؛ تعتمد بيانات الهاتف على إعدادات شبكته.</string>
+    <string name="setup_pair_instructions">أبقِ Bluetooth وWi-Fi مفعّلين على هاتف Android واقترن ببلوتوث السيارة. ارجع إلى Qonecta Unit واضغط توصيل الهاتف واختر هاتفك. وافق على مطالبات Android Auto على الهاتف. لا تحتاج إلى اشتراك إنترنت للسيارة؛ تعتمد بيانات الهاتف على إعدادات شبكته.</string>
     <string name="setup_open_bluetooth_settings">فتح إعدادات Bluetooth</string>
     <string name="setup_review_app_permissions">مراجعة أذونات التطبيق</string>
-    <string name="setup_done_return_to_diauto">تم · العودة إلى DiAuto</string>
+    <string name="setup_done_return_to_diauto">تم · العودة إلى Qonecta Unit</string>
     <string name="setup_prefer_a_cable">تفضل الاتصال بسلك؟</string>
-    <string name="setup_usb_instructions">استخدم كابل USB لنقل البيانات ومنفذ بيانات USB في السيارة. افتح قفل هاتفك واضغط الاتصال عبر USB في شاشة DiAuto الرئيسية. لا يلزم إعداد نقطة اتصال.</string>
+    <string name="setup_usb_instructions">استخدم كابل USB لنقل البيانات ومنفذ بيانات USB في السيارة. افتح قفل هاتفك واضغط الاتصال عبر USB في شاشة Qonecta Unit الرئيسية. لا يلزم إعداد نقطة اتصال.</string>
     <string name="setup_hotspot_copy_hint">انسخ الاسم وكلمة المرور من إعدادات نقطة اتصال السيارة. الحفظ هنا لا يغير نقطة اتصال السيارة.</string>
     <string name="setup_hotspot_name">اسم نقطة الاتصال</string>
     <string name="setup_hotspot_password">كلمة مرور نقطة الاتصال</string>
@@ -958,7 +958,7 @@
     <string name="cluster_marker_vertical">علامة السيارة: أعلى / أسفل</string>
     <string name="cluster_marker_centre">الوسط</string>
     <string name="cluster_map_hint">اضبط لوحة العدادات على وضع الملاحة الصغير أو الكامل من قائمة المقود. تبقى الخريطة ظاهرة ما دام Android Auto متصلاً، حتى خلف الكاميرا أو التطبيقات الأخرى. يدعم Waze وخرائط Google خريطة لوحة العدادات؛ أما بطاقة الانعطاف فتعتمد على التطبيق.</string>
-    <string name="cluster_map_overlay_hint">إذا اختفت الخريطة من لوحة العدادات عند فتح الكاميرا أو تطبيق آخر، اسمح لـ DiAuto بالظهور فوق التطبيقات الأخرى. اختياري: كثير من الشاشات تبقيها ظاهرة بدونه.</string>
+    <string name="cluster_map_overlay_hint">إذا اختفت الخريطة من لوحة العدادات عند فتح الكاميرا أو تطبيق آخر، اسمح لـ Qonecta Unit بالظهور فوق التطبيقات الأخرى. اختياري: كثير من الشاشات تبقيها ظاهرة بدونه.</string>
     <string name="cluster_map_overlay_grant">السماح بالظهور فوق التطبيقات الأخرى</string>
     <string name="cluster_map_overlay_unavailable">لا توجد في هذه الشاشة صفحة لهذا الإذن.</string>
     <string name="byd_left_hand_traffic_title">القيادة على اليسار</string>
@@ -967,13 +967,13 @@
     <string name="da_connection_setup_hint">اختر طريقة الاتصال وأعدّ نقطة اتصال سيارتك.</string>
     <string name="da_diagnostics">التشخيص</string>
     <string name="da_diagnostics_hint">حفظ تقرير الاتصال أو مشاركته.</string>
-    <string name="diagnostic_report_instructions">أعد حدوث مشكلة الاتصال ثم احفظ تقريراً. تتضمن التقارير سجلات التطبيق الحديثة وإعدادات الاتصال، دون بيانات الدخول المحفوظة. في Android 10 أو أحدث، تُحفظ التقارير في Downloads/DiAuto.</string>
+    <string name="diagnostic_report_instructions">أعد حدوث مشكلة الاتصال ثم احفظ تقريراً. تتضمن التقارير سجلات التطبيق الحديثة وإعدادات الاتصال، دون بيانات الدخول المحفوظة. في Android 10 أو أحدث، تُحفظ التقارير في Downloads/Qonecta Unit.</string>
     <string name="save_diagnostic_report">حفظ تقرير التشخيص</string>
     <string name="choose_report_location">اختيار موقع الحفظ</string>
     <string name="native_local_hotspot_wifi_settings">فتح إعدادات Wi-Fi في السيارة</string>
     <string name="native_local_hotspot_wifi_settings_unavailable">افتح Wi-Fi من تطبيق إعدادات السيارة.</string>
     <string name="native_ap_transport_local_hotspot">نقطة اتصال محلية</string>
-    <string name="native_ap_transport_local_hotspot_hint">تجريبي. يستخدم DiAuto نقطة اتصال محلية منفصلة لـ Android Auto؛ لا يلزم اشتراك إنترنت للسيارة. يجب أن تسمح إصدارات Android القديمة للتطبيق بالتحقق من تردد 5 غيغاهرتز عبر برنامج تشغيل Wi-Fi. إذا تقطعت الخرائط أو الموسيقى في DiLink 5.1، جرّب إيقاف Wi-Fi من إعدادات السيارة. أبقِ Bluetooth وWi-Fi الهاتف مفعّلين. التوافق يعتمد على السيارة.</string>
+    <string name="native_ap_transport_local_hotspot_hint">تجريبي. يستخدم Qonecta Unit نقطة اتصال محلية منفصلة لـ Android Auto؛ لا يلزم اشتراك إنترنت للسيارة. يجب أن تسمح إصدارات Android القديمة للتطبيق بالتحقق من تردد 5 غيغاهرتز عبر برنامج تشغيل Wi-Fi. إذا تقطعت الخرائط أو الموسيقى في DiLink 5.1، جرّب إيقاف Wi-Fi من إعدادات السيارة. أبقِ Bluetooth وWi-Fi الهاتف مفعّلين. التوافق يعتمد على السيارة.</string>
     <string name="audio_queue_unbounded">بلا حد (قديم)</string>
     <string name="audio_queue_chunks">مقاطع الصوت: %1$d</string>
     <string name="audio_queue_low">10 مقاطع (تأخير منخفض)</string>
@@ -996,6 +996,6 @@
     <string name="turn_card_info_duration_hm">%1$dس %2$dد</string>
     <string name="turn_card_info_duration_m">%1$dد</string>
     <string name="turn_card_info_km">%1$.1f كم</string>
-    <string name="cluster_usage_access_hint">في وضع «المشهد» تظهر الخريطة الجانبية في كل بطاقات لوحة العدادات. اسمح بـ«الوصول إلى بيانات الاستخدام» لـ DiAuto لتظهر فقط في بطاقة الخريطة. إذا لم يفتح الزر شيئًا، يمكن منح الإذن عبر ADB: appops set com.andrerinas.headunitrevived GET_USAGE_STATS allow</string>
+    <string name="cluster_usage_access_hint">في وضع «المشهد» تظهر الخريطة الجانبية في كل بطاقات لوحة العدادات. اسمح بـ«الوصول إلى بيانات الاستخدام» لـ Qonecta Unit لتظهر فقط في بطاقة الخريطة. إذا لم يفتح الزر شيئًا، يمكن منح الإذن عبر ADB: appops set com.andrerinas.headunitrevived GET_USAGE_STATS allow</string>
     <string name="cluster_usage_access_grant">السماح بالوصول إلى بيانات الاستخدام</string>
 </resources>

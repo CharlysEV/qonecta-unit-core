@@ -16,7 +16,6 @@ android {
 
     buildFeatures {
         buildConfig = true
-        aidl = true // needed for shizuku
     }
 
     externalNativeBuild {
@@ -67,12 +66,11 @@ android {
     }
 
     defaultConfig {
-        // Preserve upgrade compatibility and existing DiLink pairing/calibration.
-        applicationId = "com.andrerinas.headunitrevived"
+        applicationId = "com.headqlink.unit"
         minSdk = 16
         targetSdk = 36
-        versionCode = 112
-        versionName = "0.3.12"
+        versionCode = 3
+        versionName = "0.1.2-unit"
         setProperty("archivesBaseName", "${applicationId}_${versionName}")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled = true
@@ -161,8 +159,6 @@ android {
         }
 
         getByName("debug") {
-            applicationIdSuffix = ".bydhudtest"
-            versionNameSuffix = "-hud-test"
         }
     }
 
@@ -256,9 +252,4 @@ dependencies {
 
     // ZXing for QR Code generation
     implementation("com.google.zxing:core:3.5.3")
-
-    // Shizuku for root / shell access
-    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")
-    implementation("com.github.topjohnwu.libsu:core:6.0.0")
 }

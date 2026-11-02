@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">DiAuto</string>
+    <string name="app_name">Qonecta Unit</string>
     <string name="menu">Menu</string>
     <string name="settings">Settings</string>
 
@@ -19,7 +19,7 @@
     <string name="onb_next">Next</string>
     <string name="onb_skip">Skip</string>
     <string name="onb_ready_finish">Finish</string>
-    <string name="onb_welcome_title">Welcome to DiAuto</string>
+    <string name="onb_welcome_title">Welcome to Qonecta Unit</string>
     <string name="onb_welcome_body">Connect your Android phone wirelessly to your car. First, review the essentials and enable permissions. You can tune your display and sound later in Settings.</string>
     <string name="onb_safety_title">Safety first</string>
     <string name="onb_safety_accept">I have read and accept the terms</string>
@@ -88,7 +88,7 @@
     <string name="onb_vehicle_title">Your car</string>
     <string name="onb_vehicle_input_hint">Brand or name</string>
     <string name="onb_vehicle_help_aa">This name is sent to Android Auto. It shows in your phone\'s connection history and on the Android Auto welcome screen.</string>
-    <string name="onb_vehicle_help_sideload">Picking a real car brand also shows that brand\'s logo on the Android Auto exit button, but Android Auto then stops listing apps you installed from outside the Play Store. Keep \"Google\" or \"Open Headunit\" if you use those apps.</string>
+    <string name="onb_vehicle_help_sideload">Picking a real car brand also shows that brand\'s logo on the Android Auto exit button, but Android Auto then stops listing apps you installed from outside the Play Store. Keep \"Google\" or \"Qonecta Unit\" if you use those apps.</string>
     <string name="onb_vehicle_help_advanced">You can fine-tune your vehicle details in the Advanced tab. We do not use this data; it is only sent to Android Auto because it requires it.</string>
     <string-array name="vehicle_brands">
         <item>Google</item>
@@ -183,7 +183,7 @@
     <string name="video">Android Auto</string>
     <string name="self_mode">Self Mode</string>
     <string name="to_android_auto">To Android Auto</string>
-    <string name="title">DiAuto</string>
+    <string name="title">Qonecta Unit</string>
     <string name="remove">Remove</string>
     <string name="usb">USB</string>
     <string name="wifi">WiFi</string>
@@ -350,7 +350,7 @@
     <string name="usb_auto_connect">Auto-connect USB</string>
     <string name="usb_auto_connect_description">Automatically connect to a known USB device when the application is opened.</string>
     <string name="auto_start_bt_label">Auto-start on Bluetooth</string>
-    <string name="auto_start_bt_description">Automatically open Open Headunit when a specific Bluetooth device connects.</string>
+    <string name="auto_start_bt_description">Automatically open Qonecta Unit when a specific Bluetooth device connects.</string>
     <string name="listen_for_usb_devices_label">Listen for USB Devices</string>
     <string name="listen_for_usb_devices_description">Show the Android system prompt when a USB device is plugged in.</string>
     <string name="show_toast_messages">Show Toast Messages</string>
@@ -367,7 +367,7 @@
     <string name="select_bt_device">Select Bluetooth Device</string>
     <string name="bt_device_not_set">Not set</string>
     <string name="auto_start_wifi_label">Auto-start on WiFi</string>
-    <string name="auto_start_wifi_description">Automatically open Open Headunit when connected to a specific WiFi SSID.</string>
+    <string name="auto_start_wifi_description">Automatically open Qonecta Unit when connected to a specific WiFi SSID.</string>
     <string name="auto_start_wifi_ssid_label">WiFi SSID</string>
     <string name="auto_start_wifi_ssid_description">Connect only when connected to this WiFi SSID</string>
     <string name="auto_start_wifi_warning">Legacy Feature: This may not work reliably on Android 8+ due to background restrictions. Ensure the app is excluded from battery optimization.</string>
@@ -376,7 +376,7 @@
     <string name="bt_permission_denied_title">Bluetooth Permission Required</string>
     <string name="bt_permission_denied_message">Bluetooth permission is required to select paired devices. Please grant it in app settings.</string>
     <string name="overlay_permission_title">Background Start Permission</string>
-    <string name="overlay_permission_description">To allow Open Headunit to open automatically when Bluetooth connects, please enable the "Display over other apps" permission in the next screen.</string>
+    <string name="overlay_permission_description">To allow Qonecta Unit to open automatically when Bluetooth connects, please enable the "Display over other apps" permission in the next screen.</string>
     <string name="open_settings">Settings</string>
     <string name="cannot_open_settings">Could not open system settings</string>
     <string name="right_hand_drive">Right-hand drive</string>
@@ -494,7 +494,7 @@
     <!-- Info Settings -->
     <string name="category_info">Info</string>
     <string name="about">About &amp; Support</string>
-    <string name="about_description">Get more information about Open Headunit</string>
+    <string name="about_description">Get more information about Qonecta Unit Based on DiAuto (shihabal3amri) and Open Headunit, AGPL-3.0.</string>
 
     <!-- Support / report a problem screen -->
     <string name="support">Report a problem</string>
@@ -519,7 +519,7 @@
     <string name="support_rules_connection_title">Say how you connect</string>
     <string name="support_rules_connection_desc">USB cable, USB wireless adapter, WiFi Direct, WiFi (headunit server) or Self Mode. If it is wireless, add the adapter or dongle model.</string>
     <string name="support_rules_appversion_title">Include the app version</string>
-    <string name="support_rules_appversion_desc">The Open Headunit version, shown on the About screen.</string>
+    <string name="support_rules_appversion_desc">The Qonecta Unit version, shown on the About screen.</string>
     <string name="support_rules_logs_title">Attach logs, right after it happens</string>
     <string name="support_rules_logs_desc">Switch Settings to the Advanced tab, turn on Debug Mode in the Debug section, reproduce the problem, then tap Export Logs right after so the log covers the moment it broke and not just the start. Attach that file to your issue.</string>
     <string name="support_rules_search_title">No duplicates</string>
@@ -531,7 +531,7 @@
     <string name="support_rules_oneissue_title">One problem per issue</string>
     <string name="support_rules_oneissue_desc">Keep each issue to a single problem so it can be tracked and fixed. Open separate issues for unrelated problems.</string>
     <string name="version">Version</string>
-    <string name="about_title">About Open Headunit</string>
+    <string name="about_title">About Qonecta Unit</string>
     <string name="copyright">© 2025-%d André Rinas</string>
 
     <!-- Safety Disclaimer -->
@@ -542,7 +542,7 @@
         <b>1. Focus on the Road</b><br/>
         Operating this software while driving can be distracting and dangerous. Always prioritize safe driving and adhere to all local traffic regulations. Use this application only when it is safe to do so.<br/><br/>
         <b>2. Limitation of Liability</b><br/>
-        Open Headunit is provided "as is" without warranty of any kind. The developers assume no liability for any accidents, damage to your vehicle/device, or legal consequences arising from the use of this software.<br/><br/>
+        Qonecta Unit is provided "as is" without warranty of any kind. The developers assume no liability for any accidents, damage to your vehicle/device, or legal consequences arising from the use of this software.<br/><br/>
         <b>3. No Affiliation</b><br/>
         This project is an independent open-source initiative and is not affiliated with, endorsed by, or connected to Google LLC or the Android Auto brand.
     ]]></string>
@@ -576,7 +576,7 @@
     <string name="export_settings_downloads">Save to Downloads</string>
     <string name="export_settings_app_folder">Save to app backup folder</string>
     <string name="import_settings">Import settings</string>
-    <string name="import_settings_description">Restore settings from a Open Headunit backup</string>
+    <string name="import_settings_description">Restore settings from a Qonecta Unit backup</string>
     <string name="import_settings_choose_file">Choose backup file</string>
     <string name="import_settings_downloads">Import from Downloads</string>
     <string name="import_settings_app_folder">Import from app backup folder</string>
@@ -594,8 +594,8 @@
     <string name="no_file_picker_title">No file picker available</string>
     <string name="no_file_picker_message">This device does not have a compatible file picker. You can use Downloads or the app backup folder instead.</string>
     <string name="no_settings_backups_title">No backups found</string>
-    <string name="no_settings_backups_message">No Open Headunit backups were found in the app backup folder. Export a backup to the app backup folder first, then import it from here.</string>
-    <string name="no_settings_backups_downloads_message">No Open Headunit backups were found in Downloads. Export a backup to Downloads first, then import it from here.</string>
+    <string name="no_settings_backups_message">No Qonecta Unit backups were found in the app backup folder. Export a backup to the app backup folder first, then import it from here.</string>
+    <string name="no_settings_backups_downloads_message">No Qonecta Unit backups were found in Downloads. Export a backup to Downloads first, then import it from here.</string>
     <string name="share_settings_backup">Share settings backup</string>
     <string name="logs_exported">Logs Exported</string>
     <string name="log_saved_to">Log saved to:\n%s</string>
@@ -619,10 +619,10 @@
     <string name="wifi_disconnect_toast">Android Auto disconnected: If using wireless AA, disable \"Switch between networks\" or \"Network acceleration\" in phone WiFi settings</string>
     <string name="reset_usb_option">Reset USB Connection</string>
     <string name="reset_usb_timeout">USB device not found. Please check connection.</string>
-    <string name="notification_service_running">Open Headunit is running</string>
+    <string name="notification_service_running">Qonecta Unit is running</string>
     <string name="boot_loop_paused_title">Wireless start-up paused</string>
-    <string name="boot_loop_paused_generic">This device restarted three times in a row shortly after Open Headunit started wireless, so wireless was left off this time. USB still works. Open the app to turn it back on.</string>
-    <string name="boot_loop_paused_native_wifi_direct">This device restarted three times in a row shortly after Open Headunit started wireless, so wireless was left off this time. On some head units the WiFi chipset takes the whole system down when a phone joins a WiFi Direct network. Try switching Android Auto mode to the head unit hotspot. USB still works.</string>
+    <string name="boot_loop_paused_generic">This device restarted three times in a row shortly after Qonecta Unit started wireless, so wireless was left off this time. USB still works. Open the app to turn it back on.</string>
+    <string name="boot_loop_paused_native_wifi_direct">This device restarted three times in a row shortly after Qonecta Unit started wireless, so wireless was left off this time. On some head units the WiFi chipset takes the whole system down when a phone joins a WiFi Direct network. Try switching Android Auto mode to the head unit hotspot. USB still works.</string>
     <string name="notification_projection_active">Android Auto is projected</string>
     <string name="shortcut_connect_title">Connect</string>
     <string name="shortcut_connect_desc">Auto-connect to last phone</string>
@@ -848,7 +848,7 @@
     <string name="native_local_hotspot_wifi_settings">Open car Wi-Fi settings</string>
     <string name="native_local_hotspot_wifi_settings_unavailable">Open Wi-Fi from the car’s Settings app.</string>
     <string name="native_ap_transport_local_hotspot">Local hotspot</string>
-    <string name="native_ap_transport_local_hotspot_hint">Experimental. DiAuto uses a separate local hotspot for Android Auto; no car internet plan is needed. Older Android versions must let the app verify a 5 GHz hotspot from the Wi-Fi driver. If maps or music stutter on DiLink 5.1, try turning off the car’s Wi-Fi switch in car settings. Keep Bluetooth and your phone’s Wi-Fi on. Compatibility depends on the car.</string>
+    <string name="native_ap_transport_local_hotspot_hint">Experimental. Qonecta Unit uses a separate local hotspot for Android Auto; no car internet plan is needed. Older Android versions must let the app verify a 5 GHz hotspot from the Wi-Fi driver. If maps or music stutter on DiLink 5.1, try turning off the car’s Wi-Fi switch in car settings. Keep Bluetooth and your phone’s Wi-Fi on. Compatibility depends on the car.</string>
     <string name="native_ap_transport_hint">Experimental. The phone joins this device\'s own hotspot instead of a WiFi Direct group. Switch the hotspot on yourself before connecting, and set it to 5 GHz if you can - over 2.4 GHz the phone connects and then drops the session repeatedly without any picture, unless you lower the resolution and frame rate. If the network name cannot be read automatically, enter it below.</string>
     <string name="hotspot_interface_override">Hotspot network interface</string>
     <string name="hotspot_interface_override_message">Leave blank to work it out automatically. Set this if the log says more than one interface could be the access point, or picks the wrong one. The name is the one the log reports after &quot;Providing credentials from&quot;, or the entry holding your hotspot\'s address in &quot;ip -brief addr&quot; from a shell. Common names: ap0, wlan0, wlan1, wlan2, softap0, ra0.</string>
@@ -937,10 +937,10 @@
     <string name="sunrise_reference_help">The reference point used to calculate sunrise and sunset. Pick your location once; it works without GPS.</string>
 
     <!-- One-time rename notice shown on the home screen. Both the old name ("Headunit Revived")
-         and the new name ("Open Headunit") are hardcoded on purpose, so the message reads clearly
+         and the new name ("Qonecta Unit") are hardcoded on purpose, so the message reads clearly
          even before the app name resource changes. -->
-    <string name="rename_notice_title">Our name is changing to Open Headunit</string>
-    <string name="rename_notice_message">Headunit Revived is growing, thanks to you, and it is turning into something of its own: Open Headunit. We are rolling the new name out over the next updates, so you may still see the old name in some places for a while.\n\nSame app, same people behind it, and all your settings stay exactly as they are.</string>
+    <string name="rename_notice_title">Our name is changing to Qonecta Unit</string>
+    <string name="rename_notice_message">Headunit Revived is growing, thanks to you, and it is turning into something of its own: Qonecta Unit. We are rolling the new name out over the next updates, so you may still see the old name in some places for a while.\n\nSame app, same people behind it, and all your settings stay exactly as they are.</string>
     <string name="rename_notice_button">Got it</string>
     <string name="byd_navigation_title">BYD HUD and instrument cluster</string>
     <string name="byd_navigation_description">Show Android Auto directions on supported BYD displays. Experimental; vehicle compatibility varies.</string>
@@ -962,7 +962,7 @@
     <string name="cluster_marker_vertical">Car marker: up / down</string>
     <string name="cluster_marker_centre">Centre</string>
     <string name="cluster_map_hint">Set the dashboard to Small or Full screen navi with the steering-wheel menu. The map stays up while Android Auto is connected, also behind the camera or other apps. Waze and Google Maps support the cluster map; the turn card depends on the app.</string>
-    <string name="cluster_map_overlay_hint">If the dashboard map closes when the camera or another app opens, allow DiAuto to display over other apps. Optional: many head units keep it up without this.</string>
+    <string name="cluster_map_overlay_hint">If the dashboard map closes when the camera or another app opens, allow Qonecta Unit to display over other apps. Optional: many head units keep it up without this.</string>
     <string name="cluster_map_overlay_grant">Allow display over other apps</string>
     <string name="cluster_map_overlay_unavailable">This head unit has no screen for this permission.</string>
     <string name="byd_left_hand_traffic_title">Traffic drives on the left</string>
@@ -971,7 +971,7 @@
     <string name="da_connection_setup_hint">Choose a connection and set up your car hotspot.</string>
     <string name="da_diagnostics">Diagnostics</string>
     <string name="da_diagnostics_hint">Save or share a connection report.</string>
-    <string name="diagnostic_report_instructions">Reproduce the connection issue, then save a report. Reports include recent app logs and connection settings, with saved credentials omitted. On Android 10 or newer, reports save to Downloads/DiAuto.</string>
+    <string name="diagnostic_report_instructions">Reproduce the connection issue, then save a report. Reports include recent app logs and connection settings, with saved credentials omitted. On Android 10 or newer, reports save to Downloads/Qonecta Unit.</string>
     <string name="save_diagnostic_report">Save diagnostic report</string>
     <string name="choose_report_location">Choose save location</string>
     <string name="setup_edit_hotspot">Edit saved hotspot · %1$s</string>
@@ -984,7 +984,7 @@
     <string name="setup_wi_fi_direct">Wi-Fi Direct</string>
     <string name="setup_wifi_direct_hint">Alternative setup · Requires the car’s Wi-Fi switch on. A 2.4 GHz link may stutter.</string>
     <string name="setup_configure_hotspot">2 · Set up the car hotspot</string>
-    <string name="setup_hotspot_instructions">Turn on the hotspot in the car settings and select 5 GHz if available. Copy its name and password exactly. Leave the hotspot on when connecting. You do not need to join it manually on your phone; DiAuto sends the details over Bluetooth after you tap Connect phone.</string>
+    <string name="setup_hotspot_instructions">Turn on the hotspot in the car settings and select 5 GHz if available. Copy its name and password exactly. Leave the hotspot on when connecting. You do not need to join it manually on your phone; Qonecta Unit sends the details over Bluetooth after you tap Connect phone.</string>
     <string name="setup_hotspot_on">Car hotspot is on · Check that 5 GHz is selected in car settings.</string>
     <string name="setup_hotspot_off">Car hotspot is off · Turn it on before connecting.</string>
     <string name="setup_hotspot_unknown">Hotspot status unavailable · Check it in car settings.</string>
@@ -1001,12 +1001,12 @@
     <string name="setup_prepare_car">2 · Prepare the car</string>
     <string name="setup_wifi_direct_instructions">Turn the car’s Wi-Fi switch on. Allow Location / Nearby devices when requested and enable Location when Android asks. If playback stutters, try the built-in car hotspot at 5 GHz.</string>
     <string name="setup_pair_and_connect">3 · Pair and connect</string>
-    <string name="setup_pair_instructions">Keep Bluetooth and Wi-Fi on your Android phone. Pair with the car’s Bluetooth. Return to DiAuto, tap Connect phone and select your phone. Accept the Android Auto prompts on the phone. A car internet plan is not required; mobile data depends on your phone’s network settings.</string>
+    <string name="setup_pair_instructions">Keep Bluetooth and Wi-Fi on your Android phone. Pair with the car’s Bluetooth. Return to Qonecta Unit, tap Connect phone and select your phone. Accept the Android Auto prompts on the phone. A car internet plan is not required; mobile data depends on your phone’s network settings.</string>
     <string name="setup_open_bluetooth_settings">Open Bluetooth settings</string>
     <string name="setup_review_app_permissions">Review app permissions</string>
-    <string name="setup_done_return_to_diauto">Done · Return to DiAuto</string>
+    <string name="setup_done_return_to_diauto">Done · Return to Qonecta Unit</string>
     <string name="setup_prefer_a_cable">Prefer a cable?</string>
-    <string name="setup_usb_instructions">Use a USB data cable and the car’s USB data port. Unlock your phone and tap Connect with USB on DiAuto’s home screen. No hotspot setup is needed.</string>
+    <string name="setup_usb_instructions">Use a USB data cable and the car’s USB data port. Unlock your phone and tap Connect with USB on Qonecta Unit’s home screen. No hotspot setup is needed.</string>
     <string name="setup_hotspot_copy_hint">Copy the name and password from the car’s hotspot settings. Saving here does not change the car’s hotspot.</string>
     <string name="setup_hotspot_name">Hotspot name</string>
     <string name="setup_hotspot_password">Hotspot password</string>
@@ -1050,6 +1050,6 @@
     <string name="turn_card_info_duration_hm">%1$dh %2$dmin</string>
     <string name="turn_card_info_duration_m">%1$dmin</string>
     <string name="turn_card_info_km">%1$.1f km</string>
-    <string name="cluster_usage_access_hint">In Scenario the side map shows on every cluster card. Allow Usage access for DiAuto so it shows only on the map card. If the button opens nothing, it can be granted over ADB: appops set com.andrerinas.headunitrevived GET_USAGE_STATS allow</string>
+    <string name="cluster_usage_access_hint">In Scenario the side map shows on every cluster card. Allow Usage access for Qonecta Unit so it shows only on the map card. If the button opens nothing, it can be granted over ADB: appops set com.andrerinas.headunitrevived GET_USAGE_STATS allow</string>
     <string name="cluster_usage_access_grant">Allow Usage access</string>
 </resources>

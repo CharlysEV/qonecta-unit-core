@@ -3,19 +3,33 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-sdk tools:overrideLibrary="
-        com.google.android.gms.nearby, com.google.android.gms.base, com.google.android.gms.tasks, com.google.android.gms.common,
-        rikka.shizuku.provider, rikka.shizuku.api, rikka.shizuku.shared, rikka.shizuku.aidl, com.topjohnwu.superuser" />
+        com.google.android.gms.nearby, com.google.android.gms.base, com.google.android.gms.tasks, com.google.android.gms.common" />
 
     <queries>
         <intent>
             <action android:name="android.settings.WIFI_SETTINGS" />
         </intent>
-        <package android:name="com.byd.clusterdebug" />
-        <package android:name="com.byd.amapservice" />
-        <package android:name="com.example.amapservice" />
-        <package android:name="com.ts.car.someip.service" />
         <package android:name="com.google.android.projection.gearhead" />
+        <!-- Sonda del coche (com.headqlink.unit.probe.CarProbe): servicios de Leapmotor de la unidad. -->
+        <package android:name="com.leapmotor.carcontrol" />
+        <package android:name="com.leapmotor.autosdk.server" />
+        <intent>
+            <action android:name="com.leapmotor.carcontrol.services.BINDER_POOL" />
+        </intent>
+        <intent>
+            <action android:name="com.leapmotor.carcontrol.services.LP_BINDER_POOL" />
+        </intent>
+        <intent>
+            <action android:name="com.leapmotor.carcontrol.CAR_CONTROL_SERVICE" />
+        </intent>
+        <intent>
+            <action android:name="com.leapmotor.autosdk.server.action.AUTOSDK_SERVICE" />
+        </intent>
     </queries>
+
+    <!-- Sonda del coche: la lista de paquetes de la unidad, y el permiso del kit de Leapmotor (para ver si Android lo da). -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="com.leapmotor.autosdk.server.USE_SERVICE" />
 
     <uses-feature
         android:name="android.hardware.usb.host"
@@ -61,7 +75,6 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_SUPERUSER" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.BROADCAST_STICKY" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -360,12 +373,5 @@
                 android:resource="@xml/provider_paths" />
         </provider>
 
-        <provider
-            android:name="rikka.shizuku.ShizukuProvider"
-            android:authorities="${applicationId}.shizuku"
-            android:enabled="true"
-            android:exported="true"
-            android:multiprocess="false"
-            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
 </manifest>

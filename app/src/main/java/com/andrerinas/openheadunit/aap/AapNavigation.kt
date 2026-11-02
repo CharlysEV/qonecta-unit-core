@@ -16,8 +16,6 @@ class AapNavigation(
     private val context: Context,
     private val settings: Settings
 ) {
-    init { com.andrerinas.openheadunit.hud.BydNavigationOutputs.start(context) }
-
     private val helper = AapNavigationHelper(context)
     private val snapshot = AapNavigationHelper.NavigationSnapshot()
     private val debounceHandler = Handler(Looper.getMainLooper())
@@ -176,16 +174,6 @@ class AapNavigation(
     }
 
     private fun scheduleDebouncedBroadcast(navEventType: Int) {
-        // The dashboard turn card shows the same mapped guidance as the HUD.
-        val turnCard = settings.clusterMapEnabled && settings.clusterTurnCardOverlay
-        val mapped = if (settings.bydNavigationEnabled || turnCard) com.andrerinas.openheadunit.hud.BydNavigationMapper.from(snapshot, settings.bydLeftHandTraffic) else null
-        val bydFrame = if (settings.bydNavigationEnabled) mapped else null
-        com.andrerinas.openheadunit.hud.DashboardGuidance.latest = if (turnCard) mapped else null
-        AppLog.i("BYD nav input event=$navEventType enabled=${settings.bydNavigationEnabled} " +
-            "status=${snapshot.clusterStatus?.payload?.status} steps=${snapshot.navigationState?.payload?.stepsCount} " +
-            "legacy=${snapshot.nextTurnDetail?.payload?.nextTurn} position=${snapshot.currentPosition != null} " +
-            "distance=${bydFrame?.distanceMeters} icon=${bydFrame?.clusterIcon}")
-        com.andrerinas.openheadunit.hud.BydNavigationOutputs.update(bydFrame)
         pendingNavEventType = navEventType
         if (isBroadcastScheduled) return
         isBroadcastScheduled = true

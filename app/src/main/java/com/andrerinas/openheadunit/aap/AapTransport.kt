@@ -518,12 +518,6 @@ class AapTransport(
         if (clusterVideoUsed) {
             clusterVideo.release()
             com.andrerinas.openheadunit.App.provide(context).clusterVideoDecoder.stop("session ended")
-            // The dashboard window can outlive DiAuto's screen, so the session closes it.
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    com.andrerinas.openheadunit.hud.ClusterMapScreen.dismiss()
-                }
-            }
         }
 
         // Never let a half-finished cycle outlive the transport that owed the regain: the claim is

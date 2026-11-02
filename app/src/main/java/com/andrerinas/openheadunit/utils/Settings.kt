@@ -254,8 +254,12 @@ class Settings(private val context: Context) {
             prefs.edit().putInt(KEY_SCREEN_ORIENTATION, orientation.value).apply()
         }
 
+    // Qonecta Unit: 200 dpi por defecto, la densidad con la que Qonecta+ proyecta en el C10 (AaSize). Con la
+    // densidad de la propia unidad (el 0, «automático»), si fuera de 270 o más, AA quedaría por debajo de 800 dp en
+    // el modo Extendido y pasaría a tarjetas, con Maps reducido. Un valor que el usuario haya elegido (también el 0)
+    // se respeta, y como viaja en el ServiceDiscovery solo se aplica al reconectar.
     var dpiPixelDensity: Int
-        get() = prefs.getInt("dpi-pixel-density", 0) // Default 0 for Auto
+        get() = prefs.getInt("dpi-pixel-density", DEFAULT_DPI_PIXEL_DENSITY)
         set(value) {
             prefs.edit().putInt("dpi-pixel-density", value).apply()
         }
@@ -354,6 +358,25 @@ class Settings(private val context: Context) {
             return FullscreenMode.fromInt(value) ?: FullscreenMode.IMMERSIVE
         }
         set(value) { prefs.edit().putInt("fullscreen-mode", value.value).apply() }
+
+    // Qonecta Unit: modo de pantalla. Extendido = AA a la izquierda y nuestro panel a la derecha; si no, AA a
+    // pantalla completa. Se llama extendedMode y nunca «fullscreen»: en DiAuto eso son las barras del sistema
+    // (fullscreenMode, justo encima). La primera instalación arranca en Extendido y luego se recuerda el último.
+    // Ninguno de estos tres entra en HeadUnitScreenConfig.computeSettingsHash: conmutar no desbloquea la
+    // resolución ni invalida la caché de la superficie (AA se sigue negociando a pantalla completa).
+    var extendedMode: Boolean
+        get() = prefs.getBoolean(KEY_EXTENDED_MODE, true)
+        set(value) { prefs.edit().putBoolean(KEY_EXTENDED_MODE, value).apply() }
+
+    // Ancho del panel en % de la pantalla: 30, acotado entre 20 y 40 (ExtendedLayout). Sin interfaz en la v1.
+    var extendedPanelPercent: Int
+        get() = prefs.getInt(KEY_EXTENDED_PANEL_PERCENT, 30).coerceIn(20, 40)
+        set(value) { prefs.edit().putInt(KEY_EXTENDED_PANEL_PERCENT, value.coerceIn(20, 40)).apply() }
+
+    // Panel con datos inventados (DEMO), para las capturas. Apagado por defecto; con él, la ficha DEMO siempre se ve.
+    var panelDemo: Boolean
+        get() = prefs.getBoolean(KEY_PANEL_DEMO, false)
+        set(value) { prefs.edit().putBoolean(KEY_PANEL_DEMO, value).apply() }
 
     @Deprecated("Use fullscreenMode instead")
     var startInFullscreenMode: Boolean
@@ -490,7 +513,7 @@ class Settings(private val context: Context) {
         // Cosmetic: the phone shows this in its connection history and on the Android Auto
         // welcome screen. It is not the reported manufacturer, which stays "Google" unless
         // the user picks a real car brand — see the car step in OnboardingActivity.
-        get() = prefs.getString("vehicle-display-name", "DiAuto")!!
+        get() = prefs.getString("vehicle-display-name", "Qonecta Unit")!!
         set(value) { prefs.edit().putString("vehicle-display-name", value).apply() }
 
     var vehicleMake: String
@@ -1071,6 +1094,13 @@ class Settings(private val context: Context) {
         const val KEY_NAVIGATION_VOLUME_OFFSET = "navigation-volume-offset"
 
         const val KEY_CONNECTION_MODES = "connection-modes"
+
+        // Qonecta Unit (ver extendedMode)
+        const val KEY_EXTENDED_MODE = "qu-extended-mode"
+        const val KEY_EXTENDED_PANEL_PERCENT = "qu-extended-panel-percent"
+        const val KEY_PANEL_DEMO = "qu-panel-demo"
+        /** Densidad de AA por defecto en la unidad (la de Qonecta+ en el C10). 0 = la de la unidad. */
+        const val DEFAULT_DPI_PIXEL_DENSITY = 200
 
         const val AUTO_CONNECT_LAST_SESSION = "last-session"
         const val AUTO_CONNECT_SELF_MODE = "self-mode"

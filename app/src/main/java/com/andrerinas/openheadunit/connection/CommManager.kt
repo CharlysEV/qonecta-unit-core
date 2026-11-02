@@ -163,6 +163,13 @@ class CommManager(
     /** The endpoint [silentPeerFailures] is counting; a different one starts its own streak. */
     @Volatile private var silentPeerEndpoint: String? = null
     var onUpdateUiConfigReplyReceived: (() -> Unit)? = null
+
+    /**
+     * Qonecta Unit: sube con cada conexión de AA (un AA relanzado es otra). Los márgenes del modo
+     * Extendido hay que volver a mandarlos en cada una (ExtendedMarginsController), como en Qonecta+.
+     */
+    @Volatile var transportGeneration: Int = 0
+        private set
     @Volatile private var _connection: AccessoryConnection? = null
 
     /**
@@ -395,6 +402,7 @@ class CommManager(
 
                 if (_transport == null) {
                     val audioManager = context.getSystemService(Application.AUDIO_SERVICE) as AudioManager
+                    transportGeneration++
                     _transport = AapTransport(
                         audioDecoder,
                         videoDecoder,
