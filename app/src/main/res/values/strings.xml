@@ -532,7 +532,7 @@
     <string name="support_rules_oneissue_desc">Keep each issue to a single problem so it can be tracked and fixed. Open separate issues for unrelated problems.</string>
     <string name="version">Version</string>
     <string name="about_title">About Qonecta Unit</string>
-    <string name="copyright">© 2025-%d André Rinas</string>
+    <string name="copyright">© 2025-%d André Rinas · Qonecta Unit © 2026 CharlysEV</string>
 
     <!-- Safety Disclaimer -->
     <string name="disclaimer_title">Safety &amp; Liability</string>

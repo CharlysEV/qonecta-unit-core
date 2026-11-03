@@ -305,7 +305,7 @@
     <string name="about_description">Qonecta Unit에 대한 자세한 정보를 확인하세요</string>
     <string name="version">버전</string>
     <string name="about_title">Qonecta Unit 정보</string>
-    <string name="copyright">© 2025-%d André Rinas</string>
+    <string name="copyright">© 2025-%d André Rinas · Qonecta Unit © 2026 CharlysEV</string>
 
     <!-- Safety Disclaimer -->
     <string name="disclaimer_title">안전 및 책임</string>

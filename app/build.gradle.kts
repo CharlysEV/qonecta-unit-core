@@ -69,8 +69,8 @@ android {
         applicationId = "com.headqlink.unit"
         minSdk = 16
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.1.2-unit"
+        versionCode = 4
+        versionName = "0.1.3-unit"
         setProperty("archivesBaseName", "${applicationId}_${versionName}")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled = true
@@ -170,6 +170,18 @@ android {
 
         getByName("debug") {
         }
+
+        // Qonecta Unit: el APK para el coche (compilar.bat). Como debug (sin R8; la misma firma de firma/, para que la
+        // unidad deje actualizar encima), pero no depurable: adb run-as no lee sus datos (la cuenta de Leapmotor, más
+        // adelante) y BuildConfig.DEBUG es false, así que los extras DEMO de AapProjectionActivity no valen. Debug
+        // queda para el emulador y las capturas.
+        create("coche") {
+            initWith(getByName("debug"))
+            isDebuggable = false
+            isJniDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("debug")
+        }
     }
 
     packaging {
@@ -208,7 +220,7 @@ android {
             .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
             .forEach { output ->
                 var outputFileName = "${variant.applicationId}_${variant.versionName}_debug.apk"
-                if(variant.buildType.name == "release") {
+                if(variant.buildType.name == "release" || variant.buildType.name == "coche") {
                     outputFileName = "${variant.applicationId}_${variant.versionName}.apk"
                     output.outputFileName = outputFileName
                 }

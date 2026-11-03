@@ -27,7 +27,8 @@ import kotlin.math.roundToInt
 /**
  * Sonda del coche, solo lectura: qué servicios de Leapmotor hay en la unidad, qué permiso piden y si una app con su
  * nombre de verdad puede conectarse a ellos. Nunca llama a una función de esos servicios: al conectar solo pregunta el
- * nombre de su interfaz (lo responde Android, no el servicio), así que no puede accionar nada del coche.
+ * nombre de su interfaz (INTERFACE_TRANSACTION, que contesta el código genérico de Binder del servicio, no una función
+ * suya), así que no puede accionar nada del coche. Conectar sí arranca el servicio si no estaba en marcha.
  *
  * Los servicios y acciones son los que usa LeapLink para leer el CAN (análisis estático de su APK, 31-10-2026).
  *
@@ -217,31 +218,36 @@ object CarProbe {
             ?: return@withContext "no hay servicio para esa acción"
         val head = "${si.name} (exportado=${si.exported}, permiso=${si.permission ?: "ninguno"})"
         var conn: ServiceConnection? = null
-        val result = withTimeoutOrNull(BIND_TIMEOUT_MS) {
-            suspendCancellableCoroutine<String> { cont ->
-                fun done(s: String) {
-                    if (cont.isActive) cont.resume(s)
-                }
-                val c = object : ServiceConnection {
-                    override fun onServiceConnected(name: ComponentName, binder: IBinder?) {
-                        done("CONECTA · interfaz " + (runCatching { binder?.interfaceDescriptor }.getOrNull() ?: "?"))
+        // Se desconecta siempre, también si se cancela a medias (atrás en Diagnóstico): si no, la conexión con el
+        // servicio del coche seguiría hasta que se cerrara la app.
+        val result = try {
+            withTimeoutOrNull(BIND_TIMEOUT_MS) {
+                suspendCancellableCoroutine<String> { cont ->
+                    fun done(s: String) {
+                        if (cont.isActive) cont.resume(s)
                     }
+                    val c = object : ServiceConnection {
+                        override fun onServiceConnected(name: ComponentName, binder: IBinder?) {
+                            done("CONECTA · interfaz " + (runCatching { binder?.interfaceDescriptor }.getOrNull() ?: "?"))
+                        }
 
-                    override fun onServiceDisconnected(name: ComponentName) {}
+                        override fun onServiceDisconnected(name: ComponentName) {}
 
-                    override fun onNullBinding(name: ComponentName) = done("conecta, pero el servicio no da interfaz")
+                        override fun onNullBinding(name: ComponentName) = done("conecta, pero el servicio no da interfaz")
 
-                    override fun onBindingDied(name: ComponentName) = done("la conexión se cayó")
+                        override fun onBindingDied(name: ComponentName) = done("la conexión se cayó")
+                    }
+                    conn = c
+                    try {
+                        if (!context.bindService(intent, c, Context.BIND_AUTO_CREATE)) done("Android no deja conectar (bindService = false)")
+                    } catch (e: SecurityException) {
+                        done("RECHAZADO: ${e.message}")
+                    }
                 }
-                conn = c
-                try {
-                    if (!context.bindService(intent, c, Context.BIND_AUTO_CREATE)) done("Android no deja conectar (bindService = false)")
-                } catch (e: SecurityException) {
-                    done("RECHAZADO: ${e.message}")
-                }
-            }
-        } ?: "sin respuesta en ${BIND_TIMEOUT_MS / 1000} s"
-        conn?.let { runCatching { context.unbindService(it) } }
+            } ?: "sin respuesta en ${BIND_TIMEOUT_MS / 1000} s"
+        } finally {
+            conn?.let { runCatching { context.unbindService(it) } }
+        }
         "$head\n    → $result"
     }
 

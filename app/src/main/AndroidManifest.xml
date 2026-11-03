@@ -56,8 +56,9 @@
         android:name="android.hardware.bluetooth"
         android:required="false" />
 
+    <!-- Qonecta Unit: con nuestro paquete (el de DiAuto haría fallar la instalación si DiAuto está en la unidad). -->
     <permission
-        android:name="com.andrerinas.openheadunit.permission.NAVIGATION_UPDATE"
+        android:name="${applicationId}.permission.NAVIGATION_UPDATE"
         android:protectionLevel="signature" />
 
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />

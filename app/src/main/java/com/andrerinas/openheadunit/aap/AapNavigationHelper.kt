@@ -81,10 +81,10 @@ class AapNavigationHelper(
             totalTimeSeconds = prepared.totalTimeSeconds,
             estimatedArrival = prepared.estimatedArrival
         )
+        // Qonecta Unit: el permiso que declara el manifest, con nuestro paquete, en todas las compilaciones (el del
+        // contrato, NavigationUpdateIntent.BROADCAST_PERMISSION, es el de DiAuto y aquí no lo declara nadie).
         context.applicationContext.sendBroadcast(intent,
-            if (com.andrerinas.openheadunit.BuildConfig.DEBUG)
-                com.andrerinas.openheadunit.BuildConfig.APPLICATION_ID + ".permission.NAVIGATION_UPDATE"
-            else NavigationUpdateIntent.BROADCAST_PERMISSION)
+            com.andrerinas.openheadunit.BuildConfig.APPLICATION_ID + ".permission.NAVIGATION_UPDATE")
     }
 
     fun showNotificationForSnapshot(snapshot: NavigationSnapshot, distanceMeters: Int?) {
