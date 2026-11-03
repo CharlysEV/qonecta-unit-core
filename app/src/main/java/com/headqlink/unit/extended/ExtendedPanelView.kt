@@ -35,6 +35,7 @@ import kotlin.math.roundToInt
  *    dato, un estado vacío con título, explicación y, si hay algo que hacer en la cuenta, «Toca para abrir
  *    Datos del coche». Con dato en EXPIRED, SERVER_KEY o ERROR, un aviso en ámbar debajo del anillo.
  * 4. Botón «Pantalla completa»: píldora de 64 px de alto como poco (el mínimo táctil es 48).
+ * 5. La versión de la app, pequeña y en gris (para saber en el coche qué APK hay instalada).
  *
  * Medidas en px del C10 multiplicadas por k = alto/882 (se recalcula al medir), para que se vea igual en la
  * unidad, a 2560 y en el emulador. Un tic de 1 s, solo con el panel visible y en una ventana, repinta la
@@ -73,6 +74,7 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
     private val button = LinearLayout(context)
     private val buttonIcon = ImageView(context)
     private val buttonLabel = TextView(context)
+    private val version = TextView(context)
 
     private var k = 0f
     private var attached = false
@@ -179,6 +181,14 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         noFocus(button)
         addView(button, LayoutParams(MATCH, WRAP))
 
+        // 5. Versión, para ver en el coche que la APK instalada es la nueva
+        version.text = "Qonecta Unit ${com.andrerinas.openheadunit.BuildConfig.VERSION_NAME}"
+        version.setTextColor(PanelFormat.FAINT)
+        version.gravity = Gravity.CENTER
+        version.setSingleLine(true)
+        version.ellipsize = TextUtils.TruncateAt.END
+        addView(version, LayoutParams(MATCH, WRAP))
+
         applyScale(1f)
     }
 
@@ -251,6 +261,9 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         buttonIcon.layoutParams = LayoutParams(icon, icon)
         buttonLabel.setTextSize(TypedValue.COMPLEX_UNIT_PX, 24f * k)
         buttonLabel.layoutParams = LayoutParams(WRAP, WRAP).also { it.leftMargin = px(12) }
+
+        version.setTextSize(TypedValue.COMPLEX_UNIT_PX, 18f * k)
+        (version.layoutParams as LayoutParams).topMargin = px(10)
         requestLayout()
     }
 

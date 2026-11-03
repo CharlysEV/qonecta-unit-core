@@ -69,8 +69,8 @@ android {
         applicationId = "com.headqlink.unit"
         minSdk = 16
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.1.3-unit"
+        versionCode = 5
+        versionName = "0.1.4-unit"
         setProperty("archivesBaseName", "${applicationId}_${versionName}")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled = true
