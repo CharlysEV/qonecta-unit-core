@@ -380,7 +380,7 @@ object HeadUnitScreenConfig {
 
     /** HEVC that AUTO may use for 1440p: a decoder from the reliability list, or chosen software HEVC. */
     private fun canAutoNegotiateHevcHighResolution(): Boolean =
-        VideoDecoder.isHevcReliable() || explicitSoftwareHevc()
+        currentSettings.videoCodec == VideoDecoder.CodecType.H265.settingsValue && (VideoDecoder.isHevcReliable() || explicitSoftwareHevc())
 
     private fun explicitSoftwareHevc(): Boolean {
         if (currentSettings.videoCodec != VideoDecoder.CodecType.H265.settingsValue || !currentSettings.forceSoftwareDecoding) return false

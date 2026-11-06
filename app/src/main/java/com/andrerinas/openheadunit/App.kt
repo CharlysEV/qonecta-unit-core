@@ -58,6 +58,10 @@ class App : Application() {
             // Apply app theme (runs the live manager when dynamic, or when a saved place
             // can force the app theme even over a static base).
             AppThemeManager.reapply(this, settings)
+            // Qonecta Unit Companion: puente con el móvil (TCP en la Wi-Fi de Android Auto + Bluetooth RFCOMM)
+            // para que el planificador mande la ruta a Google Maps del móvil.
+            runCatching { com.headqlink.unit.bridgehost.CompanionBridgeHost.start(this) }
+                .onFailure { AppLog.w("Companion bridge did not start: ${it.message}") }
         } else {
             AppLog.init(null, this) // Initialize with default logging if locked
             AppLog.w("App started in Direct Boot mode (locked). Settings access deferred.")

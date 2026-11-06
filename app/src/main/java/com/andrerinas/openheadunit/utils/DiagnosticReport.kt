@@ -2,6 +2,7 @@ package com.andrerinas.openheadunit.utils
 
 import android.content.Context
 import android.os.Build
+import com.headqlink.unit.extended.OtaSelfUpdater
 import java.util.ArrayDeque
 
 /** Small, shareable report. Never exports saved credentials or raw protocol payloads. */
@@ -43,6 +44,8 @@ object DiagnosticReport {
             appendLine("Saved credentials, network addresses and protocol payloads are omitted.")
             appendLine("--- Hotspot and network interfaces at report time (read-only) ---")
             HotspotNetworkProbe.report(context).forEach { appendLine(it) }
+            appendLine("--- Anti-OTA, Whitelists & C10 Package Inventory ---")
+            appendLine(OtaSelfUpdater.buildDiagnosticAntiOtaSection(context))
             appendLine("--- Recent app logs (up to 6000 lines) ---")
             if (lines.isEmpty()) appendLine("No recent app logs available. Reproduce the issue and save a new report.")
             lines.forEach { appendLine(it) }

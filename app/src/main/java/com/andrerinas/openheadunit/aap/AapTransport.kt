@@ -96,6 +96,7 @@ class AapTransport(
      */
     private var clusterFocusPending = false
     private var mainVideoStreaming = false
+    @Volatile internal var videoChannelSetupComplete = false
     private val releaseClusterFocusRunnable = Runnable { releaseClusterFocus() }
     private var sendThread: HandlerThread? = null
     private var pollThread: HandlerThread? = null
@@ -474,12 +475,15 @@ class AapTransport(
         ba.data[1] = data[1]
         Utils.intToBytes(ba.limit - AapMessage.HEADER_SIZE, 2, ba.data)
 
-        val size = connection?.sendBlocking(ba.data, ba.limit, 250) ?: -1
+        val size = connection?.sendBlocking(ba.data, ba.limit, 2000) ?: -1
 
         // Silent until it matters. A failed write here is how "the ByeBye went out" and "the link
         // was already gone" tell themselves apart, which is the whole question for a teardown
         // racing an interface going down.
-        if (size < 0) AppLog.w("AapTransport: send failed (ret=$size); the link is already gone")
+        if (size < 0) {
+            val ch = data[0].toInt() and 0xFF
+            AppLog.w("AapTransport: send failed (ret=$size, ch=$ch, plainLen=$length, encLen=${ba.limit}); the link is already gone")
+        }
 
         if (AppLog.LOG_VERBOSE) {
             AppLog.v("Sent size: %d", size)
@@ -516,6 +520,10 @@ class AapTransport(
         aapAudio.releaseAllFocus()
         aapVideo.release()
         if (clusterVideoUsed) {
+            com.andrerinas.openheadunit.cluster.ClusterMapController.stop(
+                com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.ANDROID_AUTO,
+                context,
+            )
             clusterVideo.release()
             com.andrerinas.openheadunit.App.provide(context).clusterVideoDecoder.stop("session ended")
         }
@@ -556,6 +564,7 @@ class AapTransport(
         AppLog.i("Start Aap transport handshake for $connection")
         this.connection = connection
         wasUserExit = false
+        videoChannelSetupComplete = false
         // This object outlives a session and is re-armed for the next one, so a stamp left by the
         // previous phone would read as a live link for the first seconds of this one.
         lastMessageReceivedMs = 0L
@@ -812,6 +821,13 @@ class AapTransport(
     internal fun hasVideoSurface(): Boolean = videoDecoder.hasValidSurface()
 
     internal fun gainVideoFocus() {
+        videoChannelSetupComplete = true
+        if (hasVideoSurface()) {
+            AppLog.i("Video channel setup complete and surface is ready -> sending post-setup VideoFocusEvent(PROJECTED, unsolicited=true)")
+            send(VideoFocusEvent(gain = true, unsolicited = true))
+        } else {
+            AppLog.i("Video channel setup complete, waiting for projection surface")
+        }
         context.sendBroadcast(ProjectionActivityRequest())
     }
 
@@ -829,6 +845,7 @@ class AapTransport(
     /** The phone set up the dashboard sink: grant it focus now, or once the main screen streams. */
     @Synchronized
     internal fun requestClusterFocus() {
+        com.andrerinas.openheadunit.cluster.ClusterMapController.startForAndroidAuto(context)
         if (!mainVideoStreaming) {
             if (!clusterFocusPending) AppLog.i("Dashboard video focus held until the main screen streams")
             clusterFocusPending = true
@@ -854,6 +871,7 @@ class AapTransport(
         if (!clusterFocusPending) return
         clusterFocusPending = false
         AppLog.i("Granting dashboard video focus")
+        com.andrerinas.openheadunit.cluster.ClusterMapController.startForAndroidAuto(context)
         send(VideoFocusEvent(gain = true, unsolicited = true, channel = Channel.ID_CLUSTER_VID))
     }
 

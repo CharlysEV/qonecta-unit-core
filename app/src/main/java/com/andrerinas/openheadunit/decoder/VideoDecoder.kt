@@ -1771,7 +1771,7 @@ class VideoDecoder(
      */
     private fun outputThreadLoop() {
         AppLog.i("Output thread started")
-        val pacer = if (Build.VERSION.SDK_INT >= 21 && settings.viewMode == Settings.ViewMode.SURFACE)
+        val pacer = if (Build.VERSION.SDK_INT >= 21)
             FrameReleasePacer(settings.displayRefreshRate) else null
         fun releaseFrame(codec: MediaCodec, index: Int): Boolean {
             if (pacer == null) {
@@ -1834,8 +1834,8 @@ class VideoDecoder(
                     }
 
                     var alsoRendered = 0
-                    val firstToRender = if (readyCount > 2)
-                        readyCount - if (pacer != null) 2 else 1 else 0
+                    val firstToRender = if (pacer != null) { if (readyCount > 2) readyCount - 2 else 0 } else { if (readyCount > 1) readyCount - 1 else 0 }
+
                     for (i in 0 until firstToRender) {
                         currentCodec.releaseOutputBuffer(readyIndices[i], false)
                     }

@@ -1,29 +1,506 @@
-<?xml version="1.0" ?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true" android:background="@color/da_background">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="32dp">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
-            <ImageView android:layout_width="36dp" android:layout_height="36dp" android:src="@drawable/ic_android_auto" android:importantForAccessibility="no"/>
-            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="14dp" android:text="@string/da_brand" android:textSize="26sp" android:textColor="@color/da_text" android:fontFamily="sans-serif-medium"/>
-            <com.google.android.material.button.MaterialButton android:id="@+id/exit_button" style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="wrap_content" android:layout_height="56dp" android:text="@string/da_close" android:textColor="@color/da_muted"/>
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="@color/hql_bg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="36dp"
+        android:paddingEnd="36dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="28dp">
+
+        <!-- Cabecera superior estilo Qonecta+ C10 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:src="@drawable/ic_android_auto"
+                android:importantForAccessibility="no" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="16dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/da_brand"
+                    android:textSize="30sp"
+                    android:textColor="@color/hql_text"
+                    android:fontFamily="sans-serif-medium"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/home_c10_telemetry_subtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="LEAPMOTOR C10 EDITION  ·  ANDROID AUTO  ·  APPLE CARPLAY  ·  QONECTA+ EXTENDIDO"
+                    android:textSize="13sp"
+                    android:textColor="@color/hql_accent"
+                    android:letterSpacing="0.1" />
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/exit_button"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="56dp"
+                android:paddingStart="22dp"
+                android:paddingEnd="22dp"
+                android:textSize="18sp"
+                android:textAllCaps="false"
+                android:text="@string/da_close"
+                android:textColor="@color/hql_text"
+                app:strokeColor="@color/hql_outline"
+                app:strokeWidth="2dp"
+                app:cornerRadius="18dp" />
         </LinearLayout>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal" android:gravity="center_vertical" android:baselineAligned="false" android:paddingTop="24dp" android:paddingBottom="16dp">
-            <LinearLayout android:layout_width="0dp" android:layout_weight="1.6" android:layout_height="wrap_content" android:orientation="vertical">
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/da_tagline" android:textSize="12sp" android:textColor="@color/da_accent" android:letterSpacing="0.16"/>
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/da_headline" android:textSize="42sp" android:textColor="@color/da_text" android:fontFamily="sans-serif-medium" android:layout_marginTop="14dp"/>
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/da_description" android:textSize="19sp" android:textColor="@color/da_muted" android:lineSpacingExtra="6dp" android:layout_marginTop="16dp"/>
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="26dp" android:orientation="vertical" android:padding="24dp" android:background="@drawable/da_card">
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/da_wireless" android:textSize="12sp" android:textColor="@color/da_accent" android:letterSpacing="0.1"/>
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/da_ready" android:textSize="24sp" android:textColor="@color/da_text" android:id="@+id/connection_status" android:accessibilityLiveRegion="polite" android:layout_marginTop="12dp"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/wifi_button" android:layout_width="match_parent" android:layout_height="68dp" android:layout_marginTop="12dp" android:text="@string/da_connect" android:textSize="18sp" android:textAllCaps="false" android:gravity="center" android:textColor="@color/da_background" app:backgroundTint="@color/da_accent" app:cornerRadius="20dp" app:icon="@drawable/ic_android_auto" app:iconTint="@color/da_background" app:iconGravity="textStart" app:iconPadding="12dp"/>
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/da_hint" android:textSize="15sp" android:textColor="@color/da_muted" android:layout_marginTop="12dp" android:lineSpacingExtra="4dp"/>
+
+        <!-- Aviso automático solo si se elige un modo Wi-Fi y el Wi-Fi del C10 está apagado -->
+        <LinearLayout
+            android:id="@+id/wifi_conflict_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="16dp"
+            android:background="@drawable/da_card"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/wifi_conflict_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="16dp"
+                android:text="📡 El Wi-Fi del coche está apagado: es necesario tener el Wi-Fi encendido para usar Wi-Fi Direct 5 GHz o conectarse al Hotspot del móvil."
+                android:textSize="16sp"
+                android:textColor="#FFB547"
+                android:fontFamily="sans-serif-medium" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/wifi_conflict_action"
+                android:layout_width="wrap_content"
+                android:layout_height="52dp"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:text="Encender Wi-Fi"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:textColor="@color/hql_bg"
+                app:backgroundTint="#FFB547"
+                app:cornerRadius="16dp" />
+        </LinearLayout>
+
+        <!-- Cuerpo principal en 2 columnas -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:baselineAligned="false"
+            android:paddingTop="18dp"
+            android:paddingBottom="8dp">
+
+            <!-- Columna izquierda: Estado general + Bloque aparte de Ajustes y Elección de Menú Extendido -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_weight="1.15"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- Tarjeta Estado del Sistema -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="26dp"
+                    android:background="@drawable/da_card">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="CONEXIÓN INALÁMBRICA Y POR CABLE"
+                            android:textSize="14sp"
+                            android:textColor="@color/hql_accent"
+                            android:fontFamily="sans-serif-medium"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.12" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="5 GHz Wi-Fi Direct · BT · USB"
+                            android:textSize="14sp"
+                            android:textColor="@color/hql_text_dim" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/connection_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="@string/da_ready"
+                        android:textSize="30sp"
+                        android:textColor="@color/hql_text"
+                        android:fontFamily="sans-serif-medium"
+                        android:textStyle="bold"
+                        android:accessibilityLiveRegion="polite" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="SELECCIONA EL MODO DE CONEXIÓN (SEPARADOS Y SIN INTERFERENCIAS):"
+                        android:textSize="12sp"
+                        android:textColor="@color/hql_accent"
+                        android:fontFamily="sans-serif-medium"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.08" />
+
+                    <!-- Fila 1 de modos: 1. Wi-Fi Direct 5 GHz | 2. Hotspot del Móvil -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/mode_btn_wifi_direct"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="54dp"
+                            android:layout_marginEnd="8dp"
+                            android:text="📡 1. Wi-Fi Direct 5G"
+                            android:textSize="15sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="false"
+                            android:textColor="@color/hql_bg"
+                            app:backgroundTint="@color/hql_accent"
+                            app:strokeColor="@color/hql_accent"
+                            app:strokeWidth="2dp"
+                            app:cornerRadius="14dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/mode_btn_hotspot"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="54dp"
+                            android:text="🌐 2. Hotspot Móvil"
+                            android:textSize="15sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="false"
+                            android:textColor="@color/hql_text"
+                            app:backgroundTint="@color/hql_surface_top"
+                            app:strokeColor="@color/hql_outline"
+                            app:strokeWidth="2dp"
+                            app:cornerRadius="14dp" />
+                    </LinearLayout>
+
+                    <!-- Fila 2 de modos: 3. Cable USB | 4. Bluetooth Datos (Companion) -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/mode_btn_usb"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="54dp"
+                            android:layout_marginEnd="8dp"
+                            android:text="🔌 3. Cable USB"
+                            android:textSize="15sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="false"
+                            android:textColor="@color/hql_text"
+                            app:backgroundTint="@color/hql_surface_top"
+                            app:strokeColor="@color/hql_outline"
+                            app:strokeWidth="2dp"
+                            app:cornerRadius="14dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/mode_btn_bt_companion"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="54dp"
+                            android:text="🔵 4. Datos BT Companion"
+                            android:textSize="15sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="false"
+                            android:textColor="@color/hql_text"
+                            app:backgroundTint="@color/hql_surface_top"
+                            app:strokeColor="@color/hql_outline"
+                            app:strokeWidth="2dp"
+                            app:cornerRadius="14dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/mode_active_explanation"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="📡 Modo 1 (Wi-Fi Direct 5 GHz): enlace directo coche-móvil con Wi-Fi del coche encendido y sin doble escaneo."
+                        android:textSize="15sp"
+                        android:textColor="@color/hql_text_dim"
+                        android:lineSpacingExtra="3dp" />
+                </LinearLayout>
+
+                <!-- Bloque aparte: Ajustes y Elección de Menú Extendido -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:orientation="vertical"
+                    android:padding="24dp"
+                    android:background="@drawable/da_card">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="AJUSTES Y ELECCIÓN DE MENÚ EXTENDIDO"
+                        android:textSize="13sp"
+                        android:textColor="@color/hql_accent"
+                        android:fontFamily="sans-serif-medium"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.1" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Configuración general y modo del Menú Extendido Qonecta+ para Android Auto y Apple CarPlay"
+                        android:textSize="16sp"
+                        android:textColor="@color/hql_text_dim" />
+
+                    <!-- Fila de Elección de Menú Extendido -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/extended_mode_toggle_button"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="60dp"
+                            android:layout_marginEnd="10dp"
+                            android:text="Extendido: Activado"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="false"
+                            android:textColor="@color/hql_accent"
+                            app:backgroundTint="@color/hql_surface_top"
+                            app:strokeColor="@color/hql_accent"
+                            app:strokeWidth="2dp"
+                            app:cornerRadius="16dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/cluster_page_button"
+                            android:layout_width="wrap_content"
+                            android:layout_height="60dp"
+                            android:layout_marginEnd="10dp"
+                            android:paddingStart="16dp"
+                            android:paddingEnd="16dp"
+                            android:text="Cuadro: Mapa"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="false"
+                            android:textColor="@color/hql_text"
+                            app:backgroundTint="@color/hql_surface_top"
+                            app:strokeColor="@color/hql_outline"
+                            app:strokeWidth="2dp"
+                            app:cornerRadius="16dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/extended_hub_button"
+                            android:layout_width="wrap_content"
+                            android:layout_height="60dp"
+                            android:paddingStart="20dp"
+                            android:paddingEnd="20dp"
+                            android:text="Abrir Extendido"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="false"
+                            android:textColor="@color/hql_bg"
+                            app:backgroundTint="@color/hql_accent"
+                            app:cornerRadius="16dp" />
+                    </LinearLayout>
+
+                    <!-- Botón de Ajustes aparte -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/settings_button"
+                        android:layout_width="match_parent"
+                        android:layout_height="66dp"
+                        android:layout_marginTop="12dp"
+                        android:text="Ajustes y Menú Extendido"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:gravity="center"
+                        android:textColor="@color/hql_text"
+                        app:backgroundTint="@color/hql_surface_top"
+                        app:strokeColor="@color/hql_edge"
+                        app:strokeWidth="2dp"
+                        app:cornerRadius="18dp"
+                        app:icon="@drawable/ic_settings_white"
+                        app:iconSize="26dp"
+                        app:iconTint="@color/hql_accent"
+                        app:iconGravity="textStart"
+                        app:iconPadding="12dp" />
                 </LinearLayout>
             </LinearLayout>
-            <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:layout_marginStart="40dp" android:orientation="vertical">
-                <ImageView android:layout_width="96dp" android:layout_height="96dp" android:layout_gravity="center_horizontal" android:layout_marginBottom="20dp" android:src="@drawable/ic_android_auto" android:importantForAccessibility="no"/>
-                <com.google.android.material.button.MaterialButton android:id="@+id/usb_button" android:layout_width="match_parent" android:layout_height="68dp" android:layout_marginTop="12dp" android:text="@string/da_usb" android:textSize="18sp" android:textAllCaps="false" android:gravity="center" android:textColor="@color/da_text" app:backgroundTint="@color/da_surface" app:cornerRadius="20dp" app:icon="@drawable/ic_usb_white" app:iconTint="@color/da_accent" app:iconGravity="textStart" app:iconPadding="12dp"/>
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/da_usb_hint" android:textSize="14sp" android:textColor="@color/da_muted" android:gravity="center" android:layout_marginTop="6dp"/>
-                <com.google.android.material.button.MaterialButton android:id="@+id/settings_button" android:layout_width="match_parent" android:layout_height="68dp" android:layout_marginTop="12dp" android:text="@string/da_settings" android:textSize="18sp" android:textAllCaps="false" android:gravity="center" android:textColor="@color/da_text" app:backgroundTint="@color/da_surface" app:cornerRadius="20dp" app:icon="@drawable/ic_settings_white" app:iconTint="@color/da_accent" app:iconGravity="textStart" app:iconPadding="12dp"/>
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/da_settings_hint" android:textSize="14sp" android:textColor="@color/da_muted" android:gravity="center" android:layout_marginTop="6dp"/>
+
+            <!-- Columna derecha: Lista de conexión (1. Android Auto, 2. Apple CarPlay, 3. Conectar por USB) -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="28dp"
+                android:orientation="vertical">
+
+                <!-- 1. Android Auto -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="18dp"
+                    android:background="@drawable/da_card">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/wifi_button"
+                        android:layout_width="match_parent"
+                        android:layout_height="72dp"
+                        android:text="Android Auto"
+                        android:textSize="23sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:gravity="center"
+                        android:textColor="@color/hql_bg"
+                        app:backgroundTint="@color/hql_accent"
+                        app:cornerRadius="18dp"
+                        app:icon="@drawable/ic_android_auto"
+                        app:iconSize="28dp"
+                        app:iconTint="@color/hql_bg"
+                        app:iconGravity="textStart"
+                        app:iconPadding="14dp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Conexión inalámbrica por Wi-Fi 5 GHz y Bluetooth"
+                        android:textSize="15sp"
+                        android:textColor="@color/hql_text_dim"
+                        android:gravity="center" />
+                </LinearLayout>
+
+                <!-- 2. Apple CarPlay -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:orientation="vertical"
+                    android:padding="18dp"
+                    android:background="@drawable/da_card">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/carplay_button"
+                        android:layout_width="match_parent"
+                        android:layout_height="72dp"
+                        android:text="Apple CarPlay"
+                        android:textSize="22sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:gravity="center"
+                        android:textColor="@color/hql_text"
+                        app:backgroundTint="@color/hql_surface_top"
+                        app:strokeColor="@color/hql_edge"
+                        app:strokeWidth="2dp"
+                        app:cornerRadius="18dp"
+                        app:icon="@drawable/ic_carplay"
+                        app:iconSize="28dp"
+                        app:iconTint="@null"
+                        app:iconGravity="textStart"
+                        app:iconPadding="14dp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Conexión inalámbrica para iPhone por Wi-Fi y Bluetooth"
+                        android:textSize="15sp"
+                        android:textColor="@color/hql_text_dim"
+                        android:gravity="center" />
+                </LinearLayout>
+
+                <!-- 3. Conectar por USB (con coletilla Android Auto y Apple CarPlay) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:orientation="vertical"
+                    android:padding="18dp"
+                    android:background="@drawable/da_card">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/usb_button"
+                        android:layout_width="match_parent"
+                        android:layout_height="72dp"
+                        android:text="@string/da_usb"
+                        android:textSize="22sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:gravity="center"
+                        android:textColor="@color/hql_text"
+                        app:backgroundTint="@color/hql_surface_top"
+                        app:strokeColor="@color/hql_edge"
+                        app:strokeWidth="2dp"
+                        app:cornerRadius="18dp"
+                        app:icon="@drawable/ic_usb_white"
+                        app:iconSize="26dp"
+                        app:iconTint="@color/hql_accent"
+                        app:iconGravity="textStart"
+                        app:iconPadding="12dp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Android Auto y Apple CarPlay"
+                        android:textSize="16sp"
+                        android:textColor="@color/hql_accent"
+                        android:fontFamily="sans-serif-medium"
+                        android:textStyle="bold"
+                        android:gravity="center" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>

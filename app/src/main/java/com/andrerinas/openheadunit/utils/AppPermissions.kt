@@ -124,8 +124,13 @@ object AppPermissions {
         ),
     )
 
-    /** Registry entries relevant on the current device. */
-    fun visible(): List<Entry> = ALL.filter { it.applies() }
+    /**
+     * Registry entries relevant on the current device.
+     * Special AppOps settings screens (SYSTEM_ALERT_WINDOW and WRITE_SETTINGS) are excluded
+     * because Android Automotive OS head units (such as Leapmotor C10) block or omit the system UI
+     * for toggling them and neither is required for USB or Wi-Fi Direct projection.
+     */
+    fun visible(): List<Entry> = ALL.filter { it.applies() && it.kind == Kind.NORMAL }
 
     /**
      * Every not-yet-granted normal permission across the visible entries, de-duplicated, so they

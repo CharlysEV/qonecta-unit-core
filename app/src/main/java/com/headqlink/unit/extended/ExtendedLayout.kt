@@ -39,6 +39,8 @@ object ExtendedLayout {
     const val DEFAULT_PERCENT = 30
     const val MIN_PERCENT = 20
     const val MAX_PERCENT = 40
+    /** % objetivo en Modo Pantalla Partida (Mapa + TV / Karaoke / Coche), limitado por minAaW (CarUi.SPLIT_MIN_AA_DP). */
+    const val SPLIT_PERCENT = 48
 
     /**
      * Ancho mínimo de AA: 800 dp y 1,15 veces el alto (Qonecta+, CarUi.SPLIT_MIN_AA_DP y
@@ -69,6 +71,8 @@ object ExtendedLayout {
         val dpi: Int,
         /** % de la pantalla para el panel; se acota entre MIN_PERCENT y MAX_PERCENT. */
         val percent: Int = DEFAULT_PERCENT,
+        /** En modo Pantalla Partida (Qonecta+ Split-Screen), usa SPLIT_PERCENT (48%) acotado por minAaW. */
+        val splitMode: Boolean = false,
     )
 
     data class Result(
@@ -111,7 +115,7 @@ object ExtendedLayout {
             ceilDiv(MIN_AA_DP.toLong() * dpi, 160L),
             ceilDiv(MIN_AA_ASPECT_PCT.toLong() * max(uiH, 0), 100L),
         ).toInt()
-        val pct = clampPercent(input.percent)
+        val pct = if (input.splitMode) SPLIT_PERCENT else clampPercent(input.percent)
         val wanted = if (viewW > 0) ((viewW.toLong() * pct + 50L) / 100L).toInt() else 0
 
         fun without() = Result(

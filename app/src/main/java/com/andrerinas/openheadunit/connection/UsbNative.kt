@@ -20,6 +20,19 @@ class UsbNative {
                 AppLog.e("UsbNative: Failed to load native libraries: ${e.message}")
             }
         }
+
+        @JvmStatic
+        fun resetDeviceFd(fd: Int): Int {
+            return try {
+                nativeResetFd(fd)
+            } catch (e: Throwable) {
+                AppLog.e("UsbNative: Exception during resetDeviceFd(fd=$fd): ${e.message}")
+                -1
+            }
+        }
+
+        @JvmStatic
+        private external fun nativeResetFd(fd: Int): Int
     }
 
     init {

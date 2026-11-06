@@ -155,6 +155,11 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
                 )
             ) return
 
+            if (!commManager.isVideoChannelSetup) {
+                watchdogHandler.postDelayed(this, 500)
+                return
+            }
+
             AppLog.w("Watchdog: No video received yet. Requesting Keyframe (Unsolicited Focus)...")
             // Shares one throttle clock with the reconnecting watchdog's mid-session
             // re-request, so the two never double-fire across the overlay transition.
@@ -868,6 +873,33 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             }
         }
 
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                AapService.usbSwitchPrompt.collect { prompt ->
+                    if (prompt == null) return@collect
+                    androidx.appcompat.app.AlertDialog.Builder(this@AapProjectionActivity)
+                        .setTitle("🔌 Cable USB detectado (${prompt.deviceName})")
+                        .setMessage(
+                            "Has conectado el móvil por cable USB mientras hay una conexión o modo Wi-Fi activo.\n\n" +
+                                "Para usar la conexión por cable sin interferencias ni saltos, ¿quieres cerrar la conexión Wi-Fi y cambiar a conexión por Cable USB?"
+                        )
+                        .setPositiveButton("🔌 Cerrar Wi-Fi y usar Cable USB") { _, _ ->
+                            AapService.usbSwitchPrompt.value = null
+                            startService(Intent(this@AapProjectionActivity, AapService::class.java).apply {
+                                action = AapService.ACTION_SWITCH_TO_USB
+                            })
+                        }
+                        .setNegativeButton("📡 Seguir por Wi-Fi") { _, _ ->
+                            AapService.usbSwitchPrompt.value = null
+                        }
+                        .setOnCancelListener {
+                            AapService.usbSwitchPrompt.value = null
+                        }
+                        .show()
+                }
+            }
+        }
+
         ContextCompat.registerReceiver(this, finishReceiver, android.content.IntentFilter("com.andrerinas.openheadunit.ACTION_FINISH_ACTIVITIES"), ContextCompat.RECEIVER_NOT_EXPORTED)
         isFinishReceiverRegistered = true
 
@@ -1036,6 +1068,10 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         AppLog.i("AapProjectionActivity: onNewIntent received")
+        if (intent.getBooleanExtra(EXTRA_FOCUS, false) && isSurfaceSet && commManager.isVideoChannelSetup && videoDecoder.lastFrameRenderedMs == 0L) {
+            AppLog.i("AapProjectionActivity: EXTRA_FOCUS received with ready surface -> sending VideoFocusEvent(PROJECTED, unsolicited=true)")
+            commManager.send(VideoFocusEvent(gain = true, unsolicited = true))
+        }
         // Qonecta Unit: singleTask, así que los extras DEMO de un am start posterior llegan aquí (solo debug)
         extendedUi?.applyIntent(intent)
     }
@@ -1714,12 +1750,14 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             settings.stretchToFill
         }
 
+        val touchOffsetX = extendedUi?.aaTouchOffsetX() ?: 0f
         val pointerData = mutableListOf<Triple<Int, Int, Int>>()
         repeat(event.pointerCount) { pointerIndex ->
             val pointerId = event.getPointerId(pointerIndex)
+            val shiftedEventX = (event.getX(pointerIndex) - touchOffsetX).coerceAtLeast(0f)
             if (measuredTouchSurfaceEnabled) {
                 val corrected = TouchCoordinateMapper.map(
-                    rawX = event.getX(pointerIndex),
+                    rawX = shiftedEventX,
                     rawY = event.getY(pointerIndex),
                     inputSurfaceWidth = viewW,
                     inputSurfaceHeight = viewH,
@@ -1733,7 +1771,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
 
                 pointerData.add(Triple(pointerId, corrected.x, corrected.y))
             } else {
-                val rawPx = event.getX(pointerIndex)
+                val rawPx = shiftedEventX
                 val px = if (settings.hudMirroring) (viewW - rawPx) else rawPx
                 val py = event.getY(pointerIndex)
 

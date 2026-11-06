@@ -25,7 +25,77 @@ class UsbDeviceCompat(val wrappedDevice: UsbDevice) {
         private const val USB_VID_GOO = 0x18D1   // 6353   Nexus or ACC mode, see PID to distinguish
         private const val USB_PID_ACC = 0x2D00      // Accessory                  100
         private const val USB_PID_ACC_ADB = 0x2D01      // Accessory + ADB            110
-        private const val APPLE_VID = 0x05AC
+        const val APPLE_VID = 0x05AC
+
+        /**
+         * Internal USB peripherals on the Leapmotor C10 (`msmnile`) that must never be
+         * treated as a connected phone or switched to AOA mode.
+         */
+        private val IGNORED_C10_VID_PIDS: Set<Pair<Int, Int>> = setOf(
+            0x0424 to 0x4911, // Microchip USB hub (1060:18705)
+            0x0424 to 0x49A0, // Microchip bridge (1060:18848)
+            0x2996 to 0x0105  // Internal automotive peripheral (10646:261)
+        )
+
+        private val IGNORED_C10_VIDS: Set<Int> = setOf(
+            0x2996, // 10646
+            0x2E88  // 11912
+        )
+
+        /**
+         * Known Android phone Vendor IDs. Used to identify phones even when connected in
+         * "Charging Only" mode where MTP/ADB/PTP USB interfaces are not exposed yet.
+         */
+        private val KNOWN_PHONE_VENDOR_IDS: Set<Int> = setOf(
+            0x04E8, // 1256  Samsung
+            0x18D1, // 6353  Google
+            0x22B8, // 8888  Motorola
+            0x2717, // 10007 Xiaomi
+            0x12D1, // 4817  Huawei
+            0x339B, // 13211 Honor
+            0x2A70, // 10864 OnePlus
+            0x22D9, // 8921  OPPO / Realme
+            0x2D95, // 11669 vivo
+            0x1004, // 4100  LG
+            0x0FCE, // 4046  Sony
+            0x0BB4, // 2996  HTC
+            0x19D2, // 6610  ZTE
+            0x0B05, // 2821  ASUS
+            0x17EF, // 6127  Lenovo
+            0x2E04, // 11780 Nothing
+            0x1BBB, // 7099  TCL / Alcatel
+            0x2A45, // 10821 Meizu
+            0x29A9, // 10665 Smartisan
+            0x0E8D, // 3725  MediaTek
+            0x05C6, // 1478  Qualcomm
+            0x1CD3  // 7379  Fairphone / OEM
+        )
+
+        fun isAppleDevice(vendorId: Int): Boolean = vendorId == APPLE_VID
+
+        fun isAppleDevice(device: UsbDevice): Boolean = isAppleDevice(device.vendorId)
+
+        fun isIgnoredInternalVidPid(vendorId: Int, productId: Int): Boolean {
+            if (vendorId in IGNORED_C10_VIDS) return true
+            if ((vendorId to productId) in IGNORED_C10_VID_PIDS) return true
+            return false
+        }
+
+        fun isIgnoredInternalDevice(device: UsbDevice): Boolean {
+            if (isIgnoredInternalVidPid(device.vendorId, device.productId)) return true
+            for (i in 0 until device.interfaceCount) {
+                if (device.getInterface(i).interfaceClass == UsbConstants.USB_CLASS_HUB) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        fun isKnownPhoneVendor(vendorId: Int, productId: Int): Boolean =
+            !isIgnoredInternalVidPid(vendorId, productId) && vendorId in KNOWN_PHONE_VENDOR_IDS
+
+        fun isKnownPhoneVendor(device: UsbDevice): Boolean =
+            !isIgnoredInternalDevice(device) && device.vendorId in KNOWN_PHONE_VENDOR_IDS
 
         fun getUniqueName(device: UsbDevice): String {
             val vendorId = device.vendorId
@@ -56,10 +126,16 @@ class UsbDeviceCompat(val wrappedDevice: UsbDevice) {
         }
 
         fun isAndroidDevice(device: UsbDevice): Boolean {
-            // Apple does not support Android Auto
+            // Apple does not support Android Auto (handled by CarPlay)
             if (device.vendorId == APPLE_VID) return false
 
+            // Exclude Leapmotor C10 internal hubs/bridges
+            if (isIgnoredInternalDevice(device)) return false
+
             if (isInAccessoryMode(device)) return true
+
+            // Recognize known Android phone OEMs even in charge-only USB mode
+            if (isKnownPhoneVendor(device)) return true
 
             return hasAndroidInterface(device)
         }

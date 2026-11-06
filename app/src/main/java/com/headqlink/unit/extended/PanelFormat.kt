@@ -17,18 +17,18 @@ import kotlin.math.roundToLong
  * y así las pruebas no necesitan recursos.
  */
 object PanelFormat {
-    // Paleta (hql_colors.xml)
-    const val BG = 0xFF0A0E14.toInt()
-    const val SURFACE = 0xFF111821.toInt()
-    const val SURFACE_HI = 0xFF17202B.toInt()
-    const val SURFACE_TOP = 0xFF1E2935.toInt()
-    const val OUTLINE = 0xFF243140.toInt()
-    const val EDGE = 0xFF2E4256.toInt()
-    const val TEXT = 0xFFEAF2F7.toInt()
-    const val DIM = 0xFFA3B3C2.toInt()
-    const val FAINT = 0xFF8296A9.toInt()
+    // Paleta dinámica sincronizada con QonectaTheme (por defecto «Eléctrico» nocturno de hql_colors.xml)
+    val BG: Int get() = QonectaTheme.bg
+    val SURFACE: Int get() = QonectaTheme.surface
+    val SURFACE_HI: Int get() = QonectaTheme.surfaceHi
+    val SURFACE_TOP: Int get() = QonectaTheme.surfaceTop
+    val OUTLINE: Int get() = QonectaTheme.outline
+    val EDGE: Int get() = QonectaTheme.edge
+    val TEXT: Int get() = QonectaTheme.text
+    val DIM: Int get() = QonectaTheme.dim
+    val FAINT: Int get() = QonectaTheme.faint
     const val MUTED = 0xFF5B6B7C.toInt()
-    const val ACCENT = 0xFF00E5C7.toInt()
+    val ACCENT: Int get() = QonectaTheme.accent
     const val AMBER = 0xFFFFB547.toInt()
     const val RED = 0xFFFF6B7A.toInt()
 

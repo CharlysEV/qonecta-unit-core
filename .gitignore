@@ -95,3 +95,4 @@ site/assets/downloads.json
 # Qonecta Unit: la clave de firma y los APK viajan con la carpeta, nunca a git
 firma/
 apk/
+Pruebas brasil/

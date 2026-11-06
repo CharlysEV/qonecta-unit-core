@@ -10,13 +10,29 @@ object LocalHotspotPolicy {
         candidates: List<ApInterfaceCandidate>,
         previousAddresses: Set<String>,
         upstreamInterfaces: Set<String> = emptySet(),
-    ): ApInterfaceCandidate? =
-        candidates.filter {
+    ): ApInterfaceCandidate? {
+        val standard = candidates.filter {
             it.isUp && !it.isLoopback && it.siteLocalIpv4 != null &&
                 it.siteLocalIpv4 !in previousAddresses &&
                 it.name !in upstreamInterfaces &&
                 it.name.matches(Regex("(?:ap|wlan|swlan|softap)[0-9]+"))
         }.singleOrNull()
+        if (standard != null) return standard
+
+        // On head units like QTI Leapmotor C10 that have no wlan*/ap*/softap* interface in the kernel
+        // at all and host LocalOnlyHotspot on p2p0 (ACTIVE_LOCAL_ONLY=[p2p0]), allow p2p0.
+        val hasAnyStandardWifiIface = candidates.any {
+            it.name.matches(Regex("(?:ap|wlan|swlan|softap)[0-9]+"))
+        }
+        if (!hasAnyStandardWifiIface) {
+            return candidates.filter {
+                it.isUp && !it.isLoopback && it.siteLocalIpv4 != null &&
+                    it.name !in upstreamInterfaces &&
+                    it.name.matches(Regex("p2p[0-9]+"))
+            }.singleOrNull()
+        }
+        return null
+    }
 
     fun eui64Mac(bytes: ByteArray): String? {
         if (bytes.size != 16 || bytes[0] != 0xfe.toByte() || bytes[1].toInt() and 0xc0 != 0x80 ||

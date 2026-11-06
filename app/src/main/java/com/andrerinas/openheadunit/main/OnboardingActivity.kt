@@ -15,6 +15,7 @@ import android.widget.TextView
 import android.widget.ViewFlipper
 import com.andrerinas.openheadunit.App
 import com.andrerinas.openheadunit.R
+import com.andrerinas.openheadunit.aap.AapService
 import com.andrerinas.openheadunit.app.BaseActivity
 import com.andrerinas.openheadunit.decoder.VideoDecoder
 import com.andrerinas.openheadunit.utils.AppPermissions
@@ -68,10 +69,35 @@ class OnboardingActivity : BaseActivity() {
     private var permissionBinder: PermissionRowBinder? = null
     private val permNormalLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissionBinder?.rebind() }
+    ) {
+        permissionBinder?.rebind()
+        notifyWirelessRefreshAfterPermissionGrant()
+    }
     private val permSpecialLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { permissionBinder?.rebind() }
+
+    private fun notifyWirelessRefreshAfterPermissionGrant() {
+        try {
+            val intent = Intent(this, AapService::class.java).apply {
+                action = AapService.ACTION_START_WIRELESS_SCAN
+            }
+            startService(intent)
+        } catch (_: Exception) {}
+    }
+
+    override fun attachBaseContext(newBase: android.content.Context) {
+        val scale = Settings(newBase).uiScaleSettingsPercent / 100.0f
+        if (scale != 1.0f && Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            val cfg = Configuration(newBase.resources.configuration)
+            val metrics = newBase.resources.displayMetrics
+            cfg.densityDpi = (metrics.densityDpi * scale).toInt()
+            val ctx = newBase.createConfigurationContext(cfg)
+            super.attachBaseContext(ctx)
+        } else {
+            super.attachBaseContext(newBase)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,7 +126,7 @@ class OnboardingActivity : BaseActivity() {
         selectedPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
         selectedSize = estimateSizePreset()
 
-        if (settings.connectionModes.isEmpty()) {
+        if (settings.connectionModes.isEmpty() || isStepHidden(STEP_CONNECTION)) {
             settings.connectionModes = setOf(Settings.ConnectionMode.WIFI, Settings.ConnectionMode.USB)
         }
         buildStepperDots()
@@ -179,9 +205,9 @@ class OnboardingActivity : BaseActivity() {
         stepper.removeAllViews()
         repeat(visibleSteps().size) {
             val dot = View(this)
-            val h = (5 * resources.displayMetrics.density).toInt()
+            val h = (8 * resources.displayMetrics.density).toInt()
             val lp = LinearLayout.LayoutParams(h, h)
-            lp.marginEnd = (6 * resources.displayMetrics.density).toInt()
+            lp.marginEnd = (8 * resources.displayMetrics.density).toInt()
             dot.layoutParams = lp
             stepper.addView(dot)
         }
@@ -198,10 +224,10 @@ class OnboardingActivity : BaseActivity() {
         for (i in steps.indices) {
             val dot = stepper.getChildAt(i) ?: continue
             val lp = dot.layoutParams as LinearLayout.LayoutParams
-            lp.width = ((if (i == currentPos) 26 else 8) * density).toInt()
+            lp.width = ((if (i == currentPos) 34 else 12) * density).toInt()
             dot.layoutParams = lp
             val bg = android.graphics.drawable.GradientDrawable()
-            bg.cornerRadius = 5 * density
+            bg.cornerRadius = 6 * density
             bg.setColor(if (i <= currentPos) active else inactive)
             dot.background = bg
         }
@@ -505,6 +531,7 @@ class OnboardingActivity : BaseActivity() {
         settings.hasCompletedSetupWizard = true
         settings.onboardingVersion = CURRENT_ONBOARDING_VERSION
         settings.commit()
+        notifyWirelessRefreshAfterPermissionGrant()
         finish()
     }
 
@@ -514,6 +541,7 @@ class OnboardingActivity : BaseActivity() {
         settings.hasCompletedSetupWizard = true
         settings.onboardingVersion = CURRENT_ONBOARDING_VERSION
         settings.commit()
+        notifyWirelessRefreshAfterPermissionGrant()
         startActivity(
             Intent(this, SettingsActivity::class.java)
                 .putExtra(SettingsActivity.EXTRA_DESTINATION, destinationId)

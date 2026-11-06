@@ -117,4 +117,40 @@ class ExtendedLayoutTest {
         assertEquals(0, r.panelPx)
         assertEquals(c10Full, r.margins(extendedMode = true))
     }
+
+    @Test
+    fun `modo Pantalla Partida C10 respeta minAaW de 1015 y da 905 de panel en 1920 y 1206 en 2560`() {
+        val r1920 = ExtendedLayout.compute(
+            ExtendedLayout.Input(
+                viewW = 1920,
+                negW = 1920,
+                negH = 1080,
+                full = c10Full,
+                dpi = 200,
+                splitMode = true,
+            ),
+        )
+        assertTrue(r1920.available)
+        assertEquals(1015, r1920.minAaW)
+        assertEquals(905, r1920.panelPx)
+        assertEquals(1015, r1920.aaVideoW)
+        assertEquals(905, r1920.extraR)
+        assertEquals(AaMargins(0, 99, 905, 99), r1920.extended)
+
+        val r2560 = ExtendedLayout.compute(
+            ExtendedLayout.Input(
+                viewW = 2560,
+                negW = 1920,
+                negH = 1080,
+                full = c10Full,
+                dpi = 200,
+                splitMode = true,
+            ),
+        )
+        assertTrue(r2560.available)
+        assertEquals(1206, r2560.panelPx)
+        assertEquals(1015, r2560.aaVideoW)
+        assertEquals(905, r2560.extraR)
+        assertEquals(AaMargins(0, 99, 905, 99), r2560.extended)
+    }
 }

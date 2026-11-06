@@ -135,6 +135,13 @@ class CommManager(
     /** Playback status from the phone (AAP media channel), includes current position. */
     var onAaPlaybackStatus: ((MediaPlayback.MediaPlaybackStatus) -> Unit)? = null
 
+    /**
+     * Direct callback invoked when an AAP handshake over USB times out or fails.
+     * Used by [com.andrerinas.openheadunit.aap.AapService] to reset a stale AOA accessory
+     * session immediately (since [ConnectionState.Error] is conflated away by [ disconnect ]).
+     */
+    var onUsbHandshakeTimeout: (() -> Unit)? = null
+
     /** @Volatile: written on IO thread, read on Main and IO threads. */
     @Volatile private var _transport: AapTransport? = null
 
@@ -210,6 +217,10 @@ class CommManager(
      */
     val lastAapMessageMs: Long
         get() = _transport?.lastMessageReceivedMs ?: 0L
+
+    /** `true` once `Channel.ID_VID` has received `MEDIA_MESSAGE_SETUP` in the current session. */
+    val isVideoChannelSetup: Boolean
+        get() = _transport?.videoChannelSetupComplete == true
 
     /**
      * `true` while a connection exists **or** one is being set up.
@@ -439,21 +450,29 @@ class CommManager(
                     _connectionState.emit(ConnectionState.HandshakeComplete)
                 } else {
                     val silent = transport?.lastHandshakeFailure == AapTransport.HandshakeFailure.PEER_SILENT
+                    val isUsb = !isWirelessSession
                     noteHandshakeOutcome(silent)
                     _connectionState.emit(
                         ConnectionState.Error(if (silent) ERROR_HANDSHAKE_PEER_SILENT else "Handshake failed")
                     )
                     disconnect()
+                    if (isUsb) {
+                        onUsbHandshakeTimeout?.invoke()
+                    }
                 }
             } else {
                 _connectionState.emit(ConnectionState.Error("Starting handshake without connection"))
             }
         } catch (e: Exception) {
+            val isUsb = !isWirelessSession
             // An exception is never the silent-peer case; clear the streak rather than leaving it
             // to age into a backoff that no longer describes what is happening.
             noteHandshakeOutcome(silent = false)
             _connectionState.emit(ConnectionState.Error("Handshake failed: ${e.message}"))
             disconnect()
+            if (isUsb) {
+                onUsbHandshakeTimeout?.invoke()
+            }
         }
     }
 
@@ -597,14 +616,21 @@ class CommManager(
      *                 a user's log readable.
      */
     fun sendKey(keyCode: Int, isPress: Boolean, downTime: Long? = null, source: String = "unknown") {
-        if (_connectionState.value !is ConnectionState.TransportStarted) {
-            return
-        }
-
         // 1. Remapping (Physical -> Logical)
         // Check if the physical keyCode is mapped to a logical action in settings.
         // If not mapped, we use the original keyCode as the logical code.
         var logicalCode = settings.keyCodes.entries.find { it.value == keyCode }?.key ?: keyCode
+
+        if (isPress && isPlayPauseKey(logicalCode)) {
+            if (com.andrerinas.openheadunit.cluster.ClusterMapController.onSteeringPlayPausePressed(context, downTime)) {
+                AppLog.i("CommManager: Steering wheel Play/Pause double-click -> cycled ClusterMap page")
+                return
+            }
+        }
+
+        if (_connectionState.value !is ConnectionState.TransportStarted) {
+            return
+        }
 
         // 2. Proprietary Key Filtering
         // If the key is proprietary (internal ID > 1000) and NOT mapped, we drop it.
@@ -694,6 +720,13 @@ class CommManager(
                code == KeyEvent.KEYCODE_MEDIA_REWIND
     }
 
+    private fun isPlayPauseKey(code: Int): Boolean {
+        return code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE ||
+               code == KeyEvent.KEYCODE_HEADSETHOOK ||
+               code == KeyEvent.KEYCODE_MEDIA_PLAY ||
+               code == KeyEvent.KEYCODE_MEDIA_PAUSE
+    }
+
     /**
      * [Legacy] Internal transport send. Use sendKey() for physical button inputs.
      * @deprecated Use sendKey(keyCode, isPress) for unified remapping and debouncing.
@@ -771,6 +804,22 @@ class CommManager(
         // moved off its fixed ~69s period. Kept because it costs one message and nothing has measured
         // the surface-mismatch path this serves without it.
         send(com.andrerinas.openheadunit.aap.protocol.messages.VideoFocusEvent(gain = true, unsolicited = true))
+    }
+
+    fun sendClusterUpdateUiConfigRequest(settings: com.andrerinas.openheadunit.utils.Settings) {
+        runCatching {
+            val uiConfig = com.andrerinas.openheadunit.aap.protocol.messages.ClusterDisplayServices.buildUiConfig720(settings)
+            val proto = com.andrerinas.openheadunit.aap.protocol.proto.Media.UpdateUiConfigRequest.newBuilder()
+                .setUiConfig(uiConfig)
+                .build()
+            val msg = object : com.andrerinas.openheadunit.aap.AapMessage(
+                com.andrerinas.openheadunit.aap.protocol.Channel.ID_CLUSTER_VID,
+                com.andrerinas.openheadunit.aap.protocol.proto.Media.MsgType.MEDIA_MESSAGE_UPDATE_UI_CONFIG_REQUEST_VALUE,
+                proto,
+            ) {}
+            AppLog.i("[ClusterMap] TX Cluster UpdateUiConfigRequest (markerX=${settings.clusterMarkerX}, markerY=${settings.clusterMarkerY})")
+            send(msg)
+        }
     }
 
     /**

@@ -136,7 +136,7 @@ class WppHandshakeSession(private val versionExchangeEnabled: Boolean) {
 
         /** Our protocol version. A guess — no capture of a real head unit's Type 4 has been
          *  decoded — which is why the setting that sends it is off by default. */
-        const val WPP_VERSION_MAJOR = 1
+        const val WPP_VERSION_MAJOR = 4
         const val WPP_VERSION_MINOR = 1
     }
 

@@ -18,6 +18,10 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     externalNativeBuild {
         cmake {
             path("src/main/cpp/CMakeLists.txt")
@@ -66,11 +70,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.headqlink.unit"
-        minSdk = 16
+        applicationId = "com.tencent.qqmusiccar"
+        minSdk = 28
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.1.4-unit"
+        versionCode = 6
+        versionName = "0.1.5-unit"
         setProperty("archivesBaseName", "${applicationId}_${versionName}")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled = true
@@ -91,11 +95,11 @@ android {
     productFlavors {
         create("playstore") {
             dimension = "distribution"
-            minSdk = 21
+            minSdk = 28
         }
         create("github") {
             dimension = "distribution"
-            // Default minSdk 16 from defaultConfig is used
+            minSdk = 28
         }
     }
 
@@ -204,13 +208,13 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     kotlinOptions {
         (this as KotlinJvmOptions).let {
-            it.jvmTarget = "1.8"
+            it.jvmTarget = "11"
         }
     }
 
@@ -257,6 +261,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.0")
     implementation(project(":contract"))
+    implementation(project(":bridge"))
 
     // Multidex
     implementation("androidx.multidex:multidex:2.0.1")
@@ -274,4 +279,8 @@ dependencies {
 
     // ZXing for QR Code generation
     implementation("com.google.zxing:core:3.5.3")
+
+    // Apple CarPlay (AirPlay 2 / HomeKit / MFi / Bonjour mDNS)
+    implementation("org.bouncycastle:bcprov-jdk18on:1.79")
+    implementation("org.jmdns:jmdns:3.6.3")
 }

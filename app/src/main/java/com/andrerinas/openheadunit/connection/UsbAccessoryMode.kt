@@ -4,6 +4,7 @@ import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbManager
+import android.os.SystemClock
 import com.andrerinas.openheadunit.aap.Utils
 import com.andrerinas.openheadunit.utils.AppLog
 
@@ -86,6 +87,84 @@ class UsbAccessoryMode(private val usbMgr: UsbManager) {
         return true
     }
 
+    /**
+     * Sends ACC_REQ_START (53) to a device that is already in AOA accessory mode
+     * (`0x18D1:0x2D00`/`0x2D01`) and waits up to 3s for it to re-enumerate.
+     */
+    fun restartAccessory(device: UsbDevice): Boolean {
+        val deviceName = device.deviceName
+        val connection = try {
+            usbMgr.openDevice(device)
+        } catch (e: Throwable) {
+            AppLog.e("restartAccessory: openDevice failed for $deviceName: ${e.message}")
+            return false
+        }
+        if (connection == null) {
+            AppLog.w("restartAccessory: cannot open $deviceName")
+            return false
+        }
+        val len = try {
+            connection.controlTransfer(
+                UsbConstants.USB_TYPE_VENDOR,
+                ACC_REQ_START,
+                0,
+                0,
+                null,
+                0,
+                USB_TIMEOUT_IN_MS
+            )
+        } finally {
+            connection.close()
+        }
+        AppLog.i("restartAccessory: ACC_REQ_START on $deviceName returned $len; waiting for re-enumeration...")
+        return waitForReEnumeration(deviceName, 3000L)
+    }
+
+    /**
+     * Issues a bus-level `USBDEVFS_RESET` ioctl on the device's file descriptor to clear a
+     * wedged AOA session on the Leapmotor C10 when `ACC_REQ_START` alone does not re-enumerate.
+     */
+    fun resetUsbPort(device: UsbDevice): Boolean {
+        val deviceName = device.deviceName
+        val connection = try {
+            usbMgr.openDevice(device)
+        } catch (e: Throwable) {
+            AppLog.e("resetUsbPort: openDevice failed for $deviceName: ${e.message}")
+            return false
+        }
+        if (connection == null) {
+            AppLog.w("resetUsbPort: cannot open $deviceName")
+            return false
+        }
+        val rc = try {
+            UsbNative.resetDeviceFd(connection.fileDescriptor)
+        } finally {
+            connection.close()
+        }
+        if (rc != 0) {
+            AppLog.w("resetUsbPort: USBDEVFS_RESET on $deviceName failed (rc=$rc)")
+            return false
+        }
+        val gone = waitForReEnumeration(deviceName, 3000L)
+        AppLog.i("resetUsbPort: USBDEVFS_RESET on $deviceName ok (re-enumerated=$gone)")
+        return true
+    }
+
+    private fun waitForReEnumeration(oldDeviceName: String, timeoutMs: Long): Boolean {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (!usbMgr.deviceList.containsKey(oldDeviceName)) {
+                return true
+            }
+            try {
+                Thread.sleep(100)
+            } catch (_: InterruptedException) {
+                return false
+            }
+        }
+        return false
+    }
+
     private fun initStringControlTransfer(conn: UsbDeviceConnection, index: Int, string: String): Boolean {
         val len = conn.controlTransfer(UsbConstants.USB_TYPE_VENDOR, ACC_REQ_SEND_STRING, 0, index, string.toByteArray(), string.length, USB_TIMEOUT_IN_MS)
         return if (len < 0) {
@@ -107,7 +186,7 @@ class UsbAccessoryMode(private val usbMgr: UsbManager) {
     }
 
     companion object {
-        private const val USB_TIMEOUT_IN_MS = 100
+        private const val USB_TIMEOUT_IN_MS = 1000
         private const val MANUFACTURER = "Android"
         private const val MODEL = "Android Auto"
         private const val DESCRIPTION = "Android Auto"//"Android Open Automotive Protocol"

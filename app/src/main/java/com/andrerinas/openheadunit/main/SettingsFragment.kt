@@ -535,6 +535,10 @@ class SettingsFragment : Fragment() {
         val oldWifiMode = settings.wifiConnectionMode
         val oldHelperStrategy = settings.helperConnectionStrategy
         val oldBluetoothManagerServiceName = settings.bluetoothManagerServiceName
+        val oldNativeApTransport = settings.nativeApTransport
+        val oldHotspotSsid = settings.hotspotSsid
+        val oldHotspotPassword = settings.hotspotPassword
+        val oldHotspotInterface = settings.hotspotInterface
         pendingWifiConnectionMode?.let { settings.wifiConnectionMode = it }
         pendingHelperConnectionStrategy?.let { settings.helperConnectionStrategy = it }
         pendingWaitForWifi?.let { settings.waitForWifiBeforeWifiDirect = it }
@@ -569,7 +573,11 @@ class SettingsFragment : Fragment() {
 
         if (oldWifiMode != settings.wifiConnectionMode ||
             oldHelperStrategy != settings.helperConnectionStrategy ||
-            oldBluetoothManagerServiceName != settings.bluetoothManagerServiceName) {
+            oldBluetoothManagerServiceName != settings.bluetoothManagerServiceName ||
+            oldNativeApTransport != settings.nativeApTransport ||
+            oldHotspotSsid != settings.hotspotSsid ||
+            oldHotspotPassword != settings.hotspotPassword ||
+            oldHotspotInterface != settings.hotspotInterface) {
             val intent = Intent(requireContext(), AapService::class.java).apply {
                 val mode = settings.wifiConnectionMode
                 action = if (mode == 1 || mode == 2 || mode == 3)
@@ -3224,9 +3232,9 @@ class SettingsFragment : Fragment() {
                 setPadding(0, (8 * density).toInt(), 0, (4 * density).toInt())
             }
             val seek = android.widget.SeekBar(context).apply {
-                // Map 100..150 step 10 -> progress 0..5
-                max = 5
-                progress = ((initialPercent - 100) / 10).coerceIn(0, 5)
+                // Map 100..180 step 10 -> progress 0..8
+                max = 8
+                progress = ((initialPercent - 100) / 10).coerceIn(0, 8)
             }
             val value = android.widget.TextView(context).apply {
                 text = "$initialPercent%"

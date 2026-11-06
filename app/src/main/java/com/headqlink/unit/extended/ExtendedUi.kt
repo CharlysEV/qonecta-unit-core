@@ -56,8 +56,28 @@ class ExtendedUi(
     /** El panel de la franja derecha: reloj y fecha, tarjeta Batería y botón «Pantalla completa». */
     private var panel: ExtendedPanelView? = null
 
-    /** De dónde saca el panel la batería: DEMO o, mientras no exista la nube (bloque C), «Sin cuenta». */
-    private var source: PanelDataSource = NoAccountPanelData
+    /** Vista de proyección de Android Auto (SurfaceView) para desplazar con translationX al cambiar de lado. */
+    private var projectionView: View? = null
+
+    /** Hub Qonecta+ acoplado en modo Pantalla Partida (47% del ancho) o 100% dentro de la proyección. */
+    private var splitHubView: ExtendedHubView? = null
+
+    /** Panel interactivo de Google Maps C10 para el 53% de AA cuando aún no hay vídeo H.264 del móvil. */
+    private var fallbackAaMapPane: View? = null
+
+    /** Si el Hub Qonecta+ acoplado está abierto sobre la proyección. */
+    var splitHubActive: Boolean = false
+        private set
+
+    /** Si el Hub acoplado está temporalmente a 100% de ancho en lugar de 47% partido. */
+    private var splitHubFullWidth: Boolean = false
+
+    /** Si Android Auto va a la derecha (true) y el Hub Qonecta+ a la izquierda (como CarUi.aaRight en Qonecta+). */
+    var aaRight: Boolean = false
+        private set
+
+    /** De dónde saca el panel la batería: DEMO o telemetría del Leapmotor C10 en tiempo real ([LeapVehicleDataSource]). */
+    private var source: PanelDataSource = LeapVehicleDataSource
 
     /** La proyección está en primer plano (onStart sin onStop): la fuente está arrancada. */
     private var sourceStarted = false
@@ -112,6 +132,7 @@ class ExtendedUi(
         if (attached) return
         attached = true
         extended = settings.extendedMode
+        projectionView = container.getChildAt(0)
         loadingOverlay = container.findViewById(R.id.loading_overlay)
 
         val p = createPanel()
@@ -255,6 +276,7 @@ class ExtendedUi(
                 ),
                 dpi = HeadUnitScreenConfig.getDensityDpi(),
                 percent = settings.extendedPanelPercent,
+                splitMode = splitHubActive && !splitHubFullWidth,
             ),
         )
     }
@@ -263,7 +285,8 @@ class ExtendedUi(
         val g = geometry ?: return
         if (pip()) return
         val on = active
-        val label = if (on) "extendido: panel ${g.panelPx} px · AA ${g.aaVideoW}" else "completa"
+        val modeTag = if (splitHubActive && !splitHubFullWidth) "partida ◫" else "extendido"
+        val label = if (on) "$modeTag: panel ${g.panelPx} px · AA ${g.aaVideoW}" else "completa"
         ExtendedMarginsController.want(g.margins(on), label, reason)
     }
 
@@ -375,6 +398,19 @@ class ExtendedUi(
         return if (active) min(x, g.aaVideoW - 1) else x
     }
 
+    /**
+     * Desplazamiento horizontal en píxeles de la vista de proyección de Android Auto cuando
+     * el usuario ha pulsado «⇄ Cambiar Lado» (AA a la derecha y Qonecta+ a la izquierda).
+     */
+    fun aaTouchOffsetX(): Float {
+        val g = geometry ?: return 0f
+        return if (active && aaRight && (!splitHubActive || !splitHubFullWidth)) {
+            g.panelPx.toFloat()
+        } else {
+            0f
+        }
+    }
+
     /** Un toque en AA: en Pantalla completa el botón flotante vuelve 6 s. */
     fun onAaTouch() {
         if (!extended && fits && !pip()) showFab()
@@ -385,7 +421,9 @@ class ExtendedUi(
      * panel. ¿Este gesto empezó en el panel o en el botón flotante? Entonces no va a AA.
      */
     fun isOwnGesture(ev: MotionEvent): Boolean {
-        if (ev.actionMasked == MotionEvent.ACTION_DOWN) ownGesture = hits(panel, ev) || hits(fab, ev)
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            ownGesture = hits(panel, ev) || hits(splitHubView, ev) || hits(fallbackAaMapPane, ev) || hits(fab, ev)
+        }
         val own = ownGesture
         if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) {
             ownGesture = false
@@ -456,6 +494,7 @@ class ExtendedUi(
     private fun createPanel(): ExtendedPanelView = ExtendedPanelView(activity).apply {
         onFullscreen = { requestMode(false, "botón del panel") }
         onOpenCarData = { openCarData() }
+        onOpenSplitScreen = { openSplitScreenHub(ExtendedHubView.Tab.TV) }
     }
 
     /**
@@ -468,7 +507,7 @@ class ExtendedUi(
         val wanted: PanelDataSource = if (demo) {
             if (current is DemoPanelData && current.state == demoState) current else DemoPanelData(demoState)
         } else {
-            NoAccountPanelData
+            LeapVehicleDataSource
         }
         if (wanted !== current) {
             AppLog.i("[QU] panel: fuente $wanted")
@@ -482,12 +521,79 @@ class ExtendedUi(
     }
 
     /**
-     * Toque en la tarjeta Batería con algo que hacer en la cuenta (sin cuenta, caducada, clave nueva o
-     * apagada). BLOQUE C: abrir CarCloudActivity (la pantalla de «Datos del coche»). Hasta entonces, solo
-     * queda en el log.
+     * Toque en la tarjeta Batería o en el botón «Ruta y Coche · Qonecta+»: abre el centro Extendido
+     * completo de Qonecta+ ([ExtendedHubView]) a 100% de pantalla con opción directa de partir pantalla.
      */
     private fun openCarData() {
-        AppLog.i("[QU] tarjeta Batería tocada: «Datos del coche» llegará con la nube (bloque C)")
+        AppLog.i("[QU] abriendo menú Extendido Qonecta+ a 100% de pantalla")
+        openDockedHub(initialTab = ExtendedHubView.Tab.ROUTE, startSplit = false)
+    }
+
+    /**
+     * Abre directamente el modo Pantalla Partida (Mapa de Android Auto al 53% + Hub Qonecta+ al 47%),
+     * igual que el modo SPLIT de Qonecta+ (CarUi.java).
+     */
+    fun openSplitScreenHub(initialTab: ExtendedHubView.Tab = ExtendedHubView.Tab.TV) {
+        AppLog.i("[QU] abriendo Pantalla Partida ◫ (AA Mapa 53% + Qonecta+ 47% en pestaña ${initialTab.title})")
+        openDockedHub(initialTab = initialTab, startSplit = true)
+    }
+
+    private fun openDockedHub(initialTab: ExtendedHubView.Tab, startSplit: Boolean) {
+        if (!extended) {
+            setMode(true, "abrir hub Qonecta+")
+        }
+        val hub = splitHubView ?: ExtendedHubView(
+            context = activity,
+            onClose = { closeSplitScreenHub() },
+            hostedInsideProjection = true,
+            initialSplitScreen = startSplit,
+        ).also { created ->
+            created.onSplitModeChanged = { isSplit ->
+                splitHubFullWidth = !isSplit
+                recompute(if (isSplit) "pasar a pantalla partida 47%" else "pasar a 100% completa")
+            }
+            created.onSwapSideRequested = { right ->
+                aaRight = right
+                applyViews()
+            }
+            container.addView(
+                created,
+                FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END),
+            )
+            splitHubView = created
+        }
+
+        if (fallbackAaMapPane == null) {
+            val mapCompanion = ExtendedHubView.createLiveAaMapCompanionPane(activity) { targetTab ->
+                splitHubView?.selectTab(targetTab)
+            }
+            mapCompanion.visibility = View.GONE
+            container.addView(
+                mapCompanion,
+                FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START),
+            )
+            fallbackAaMapPane = mapCompanion
+        }
+
+        splitHubActive = true
+        splitHubFullWidth = !startSplit
+        hub.setAaRightPosition(aaRight)
+        hub.setSplitScreenMode(startSplit, notifyHost = false)
+        hub.selectTab(initialTab)
+        hub.bringToFront()
+        fab?.bringToFront()
+        recompute(if (startSplit) "abrir pantalla partida ◫" else "abrir hub 100%")
+    }
+
+    fun closeSplitScreenHub() {
+        if (!splitHubActive) return
+        splitHubActive = false
+        splitHubFullWidth = false
+        aaRight = false
+        projectionView?.translationX = 0f
+        splitHubView?.visibility = View.GONE
+        fallbackAaMapPane?.visibility = View.GONE
+        recompute("cerrar pantalla partida")
     }
 
     /** Botón flotante «Extendido» de la Pantalla completa: 56 px escalados, arriba a la derecha, alfa 0,6. */
@@ -510,24 +616,80 @@ class ExtendedUi(
     private fun applyViews() {
         val g = geometry
         val pipNow = pip()
+        val showDockedHub = !pipNow && splitHubActive && g != null && g.panelPx > 0 && active
+
+        // 1. Panel lateral de estado (28%): se muestra solo si el Hub acoplado no está abierto
         panel?.let { p ->
-            val show = !pipNow && g != null && g.panelPx > 0 && (active || hidingPanel)
-            if (show && g != null) {
+            val showPanel = !pipNow && !showDockedHub && g != null && g.panelPx > 0 && (active || hidingPanel)
+            if (showPanel && g != null) {
                 val lp = p.layoutParams as FrameLayout.LayoutParams
-                if (lp.width != g.panelPx) {
+                val targetGrav = if (aaRight) Gravity.START else Gravity.END
+                if (lp.width != g.panelPx || lp.gravity != targetGrav) {
                     lp.width = g.panelPx
+                    lp.gravity = targetGrav
                     p.layoutParams = lp
                 }
             }
-            setVisible(p, show)
+            setVisible(p, showPanel)
         }
-        // La capa de carga en la zona de AA: «Android Auto se está iniciando» centrado y el panel a la vista
+
+        // 2. Hub Qonecta+ acoplado (47% en modo Pantalla Partida ◫ o 100% en modo Toda la Pantalla)
+        splitHubView?.let { hub ->
+            if (showDockedHub && g != null) {
+                val lp = hub.layoutParams as FrameLayout.LayoutParams
+                val targetW = if (splitHubFullWidth) ViewGroup.LayoutParams.MATCH_PARENT else g.panelPx
+                val targetGrav = if (splitHubFullWidth) Gravity.FILL else if (aaRight) Gravity.START else Gravity.END
+                if (lp.width != targetW || lp.gravity != targetGrav) {
+                    lp.width = targetW
+                    lp.gravity = targetGrav
+                    hub.layoutParams = lp
+                }
+            }
+            setVisible(hub, showDockedHub)
+        }
+
+        // 3. Desplazamiento instantáneo sin re-layout de la superficie de vídeo de Android Auto (translationX)
+        val shiftAaX = if (!pipNow && active && aaRight && (!splitHubActive || !splitHubFullWidth) && g != null) {
+            g.panelPx.toFloat()
+        } else {
+            0f
+        }
+        projectionView?.translationX = shiftAaX
+
+        // 4. Mapa interactivo de respaldo para el 53% de Android Auto cuando aún no hay fotogramas H.264 del móvil
+        val hasLivePhoneVideo = videoDecoder.lastFrameRenderedMs > 0L
+        fallbackAaMapPane?.let { mapPane ->
+            val showFallbackMap = showDockedHub && !splitHubFullWidth && !hasLivePhoneVideo && g != null
+            if (showFallbackMap && g != null) {
+                val usableW = if (container.width > 0) container.width else HeadUnitScreenConfig.getUsableWidth()
+                val aaZoneW = max(1, usableW - g.panelPx)
+                val targetGrav = if (aaRight) Gravity.END else Gravity.START
+                val lp = mapPane.layoutParams as FrameLayout.LayoutParams
+                if (lp.width != aaZoneW || lp.gravity != targetGrav) {
+                    lp.width = aaZoneW
+                    lp.gravity = targetGrav
+                    mapPane.layoutParams = lp
+                }
+            }
+            setVisible(mapPane, showFallbackMap)
+        }
+
+        // 5. La capa de carga en la zona de AA: se oculta cuando el mapa de Pantalla Partida está activo
         loadingOverlay?.let { ov ->
-            val right = if (!pipNow && active && g != null) g.panelPx else 0
-            val lp = ov.layoutParams as? FrameLayout.LayoutParams
-            if (lp != null && lp.rightMargin != right) {
-                lp.rightMargin = right
-                ov.layoutParams = lp
+            if (showDockedHub && !hasLivePhoneVideo) {
+                ov.visibility = View.GONE
+            } else {
+                val sideMargin = if (!pipNow && active && g != null) g.panelPx else 0
+                val lp = ov.layoutParams as? FrameLayout.LayoutParams
+                if (lp != null) {
+                    val leftM = if (aaRight) sideMargin else 0
+                    val rightM = if (aaRight) 0 else sideMargin
+                    if (lp.leftMargin != leftM || lp.rightMargin != rightM) {
+                        lp.leftMargin = leftM
+                        lp.rightMargin = rightM
+                        ov.layoutParams = lp
+                    }
+                }
             }
         }
         applyFab()

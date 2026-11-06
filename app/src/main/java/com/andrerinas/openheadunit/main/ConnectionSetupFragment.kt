@@ -136,6 +136,13 @@ class ConnectionSetupFragment : Fragment() {
         pendingCarHotspotSetup = false
         settings.nativeApTransport = mode
         settings.wifiConnectionMode = 3
+        runCatching {
+            requireContext().startService(
+                Intent(requireContext(), com.andrerinas.openheadunit.aap.AapService::class.java).apply {
+                    action = com.andrerinas.openheadunit.aap.AapService.ACTION_START_WIRELESS
+                }
+            )
+        }
         // Choosing the car hotspot or Wi-Fi Direct here is a choice of WiFi. Without it among the
         // connection types (onboarding may have left only USB) the wireless route stays down.
         if (!WirelessScopePolicy.allowsWireless(settings.connectionModes)) {
@@ -198,7 +205,7 @@ class ConnectionSetupFragment : Fragment() {
                 settings.hotspotPassword = password
                 hideKeyboard()
                 dialog.dismiss()
-                if (select) selectMode(1) else render()
+                selectMode(1)
             }
         }
         dialog.show()

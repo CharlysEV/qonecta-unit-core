@@ -42,6 +42,7 @@ class NativeAaHandshakeManager(
 ) {
     companion object {
         private val AA_UUID = UUID.fromString("4de17a00-52cb-11e6-bdf4-0800200c9a66")
+        private val DEFAULT_5GHZ_CHANNELS_MHZ = listOf(5180, 5200, 5220, 5240, 5745, 5765, 5785, 5805, 5825)
         private val HFP_UUID = UUID.fromString("0000111e-0000-1000-8000-00805f9b34fb")
         // The phone-wake targets, and the rules for when a poke may run at all, live in
         // BluetoothWakePolicy — one of those records is also the one a phone call rides on.
@@ -463,6 +464,21 @@ class NativeAaHandshakeManager(
         synchronized(extraAaServerSockets) {
             extraAaServerSockets.forEach { try { it.close() } catch (e: Exception) {} }
             extraAaServerSockets.clear()
+        }
+    }
+
+    /**
+     * Pauses AA_UUID Bluetooth RFCOMM listeners and wake pokes while a USB or Wi-Fi projection
+     * session is active. Without closing the server socket during an active USB session, the
+     * phone's Gearhead service retries RFCOMM ~20 times/second, flooding both Bluetooth and the
+     * phone's projection pipeline.
+     */
+    fun pauseForActiveSession() {
+        handoffSettlingSince = 0L
+        pokeJob?.cancel()
+        if (!aaListenersClosedForSession) {
+            AppLog.i("NativeAA: Closing AA_UUID Bluetooth listeners while projection session is active.")
+            closeAaListeners()
         }
     }
 
@@ -918,7 +934,7 @@ class NativeAaHandshakeManager(
         var spokeToPhone = false
         var abortedLocally = false
         // Captured once, so a settings change mid-exchange cannot split it across two rulesets.
-        val transport = NativeTransport.fromSetting(settings.nativeApTransport)
+        val transport = context.nativeTransport()
         val session = WppHandshakeSession(settings.nativeWifiVersionExchange)
         // Everything the phone sends, in order. Replaces the single bounded read this used to do:
         // types 6 and 7 arrive *after* the credentials go out, so a one-shot read could never see
@@ -931,8 +947,9 @@ class NativeAaHandshakeManager(
 
             if (commManager.isConnected ||
                 commManager.connectionState.value is CommManager.ConnectionState.Connecting) {
-                AppLog.i("NativeAA: USB/other session already active. Aborting BT handshake so phone does not start a parallel wireless attempt.")
+                AppLog.i("NativeAA: USB/other session already active. Aborting BT handshake and pausing AA_UUID listeners.")
                 abortedLocally = true
+                pauseForActiveSession()
                 try { socket.close() } catch (_: Exception) {}
                 return@withContext
             }
@@ -983,13 +1000,14 @@ class NativeAaHandshakeManager(
             suspend fun runAction(action: WppAction, source: ProtobufMessage?) {
                 when (action) {
                     WppAction.SendVersionRequest -> {
-                        AppLog.i("NativeAA: [TX] Sending WifiVersionRequest (Type 4) v${WppHandshakeSession.WPP_VERSION_MAJOR}.${WppHandshakeSession.WPP_VERSION_MINOR}")
-                        sendWifiVersionRequest(output)
+                        val versionIp = credIp.ifEmpty { credentials?.ip ?: "192.168.49.1" }
+                        AppLog.i("NativeAA: [TX] Sending WifiVersionRequest (Type 4) v${WppHandshakeSession.WPP_VERSION_MAJOR}.${WppHandshakeSession.WPP_VERSION_MINOR} (ip=$versionIp, channels=${DEFAULT_5GHZ_CHANNELS_MHZ.size})")
+                        sendWifiVersionRequest(output, versionIp, 5288)
                         spokeToPhone = true
                     }
                     WppAction.SendStartRequest -> {
-                        AppLog.i("NativeAA: [TX] Sending WifiStartRequest (Type 1)")
-                        sendWifiStartRequest(output, credIp, 5288)
+                        AppLog.i("NativeAA: [TX] Sending WifiStartRequest (Type 1) ip=$credIp:5288 ssid=$credSsid")
+                        sendWifiStartRequest(output, credIp, 5288, credSsid, credPsk, credBssid, transport)
                         spokeToPhone = true
                     }
                     WppAction.SendInfoResponse -> {
@@ -1155,12 +1173,30 @@ class NativeAaHandshakeManager(
             // a flaky chip a moment to settle before the one message that matters most.
             delay(300)
 
-            // The version exchange opens the conversation, *before* the wait for credentials
-            // rather than after it. The phone starts its own ~12 s first-message timer when it
-            // opens this channel, and on a cold P2P group the credential wait alone can outlast
-            // that — a head unit that has said nothing by then is a head unit that "is not
-            // present" as far as Gearhead is concerned. Saying something first costs nothing and
-            // buys the whole bring-up window.
+            // If credentials are not ready yet when the phone opens RFCOMM, immediately trigger a
+            // Wi-Fi Direct / hotspot refresh and wait up to 6s before sending WifiVersionRequest
+            // so Type 4 carries the real AP IP (instead of a hardcoded fallback) and doesn't start
+            // the phone's post-Type-5 timer while the AP is still coming up.
+            if (credentials == null) {
+                AppLog.i("NativeAA: Credentials not ready on RFCOMM connect; triggering immediate WiFi refresh...")
+                context.triggerWifiDirectRefresh()
+                val preWaitDeadline = SystemClock.elapsedRealtime() + 6_000L
+                while (credentials == null && isRunning && isActive && SystemClock.elapsedRealtime() < preWaitDeadline) {
+                    delay(200)
+                }
+            }
+
+            // Re-verify live AP IP before sending WifiVersionRequest (in case p2p0/ap0 resubnetted).
+            credentials?.let { currentCreds ->
+                val liveIp = resolveLiveApIp(currentCreds.ip)
+                if (liveIp != currentCreds.ip) {
+                    AppLog.i("NativeAA: Head unit address changed ${currentCreds.ip} -> $liveIp (AP resubnetted since last start)")
+                    credentials = currentCreds.copy(ip = liveIp)
+                }
+                credIp = liveIp
+            }
+
+            // The version exchange opens the conversation.
             feed(WppEvent.SocketReady)
 
             AppLog.i("NativeAA: Phone connected. Current credentials state: SSID=${credentials?.ssid ?: "<null>"}, IP=${credentials?.ip ?: "<null>"}")
@@ -1176,11 +1212,11 @@ class NativeAaHandshakeManager(
                 !session.isTerminal() && SystemClock.elapsedRealtime() < credentialsDeadline) {
                 val now = SystemClock.elapsedRealtime()
                 val waitedS = (CREDENTIALS_WAIT_MS - (credentialsDeadline - now)) / 1000
-                if (now - lastRefreshAt >= 10_000) {
+                if (now - lastRefreshAt >= 5_000) {
                     lastRefreshAt = now
                     AppLog.w("NativeAA: Still waiting for credentials after ${waitedS}s. Requesting WiFi refresh...")
                     context.triggerWifiDirectRefresh()
-                } else if (now - lastProgressLogAt >= 5_000) {
+                } else if (now - lastProgressLogAt >= 2_500) {
                     lastProgressLogAt = now
                     AppLog.d("NativeAA: Still waiting... credentials=${credentials != null} (${waitedS}s)")
                 }
@@ -1197,7 +1233,12 @@ class NativeAaHandshakeManager(
                 return@withContext
             }
 
-            credIp = snapshot.ip
+            val verifiedIp = resolveLiveApIp(snapshot.ip)
+            if (verifiedIp != snapshot.ip) {
+                AppLog.i("NativeAA: Head unit address changed ${snapshot.ip} -> $verifiedIp (AP resubnetted since last start)")
+                credentials = snapshot.copy(ip = verifiedIp)
+            }
+            credIp = verifiedIp
             credSsid = snapshot.ssid
             credPsk = snapshot.psk
             credBssid = snapshot.bssid.uppercase()
@@ -1346,60 +1387,133 @@ class NativeAaHandshakeManager(
         }
     }
 
-    private fun sendWifiStartRequest(output: OutputStream, ip: String, port: Int) {
-        val request = Wireless.WifiStartRequest.newBuilder()
-            .setIpAddress(ip)
-            .setPort(port)
-            .setStatus(0)
-            .build()
-        sendProtobuf(output, request.toByteArray(), WppMessageType.START_REQUEST)
+    private fun resolveLiveApIp(configuredIp: String): String {
+        try {
+            val activeIps = mutableSetOf<String>()
+            var p2pOrApIp: String? = null
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            while (interfaces != null && interfaces.hasMoreElements()) {
+                val iface = interfaces.nextElement()
+                if (iface.isLoopback || !iface.isUp) continue
+                val name = iface.name.lowercase()
+                val addrs = iface.inetAddresses
+                while (addrs.hasMoreElements()) {
+                    val addr = addrs.nextElement()
+                    if (addr is java.net.Inet4Address && !addr.isLoopbackAddress) {
+                        val hostAddr = addr.hostAddress ?: continue
+                        activeIps.add(hostAddr)
+                        if (p2pOrApIp == null && (name.startsWith("p2p") || name.startsWith("ap") || name.startsWith("swlan") || name.contains("softap"))) {
+                            p2pOrApIp = hostAddr
+                        }
+                    }
+                }
+            }
+            if (configuredIp.isNotBlank() && configuredIp in activeIps) {
+                return configuredIp
+            }
+            if (!p2pOrApIp.isNullOrBlank()) {
+                return p2pOrApIp
+            }
+        } catch (_: Exception) {
+        }
+        return configuredIp
     }
 
-    /**
-     * Declares our protocol version, opening the modern exchange. Real head units send this first
-     * — the OEM ZLink app does — while aa-proxy-rs's own dongle does not, which is why it sits
-     * behind [com.andrerinas.openheadunit.utils.Settings.nativeWifiVersionExchange].
-     *
-     * The version numbers are a guess and known to be one; see [WppHandshakeSession].
-     */
-    private fun sendWifiVersionRequest(output: OutputStream) {
-        val request = Wireless.WifiVersionRequest.newBuilder()
-            .setMajor(WppHandshakeSession.WPP_VERSION_MAJOR)
-            .setMinor(WppHandshakeSession.WPP_VERSION_MINOR)
-            .build()
-        sendProtobuf(output, request.toByteArray(), WppMessageType.VERSION_REQUEST)
+    private fun encodeWppInfo(ip: String, port: Int): ByteArray {
+        val baos = java.io.ByteArrayOutputStream()
+        val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
+        cos.writeString(1, ip)
+        cos.writeInt32(2, port)
+        cos.flush()
+        return baos.toByteArray()
     }
 
-    /**
-     * Sends the credentials.
-     *
-     * All five fields go out every time, including an empty [bssid] where we have no real address:
-     * the schema the other implementations use marks bssid, security_mode and access_point_type
-     * `required`, and aa-proxy-rs sets an empty string on the one path where it has no MAC rather
-     * than dropping the field. Omitting it risks a strict parser rejecting the whole message, which
-     * would surface as silence rather than as the specific refusal an empty one produces.
-     *
-     * [transport] picks the access-point type: DYNAMIC for a hotspot, matching both reference
-     * implementations, and STATIC for a WiFi Direct group as before.
-     */
+    private fun encodeAccessPointInfo(
+        ssid: String,
+        key: String,
+        bssid: String?,
+        securityMode: Int,
+        apType: Int,
+        channels: List<Int>
+    ): ByteArray {
+        val baos = java.io.ByteArrayOutputStream()
+        val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
+        cos.writeString(1, ssid)
+        cos.writeString(2, key)
+        cos.writeString(3, bssid.orEmpty())
+        cos.writeEnum(4, securityMode)
+        cos.writeEnum(5, apType)
+        for (ch in channels) {
+            cos.writeInt32(6, ch)
+        }
+        cos.flush()
+        return baos.toByteArray()
+    }
+
+    private fun sendWifiStartRequest(
+        output: OutputStream,
+        ip: String,
+        port: Int,
+        ssid: String,
+        key: String,
+        bssid: String?,
+        @Suppress("UNUSED_PARAMETER") transport: NativeTransport
+    ) {
+        val baos = java.io.ByteArrayOutputStream()
+        val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
+        cos.writeString(1, ip)
+        cos.writeInt32(2, port)
+        cos.writeInt32(3, 0)
+        cos.writeByteArray(4, encodeWppInfo(ip, port))
+        if (ssid.isNotEmpty()) {
+            cos.writeByteArray(
+                5,
+                encodeAccessPointInfo(
+                    ssid = ssid,
+                    key = key,
+                    bssid = bssid,
+                    securityMode = Wireless.SecurityMode.WPA2_PERSONAL_VALUE,
+                    apType = Wireless.AccessPointType.DYNAMIC_VALUE,
+                    channels = DEFAULT_5GHZ_CHANNELS_MHZ
+                )
+            )
+        }
+        cos.flush()
+        sendProtobuf(output, baos.toByteArray(), WppMessageType.START_REQUEST)
+    }
+
+    private fun sendWifiVersionRequest(output: OutputStream, ip: String, port: Int) {
+        val baos = java.io.ByteArrayOutputStream()
+        val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
+        cos.writeInt32(1, WppHandshakeSession.WPP_VERSION_MAJOR)
+        cos.writeInt32(2, WppHandshakeSession.WPP_VERSION_MINOR)
+        for (ch in DEFAULT_5GHZ_CHANNELS_MHZ) {
+            cos.writeInt32(3, ch)
+        }
+        cos.writeByteArray(6, encodeWppInfo(ip, port))
+        cos.flush()
+        sendProtobuf(output, baos.toByteArray(), WppMessageType.VERSION_REQUEST)
+    }
+
     private fun sendWifiSecurityResponse(
         output: OutputStream,
         ssid: String,
         key: String,
         bssid: String?,
-        transport: NativeTransport
+        @Suppress("UNUSED_PARAMETER") transport: NativeTransport
     ) {
-        val response = Wireless.WifiInfoResponse.newBuilder()
-            .setSsid(ssid)
-            .setKey(key)
-            .setSecurityMode(Wireless.SecurityMode.WPA2_PERSONAL)
-            .setAccessPointType(
-                if (transport != NativeTransport.WIFI_DIRECT) Wireless.AccessPointType.DYNAMIC
-                else Wireless.AccessPointType.STATIC
-            )
-            .setBssid(bssid.orEmpty())
-            .build()
-        sendProtobuf(output, response.toByteArray(), WppMessageType.INFO_RESPONSE)
+        val baos = java.io.ByteArrayOutputStream()
+        val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
+        cos.writeString(1, ssid)
+        cos.writeString(2, key)
+        cos.writeString(3, bssid.orEmpty())
+        cos.writeEnum(4, Wireless.SecurityMode.WPA2_PERSONAL_VALUE)
+        cos.writeEnum(5, Wireless.AccessPointType.DYNAMIC_VALUE)
+        for (ch in DEFAULT_5GHZ_CHANNELS_MHZ) {
+            cos.writeInt32(6, ch)
+        }
+        cos.flush()
+        sendProtobuf(output, baos.toByteArray(), WppMessageType.INFO_RESPONSE)
     }
 
     private fun sendProtobuf(output: OutputStream, data: ByteArray, type: Int) {

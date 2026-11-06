@@ -278,6 +278,13 @@ class MainActivity : BaseActivity() {
         // this on its first launch; we always overwrite it here (even with
         // null) so a stale value from a prior attempt can't leak across.
         AapProjectionActivity.pendingStatusText = customStatusText
+        val devName = App.provide(this).settings.autoStartBluetoothDeviceName.ifBlank { "Teléfono" }
+        com.andrerinas.openheadunit.cluster.ClusterMapController.notifyConnecting(
+            this,
+            devName,
+            "Android Auto",
+            com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.ANDROID_AUTO,
+        )
         showAutoConnectUi()
     }
 
@@ -696,6 +703,10 @@ class MainActivity : BaseActivity() {
     }
 
     override fun onStart() {
+        com.andrerinas.openheadunit.cluster.ClusterMapController.showWelcomeIfAvailable(
+            this,
+            com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.ANDROID_AUTO,
+        )
         super.onStart()
     }
 

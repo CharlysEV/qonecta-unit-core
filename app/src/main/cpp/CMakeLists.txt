@@ -77,3 +77,7 @@ target_link_libraries(hur_soft_hevc PRIVATE ${log-lib} ${android-lib})
 # Ordinary-UID, read-only legacy AP frequency query.
 add_library(local_hotspot_radio SHARED local_hotspot_radio.c)
 target_compile_options(local_hotspot_radio PRIVATE -Wall -Wextra -Werror)
+
+# Linux I2C JNI for CarPlay MFi self-check/transport
+add_library(linux_i2c_jni SHARED linux_i2c_jni.c)
+target_compile_options(linux_i2c_jni PRIVATE -Wall -Wextra)

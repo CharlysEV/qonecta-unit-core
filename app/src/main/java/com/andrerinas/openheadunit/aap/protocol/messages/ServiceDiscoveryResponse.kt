@@ -88,7 +88,7 @@ class ServiceDiscoveryResponse(private val context: Context)
                     // resolution choice itself; software HEVC only when the user explicitly selected it.
                     val effectiveCodec = if ((negotiatedResolution == Control.Service.MediaSinkService.VideoConfiguration.VideoCodecResolutionType._2560x1440 ||
                         negotiatedResolution == Control.Service.MediaSinkService.VideoConfiguration.VideoCodecResolutionType._1440x2560) &&
-                        hevcAvailableForUserChoice) {
+                        settings.videoCodec != "H.264" && hevcAvailableForUserChoice) {
                         AppLog.i("Resolution is 1440p -> Enforcing H.265 codec")
                         Media.MediaCodecType.MEDIA_CODEC_VIDEO_H265
                     } else {
@@ -141,6 +141,7 @@ class ServiceDiscoveryResponse(private val context: Context)
             }.build()
 
             services.add(input)
+            services.addAll(ClusterDisplayServices.build(context, settings))
 
             val audioType =if (settings.useAacAudio) Media.MediaCodecType.MEDIA_CODEC_AUDIO_AAC_LC else Media.MediaCodecType.MEDIA_CODEC_AUDIO_PCM
 

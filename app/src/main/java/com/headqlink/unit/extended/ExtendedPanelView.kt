@@ -20,38 +20,38 @@ import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.widget.TextViewCompat
 import com.andrerinas.openheadunit.R
 import com.andrerinas.openheadunit.utils.AppLog
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * El panel del modo Extendido, en la franja derecha encima de la zona donde AA ya no dibuja. Se monta por
- * código con el lenguaje visual de Qonecta+ (CarKit, CarStyle): fondo casi negro, tarjetas #17202B con radio
- * 24 y filo de 2 px #243140, acento #00E5C7.
+ * El panel del modo Extendido, en la franja derecha encima de la zona donde AA o CarPlay ya no dibuja.
+ * Se monta por código con el lenguaje visual de Qonecta+ (CarKit, CarStyle): fondo casi negro, tarjetas
+ * #17202B con radio 24 y filo de 2 px #243140, acento #00E5C7.
  *
  * De arriba abajo:
- * 1. Ficha «DEMO» en ámbar, a la derecha. Solo con datos inventados (PanelCarData.demo).
- * 2. Tarjeta Reloj: la hora (112 px, ligera; encoge si no cabe, p. ej. con AM/PM) y la fecha (28 px, gris).
- * 3. Tarjeta Batería: el anillo ([BatteryRingView]) con el %, los km, «Autonomía» y la edad del dato. Sin
- *    dato, un estado vacío con título, explicación y, si hay algo que hacer en la cuenta, «Toca para abrir
- *    Datos del coche». Con dato en EXPIRED, SERVER_KEY o ERROR, un aviso en ámbar debajo del anillo.
- * 4. Botón «Pantalla completa»: píldora de 64 px de alto como poco (el mínimo táctil es 48).
- * 5. La versión de la app, pequeña y en gris (para saber en el coche qué APK hay instalada).
- *
- * Medidas en px del C10 multiplicadas por k = alto/882 (se recalcula al medir), para que se vea igual en la
- * unidad, a 2560 y en el emulador. Un tic de 1 s, solo con el panel visible y en una ventana, repinta la
- * hora y el «hace X» y relee la fuente (sin red: devuelve la última foto). Ningún hijo es enfocable, así
- * que las teclas siguen yendo a la capa táctil de la actividad.
+ * 1. Ficha «DEMO» o «C10 EN VIVO», a la derecha.
+ * 2. Tarjeta Reloj: la hora (112 px, ligera; encoge si no cabe) y la fecha (28 px, gris).
+ * 3. Tarjeta Batería y Telemetría C10: el anillo ([BatteryRingView]) con el %, los km, «Autonomía»,
+ *    la edad del dato y la tira en vivo de velocidad / potencia / temperatura. Al tocarla abre el
+ *    Centro Extendido de Qonecta+ ([ExtendedHubView]: Ruta, Conducción, Viajes, Instrumentos, Eficiencia, Estado).
+ * 4. Botón «Ruta y Coche (Qonecta+)»: abre directamente el planificador de rutas y menú extendido.
+ * 5. Botón «Pantalla completa»: píldora de 64 px de alto como poco.
+ * 6. La versión de la app, pequeña y en gris.
  */
 class ExtendedPanelView(context: Context) : LinearLayout(context) {
 
     /** Toque en «Pantalla completa». */
     var onFullscreen: (() -> Unit)? = null
 
-    /** Toque en la tarjeta Batería con algo que hacer en la cuenta (NO_ACCOUNT, EXPIRED, SERVER_KEY, OFF). */
+    /** Toque en la tarjeta Batería o en el botón «Ruta y Coche» para abrir el menú Extendido Qonecta+. */
     var onOpenCarData: (() -> Unit)? = null
 
-    /** De dónde salen los datos de la batería (DEMO, o la nube desde el bloque C). */
-    var source: PanelDataSource = NoAccountPanelData
+    /** Toque en el botón «◫ Pantalla Partida · Mapa + TV/Coche» para abrir AA (53%) + Qonecta+ (47%). */
+    var onOpenSplitScreen: (() -> Unit)? = null
+
+    /** De dónde salen los datos de la batería ([LeapVehicleDataSource] en vivo o [DemoPanelData]). */
+    var source: PanelDataSource = LeapVehicleDataSource
         set(value) {
             if (value === field) return
             field = value
@@ -70,7 +70,12 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
     private val emptyTitle = TextView(context)
     private val emptyText = TextView(context)
     private val emptyHint = TextView(context)
+    private val telemetryLine = TextView(context)
     private val warning = TextView(context)
+    private val splitButton = LinearLayout(context)
+    private val splitButtonLabel = TextView(context)
+    private val hubButton = LinearLayout(context)
+    private val hubButtonLabel = TextView(context)
     private val button = LinearLayout(context)
     private val buttonIcon = ImageView(context)
     private val buttonLabel = TextView(context)
@@ -92,12 +97,11 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
     init {
         orientation = VERTICAL
         setBackgroundColor(PanelFormat.BG)
-        // Nada del panel se queda el foco: las teclas siguen yendo a la capa táctil
         isFocusable = false
         isFocusableInTouchMode = false
         descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
 
-        // 1. Ficha DEMO
+        // 1. Ficha DEMO / EN VIVO
         chip.text = context.getString(R.string.qu_demo)
         chip.setTextColor(PanelFormat.BG)
         chip.typeface = Typeface.DEFAULT_BOLD
@@ -122,7 +126,7 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         clockCard.addView(date, LayoutParams(MATCH, WRAP))
         addView(clockCard, LayoutParams(MATCH, WRAP))
 
-        // 3. Batería
+        // 3. Batería + Telemetría C10
         batteryCard.orientation = VERTICAL
         batteryTitle.text = context.getString(R.string.qu_battery).uppercase()
         batteryTitle.setTextColor(PanelFormat.FAINT)
@@ -152,19 +156,56 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         batteryBody.addView(empty, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.CENTER))
         batteryCard.addView(batteryBody, LayoutParams(MATCH, 0, 1f))
 
+        telemetryLine.setTextColor(PanelFormat.ACCENT)
+        telemetryLine.typeface = BatteryRingView.MEDIUM
+        telemetryLine.gravity = Gravity.CENTER
+        telemetryLine.setSingleLine(true)
+        telemetryLine.ellipsize = TextUtils.TruncateAt.END
+        batteryCard.addView(telemetryLine, LayoutParams(MATCH, WRAP))
+
         warning.setTextColor(PanelFormat.AMBER)
         warning.typeface = BatteryRingView.MEDIUM
         warning.gravity = Gravity.CENTER
-        warning.maxLines = 3
+        warning.maxLines = 2
         warning.ellipsize = TextUtils.TruncateAt.END
         warning.visibility = GONE
         batteryCard.addView(warning, LayoutParams(MATCH, WRAP))
         batteryCard.setOnClickListener { onOpenCarData?.invoke() }
-        batteryCard.isClickable = false
+        batteryCard.isClickable = true
         noFocus(batteryCard)
         addView(batteryCard, LayoutParams(MATCH, 0, 1f))
 
-        // 4. Pantalla completa
+        // 4A. Botón «◫ Pantalla Partida · Mapa + TV/Coche»
+        splitButton.orientation = HORIZONTAL
+        splitButton.gravity = Gravity.CENTER
+        splitButtonLabel.text = "◫ Pantalla Partida · Mapa + TV"
+        splitButtonLabel.setTextColor(QonectaTheme.onAccent)
+        splitButtonLabel.typeface = BatteryRingView.MEDIUM
+        splitButtonLabel.setSingleLine(true)
+        splitButtonLabel.ellipsize = TextUtils.TruncateAt.END
+        splitButton.addView(splitButtonLabel)
+        splitButton.contentDescription = splitButtonLabel.text
+        splitButton.setOnClickListener {
+            (onOpenSplitScreen ?: onOpenCarData)?.invoke()
+        }
+        noFocus(splitButton)
+        addView(splitButton, LayoutParams(MATCH, WRAP))
+
+        // 4B. Botón «Ruta y Coche · Qonecta+»
+        hubButton.orientation = HORIZONTAL
+        hubButton.gravity = Gravity.CENTER
+        hubButtonLabel.text = "⚡ Ruta y Coche · Qonecta+"
+        hubButtonLabel.setTextColor(PanelFormat.ACCENT)
+        hubButtonLabel.typeface = BatteryRingView.MEDIUM
+        hubButtonLabel.setSingleLine(true)
+        hubButtonLabel.ellipsize = TextUtils.TruncateAt.END
+        hubButton.addView(hubButtonLabel)
+        hubButton.contentDescription = hubButtonLabel.text
+        hubButton.setOnClickListener { onOpenCarData?.invoke() }
+        noFocus(hubButton)
+        addView(hubButton, LayoutParams(MATCH, WRAP))
+
+        // 5. Pantalla completa
         button.orientation = HORIZONTAL
         button.gravity = Gravity.CENTER
         buttonIcon.setImageDrawable(AppCompatResources.getDrawable(context, R.drawable.hql_ic_expand))
@@ -181,7 +222,7 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         noFocus(button)
         addView(button, LayoutParams(MATCH, WRAP))
 
-        // 5. Versión, para ver en el coche que la APK instalada es la nueva
+        // 6. Versión
         version.text = "Qonecta Unit ${com.andrerinas.openheadunit.BuildConfig.VERSION_NAME}"
         version.setTextColor(PanelFormat.FAINT)
         version.gravity = Gravity.CENTER
@@ -192,10 +233,7 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         applyScale(1f)
     }
 
-    // ------------------------------------------------------------------ medidas
-
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        // k antes de medir a los hijos: así el primer fotograma ya sale a escala
         val h = MeasureSpec.getSize(heightMeasureSpec)
         if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED && h > 0) {
             applyScale(h / ExtendedUi.C10_HEIGHT)
@@ -203,73 +241,87 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
-    /** Aplica k = alto/882 a todas las medidas (px del C10). Solo si cambia. */
     private fun applyScale(scale: Float) {
         if (scale <= 0f || scale == k) return
         k = scale
         val pad = px(PAD)
         setPadding(pad, pad, pad, pad)
 
-        // Ficha DEMO
-        chip.setTextSize(TypedValue.COMPLEX_UNIT_PX, 20f * k)
-        chip.setPadding(px(14), px(6), px(14), px(6))
+        chip.setTextSize(TypedValue.COMPLEX_UNIT_PX, 18f * k)
+        chip.setPadding(px(14), px(5), px(14), px(5))
         chip.background = rounded(PanelFormat.AMBER, px(16), 0, 0)
-        (chip.layoutParams as LayoutParams).bottomMargin = px(12)
+        (chip.layoutParams as LayoutParams).bottomMargin = px(10)
 
-        // Reloj: la hora encoge sola si no cabe (AM/PM, idiomas), entre 48 y 112 px
-        clockCard.setPadding(px(24), px(18), px(24), px(22))
+        clockCard.setPadding(px(22), px(14), px(22), px(16))
         clockCard.background = card(false)
         TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
             hour,
-            max(1, px(48)),
-            max(2, px(112)),
+            max(1, px(44)),
+            max(2, px(102)),
             1,
             TypedValue.COMPLEX_UNIT_PX,
         )
         (hour.layoutParams as LayoutParams).height = px(HOUR_BOX)
-        date.setTextSize(TypedValue.COMPLEX_UNIT_PX, 28f * k)
+        date.setTextSize(TypedValue.COMPLEX_UNIT_PX, 26f * k)
         (date.layoutParams as LayoutParams).topMargin = px(4)
 
-        // Batería
-        batteryCard.setPadding(px(24), px(20), px(24), px(22))
+        batteryCard.setPadding(px(22), px(16), px(22), px(16))
         batteryCard.background = StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_pressed), card(true))
             addState(intArrayOf(), card(false))
         }
         (batteryCard.layoutParams as LayoutParams).topMargin = px(GAP)
-        batteryTitle.setTextSize(TypedValue.COMPLEX_UNIT_PX, 19f * k)
-        (batteryBody.layoutParams as LayoutParams).topMargin = px(8)
+        batteryTitle.setTextSize(TypedValue.COMPLEX_UNIT_PX, 18f * k)
+        (batteryBody.layoutParams as LayoutParams).topMargin = px(6)
         ring.scale = k
-        emptyTitle.setTextSize(TypedValue.COMPLEX_UNIT_PX, 30f * k)
-        emptyText.setTextSize(TypedValue.COMPLEX_UNIT_PX, 22f * k)
-        (emptyText.layoutParams as LayoutParams).topMargin = px(14)
-        emptyHint.setTextSize(TypedValue.COMPLEX_UNIT_PX, 22f * k)
-        (emptyHint.layoutParams as LayoutParams).topMargin = px(24)
+        emptyTitle.setTextSize(TypedValue.COMPLEX_UNIT_PX, 28f * k)
+        emptyText.setTextSize(TypedValue.COMPLEX_UNIT_PX, 20f * k)
+        (emptyText.layoutParams as LayoutParams).topMargin = px(12)
+        emptyHint.setTextSize(TypedValue.COMPLEX_UNIT_PX, 20f * k)
+        (emptyHint.layoutParams as LayoutParams).topMargin = px(20)
         empty.setPadding(px(8), 0, px(8), 0)
-        warning.setTextSize(TypedValue.COMPLEX_UNIT_PX, 22f * k)
-        (warning.layoutParams as LayoutParams).topMargin = px(8)
+        telemetryLine.setTextSize(TypedValue.COMPLEX_UNIT_PX, 20f * k)
+        (telemetryLine.layoutParams as LayoutParams).topMargin = px(6)
+        warning.setTextSize(TypedValue.COMPLEX_UNIT_PX, 20f * k)
+        (warning.layoutParams as LayoutParams).topMargin = px(6)
 
-        // Pantalla completa: 64 px de alto como poco
-        button.minimumHeight = px(BUTTON_H)
-        button.setPadding(px(24), px(12), px(28), px(12))
+        // Botón Pantalla Partida
+        splitButton.minimumHeight = px(BUTTON_H - 6)
+        splitButton.setPadding(px(18), px(8), px(18), px(8))
+        splitButton.background = QonectaTheme.accentGradientPill(px(BUTTON_H / 2).toFloat())
+        (splitButton.layoutParams as LayoutParams).topMargin = px(10)
+        splitButtonLabel.setTextSize(TypedValue.COMPLEX_UNIT_PX, 20.5f * k)
+
+        // Botón Ruta y Coche · Qonecta+
+        hubButton.minimumHeight = px(BUTTON_H - 6)
+        hubButton.setPadding(px(18), px(8), px(18), px(8))
+        hubButton.background = StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), rounded(PanelFormat.EDGE, px(BUTTON_H / 2), px(2), PanelFormat.ACCENT))
+            addState(intArrayOf(), rounded(PanelFormat.SURFACE_HI, px(BUTTON_H / 2), px(2), PanelFormat.ACCENT))
+        }
+        (hubButton.layoutParams as LayoutParams).topMargin = px(8)
+        hubButtonLabel.setTextSize(TypedValue.COMPLEX_UNIT_PX, 21f * k)
+
+        // Botón Pantalla completa
+        button.minimumHeight = px(BUTTON_H - 6)
+        button.setPadding(px(20), px(8), px(22), px(8))
         button.background = StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_pressed), rounded(PanelFormat.EDGE, px(BUTTON_H / 2), px(2), PanelFormat.EDGE))
             addState(intArrayOf(), rounded(PanelFormat.SURFACE_TOP, px(BUTTON_H / 2), px(2), PanelFormat.EDGE))
         }
-        (button.layoutParams as LayoutParams).topMargin = px(GAP)
-        val icon = px(32)
+        (button.layoutParams as LayoutParams).topMargin = px(8)
+        val icon = px(30)
         buttonIcon.layoutParams = LayoutParams(icon, icon)
-        buttonLabel.setTextSize(TypedValue.COMPLEX_UNIT_PX, 24f * k)
+        buttonLabel.setTextSize(TypedValue.COMPLEX_UNIT_PX, 22f * k)
         buttonLabel.layoutParams = LayoutParams(WRAP, WRAP).also { it.leftMargin = px(12) }
 
-        version.setTextSize(TypedValue.COMPLEX_UNIT_PX, 18f * k)
-        (version.layoutParams as LayoutParams).topMargin = px(10)
+        version.setTextSize(TypedValue.COMPLEX_UNIT_PX, 17f * k)
+        (version.layoutParams as LayoutParams).topMargin = px(8)
         requestLayout()
     }
 
     private fun px(v: Int): Int = max(1, (v * k).roundToInt())
 
-    /** Tarjeta: superficie con filo (CarKit.card, sin degradados: colores planos para el vídeo). */
     private fun card(pressed: Boolean): Drawable =
         rounded(if (pressed) PanelFormat.SURFACE_TOP else PanelFormat.SURFACE_HI, px(RADIUS), px(2), PanelFormat.OUTLINE)
 
@@ -278,8 +330,6 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         cornerRadius = radius.toFloat()
         if (stroke > 0) setStroke(stroke, strokeColor)
     }
-
-    // ------------------------------------------------------------------ tic de 1 s
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -303,7 +353,6 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         updateTicking()
     }
 
-    /** El tic solo corre con el panel visible y adjunto a una ventana visible. */
     private fun updateTicking() {
         val should = attached && isShown && windowVisibility == VISIBLE
         if (should == ticking) return
@@ -315,16 +364,21 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         }
     }
 
-    /** Al principio del segundo siguiente: la hora cambia justo cuando cambia el minuto. */
     private fun scheduleTick() {
         val now = System.currentTimeMillis()
         postDelayed(tick, TICK_MS - now % TICK_MS + 15L)
     }
 
-    // ------------------------------------------------------------------ contenido
-
-    /** Repinta la hora, la fecha y la tarjeta Batería con lo que tenga la fuente ahora. */
     fun refresh() {
+        QonectaTheme.ensureLoaded(context)
+        setBackgroundColor(PanelFormat.BG)
+        hour.setTextColor(PanelFormat.TEXT)
+        date.setTextColor(PanelFormat.DIM)
+        telemetryLine.setTextColor(PanelFormat.ACCENT)
+        splitButtonLabel.setTextColor(QonectaTheme.onAccent)
+        splitButton.background = QonectaTheme.accentGradientPill(px(BUTTON_H / 2).toFloat())
+        hubButtonLabel.setTextColor(PanelFormat.ACCENT)
+        clockCard.background = card(false)
         val now = System.currentTimeMillis()
         setText(hour, PanelFormat.timeText(context, now))
         setText(date, PanelFormat.dateText(context, now))
@@ -337,7 +391,18 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
             lastDemo = data.demo
             AppLog.i("[QU] panel: ${data.kind}${if (data.demo) " (DEMO)" else ""}${if (data.hasData) " con dato" else ""}")
         }
-        setVisible(chip, data.demo)
+        val snap = LeapVehicleDataSource.snapshot(now)
+        val liveCan = snap.connected && !snap.isDemo
+        if (liveCan) {
+            setText(chip, "C10 EN VIVO")
+            chip.background = rounded(PanelFormat.ACCENT, px(16), 0, 0)
+            setVisible(chip, true)
+        } else {
+            setText(chip, context.getString(R.string.qu_demo))
+            chip.background = rounded(PanelFormat.AMBER, px(16), 0, 0)
+            setVisible(chip, data.demo)
+        }
+
         val res = resources
         if (data.hasData) {
             setVisible(empty, false)
@@ -350,6 +415,12 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
                 PanelFormat.ageText(res, ageMs),
                 PanelFormat.ageColor(ageMs),
             )
+            val spd = snap.effectiveSpeedKmh.roundToInt()
+            val pwr = if (!snap.powerKw.isNaN()) String.format(Locale.getDefault(), "%+.1f kW", snap.powerKw) else ""
+            val tmp = if (!snap.tempLeftC.isNaN()) String.format(Locale.getDefault(), "%.0f°C", snap.tempLeftC) else "21°C"
+            setText(telemetryLine, "${ snap.gearLabel() } · $spd km/h · $pwr · $tmp")
+            setVisible(telemetryLine, true)
+
             val warn = when (data.kind) {
                 PanelCarData.Kind.EXPIRED -> res.getString(R.string.qu_state_expired_title)
                 PanelCarData.Kind.SERVER_KEY -> res.getString(R.string.qu_state_server_key_title)
@@ -361,22 +432,17 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
             setVisible(warning, warn != null)
         } else {
             setVisible(ring, false)
+            setVisible(telemetryLine, false)
             setVisible(warning, false)
             setVisible(empty, true)
             val (title, text) = emptyTexts(data, now)
             setText(emptyTitle, title)
             setText(emptyText, text)
             setVisible(emptyText, text.isNotEmpty())
-            setVisible(emptyHint, data.kind in PanelCarData.ACCOUNT_KINDS)
-        }
-        val tappable = data.kind in PanelCarData.ACCOUNT_KINDS
-        if (batteryCard.isClickable != tappable) {
-            batteryCard.isClickable = tappable
-            noFocus(batteryCard)
+            setVisible(emptyHint, true)
         }
     }
 
-    /** Título y explicación del estado vacío. */
     private fun emptyTexts(data: PanelCarData, now: Long): Pair<String, String> {
         val res = resources
         return when (data.kind) {
@@ -405,7 +471,6 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         if (v.visibility != vis) v.visibility = vis
     }
 
-    /** Clicable sin ser enfocable (en API 26+ un clicable pasa a enfocable si no se dice lo contrario). */
     private fun noFocus(v: View) {
         v.isFocusable = false
         v.isFocusableInTouchMode = false
@@ -415,15 +480,11 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
 
-        /** Medidas en px del C10 (1920x882). */
-        const val PAD = 24
-        const val GAP = 18
+        const val PAD = 22
+        const val GAP = 14
         const val RADIUS = 24
-        const val BUTTON_H = 64
-
-        /** Alto de la caja de la hora: 112 px de letra sin el relleno de la fuente. */
-        const val HOUR_BOX = 136
-
+        const val BUTTON_H = 58
+        const val HOUR_BOX = 122
         const val TICK_MS = 1000L
     }
 }

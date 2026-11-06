@@ -109,6 +109,17 @@ class SoftApNetworkPolicyTest {
     fun `a WiFi Direct group is never mistaken for our access point`() {
         // That is the other transport, with its own credential source.
         assertNull(SoftApNetworkPolicy.pickApInterface(listOf(iface("p2p-wlan0-7"))))
+        assertNull(SoftApNetworkPolicy.pickApInterface(listOf(iface("p2p0"))))
+        val c10Internal = listOf(
+            iface("dummy0", ipv4 = null),
+            iface("eth0", ipv4 = "192.168.195.2"),
+            iface("p2p0", ipv4 = "192.168.49.1"),
+            iface("vlan11", ipv4 = "172.16.11.2"),
+            iface("vlan12", ipv4 = "172.16.12.2")
+        )
+        assertNull(SoftApNetworkPolicy.pickApInterface(c10Internal))
+        assertEquals("wlan0", SoftApNetworkPolicy.pickApInterface(c10Internal + iface("wlan0", ipv4 = "192.168.43.1"))?.name)
+        assertEquals(listOf("wlan0"), SoftApNetworkPolicy.eligible(c10Internal + iface("wlan0", ipv4 = "192.168.43.1")).map { it.name })
     }
 
     @Test

@@ -68,6 +68,26 @@ class AapNavigationHelper(
     @Suppress("DEPRECATION") // Single bridge: legacy nextEventType/turnSide → NavigationUpdateIntent
     fun sendFullNavigationBroadcast(snapshot: NavigationSnapshot, navEventType: Int) {
         val prepared = prepareFullNavigationMessage(snapshot, navEventType)
+        if (navEventType == 2) {
+            com.andrerinas.openheadunit.cluster.ClusterMapController.clearNavigation(context)
+        } else if (prepared.distanceMeters != null || (prepared.road.isNotBlank() && prepared.road != "—")) {
+            com.andrerinas.openheadunit.cluster.ClusterMapController.updateNavigation(
+                context,
+                com.andrerinas.openheadunit.cluster.ClusterMapController.ClusterNavState(
+                    isNavigating = true,
+                    distanceMeters = prepared.distanceMeters,
+                    timeSeconds = prepared.timeSeconds,
+                    road = prepared.road,
+                    actionText = prepared.actionText,
+                    turnSide = prepared.turnSide,
+                    nextEventType = prepared.nextEventType,
+                    maneuverType = prepared.nextManeuver,
+                    totalDistanceMeters = prepared.totalDistanceMeters,
+                    totalTimeSeconds = prepared.totalTimeSeconds,
+                    estimatedArrival = prepared.estimatedArrival,
+                )
+            )
+        }
         val intent = NavigationUpdateIntent(
             distanceMeters = prepared.distanceMeters,
             timeSeconds = prepared.timeSeconds,
@@ -158,10 +178,10 @@ class AapNavigationHelper(
             ?.road
             ?.name
             ?.takeIf { it.isNotBlank() }
-        val road = (roadFromPosition
-            ?: snapshot.currentStreet?.payload?.takeIf { it.isNotBlank() }
-            ?: roadFromState
+        val road = (roadFromState
             ?: detail?.road?.takeIf { it.isNotBlank() }
+            ?: roadFromPosition
+            ?: snapshot.currentStreet?.payload?.takeIf { it.isNotBlank() }
             ?: "").ifBlank { "—" }
 
         val maneuverType = state?.stepsList?.firstOrNull()
@@ -170,14 +190,15 @@ class AapNavigationHelper(
             ?.takeIf { it.hasType() }
             ?.type
 
-        val nextEventType = detail?.takeIf { it.hasNextTurn() }?.nextTurn?.number
-            ?: (maneuverType?.let { maneuverTypeToLegacyNextEvent(it) }
-                ?: LegacyNextEvent.UNKNOWN.number)
-        val turnSide = detail
-            ?.takeIf { it.hasSide() }
-            ?.side
-            ?.number
-            ?: maneuverType?.let { maneuverTypeToLegacyTurnSide(it) }
+        val nextEventType = maneuverType?.let { maneuverTypeToLegacyNextEvent(it) }
+            ?: detail?.takeIf { it.hasNextTurn() && it.nextTurn != LegacyNextEvent.UNKNOWN }?.nextTurn?.number
+            ?: LegacyNextEvent.UNKNOWN.number
+
+        val turnSide = maneuverType?.let { maneuverTypeToLegacyTurnSide(it) }
+            ?: detail
+                ?.takeIf { it.hasSide() && it.side != LegacySide.UNSPECIFIED }
+                ?.side
+                ?.number
         val nextManeuver = state?.stepsList?.firstOrNull()?.maneuver?.type?.number
         val turnNumber = state?.stepsList?.firstOrNull()?.maneuver?.roundaboutExitNumber
             ?: detail?.takeIf { it.hasTurnNumber() }?.turnNumber

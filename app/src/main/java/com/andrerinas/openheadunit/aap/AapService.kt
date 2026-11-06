@@ -197,7 +197,14 @@ class AapService : Service(), UsbReceiver.Listener {
             // wireless transports may run. initWifiMode() is a no-op when nothing effectively
             // changed, and it keeps honouring the boot-loop pause. While the first bring-up still
             // waits for WiFi, that pending start reads the new value itself.
-            if (key == Settings.KEY_CONNECTION_MODES) {
+            if (key == "hotspot-ssid" || key == "hotspot-password" || key == "hotspot-interface") {
+                serviceScope.launch(Dispatchers.Main) {
+                    if (!isDestroying && activeWifiMode == 3 && nativeTransport() == NativeTransport.HOTSPOT) {
+                        softApCredentialsProvider?.refresh()
+                    }
+                }
+            }
+            if (key == Settings.KEY_CONNECTION_MODES || key == "wifi-connection-mode" || key == "helper-connection-strategy" || key == "native-ap-transport") {
                 serviceScope.launch(Dispatchers.Main) {
                     if (!isDestroying && wifiReadyTimeoutJob?.isActive != true) {
                         initWifiMode()
@@ -246,6 +253,7 @@ class AapService : Service(), UsbReceiver.Listener {
     private var isDestroying = false
     private var hasEverConnected = false
     private var accessoryHandshakeFailures = 0
+    @Volatile private var usbAttachSeen = false
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
@@ -368,7 +376,6 @@ class AapService : Service(), UsbReceiver.Listener {
     private fun onAaMediaMetadataFromPhone(meta: MediaPlayback.MediaMetaData) {
         if (isDestroying) return
         lastAaMediaMetadata = meta
-        if (!App.provide(this).settings.syncMediaSessionWithAaMetadata) return
         // Avoid showing a previous track's art with new title/artist until decode finishes.
         cachedAaAlbumArtBitmap = null
         scheduleApplyAaMediaMetadata(meta)
@@ -382,6 +389,11 @@ class AapService : Service(), UsbReceiver.Listener {
         val isPlayingFromStatus = resolveIsPlayingFromStatus(status)
         lastAaPlaybackIsPlaying = isPlayingFromStatus
         mediaSessionIsPlaying = isPlayingFromStatus
+        com.andrerinas.openheadunit.cluster.ClusterMapController.updateMedia(
+            appName = status.mediaSource?.takeIf { it.isNotBlank() },
+            positionMs = lastAaPlaybackPositionMs,
+            isPlaying = isPlayingFromStatus,
+        )
 
         if (!App.provide(this).settings.syncMediaSessionWithAaMetadata) return
         updateMediaSessionState(isPlayingFromStatus)
@@ -415,10 +427,25 @@ class AapService : Service(), UsbReceiver.Listener {
             if (!isActive) return@launch
             withContext(Dispatchers.Main) {
                 if (isDestroying) return@withContext
-                if (!App.provide(this@AapService).settings.syncMediaSessionWithAaMetadata) return@withContext
                 // Drop stale decode results if newer metadata arrived while we were decoding.
                 if (lastAaMediaMetadata !== meta) return@withContext
                 cachedAaAlbumArtBitmap = bitmap
+                val durMs = if (meta.hasDurationSeconds()) {
+                    meta.durationSeconds.protoUint32ToLong().coerceAtLeast(0L) * 1000L
+                } else {
+                    0L
+                }
+                com.andrerinas.openheadunit.cluster.ClusterMapController.updateMedia(
+                    title = if (meta.hasSong()) meta.song else "",
+                    artist = if (meta.hasArtist()) meta.artist else "",
+                    album = if (meta.hasAlbum()) meta.album else "",
+                    albumArt = bitmap,
+                    keepExistingArtIfNull = false,
+                    durationMs = durMs,
+                    positionMs = lastAaPlaybackPositionMs,
+                    isPlaying = lastAaPlaybackIsPlaying ?: mediaSessionIsPlaying,
+                )
+                if (!App.provide(this@AapService).settings.syncMediaSessionWithAaMetadata) return@withContext
                 applyAaMediaMetadataToSession(meta, bitmap)
                 updateMediaNotification(meta)
             }
@@ -754,6 +781,7 @@ class AapService : Service(), UsbReceiver.Listener {
 
         commManager.onAaMediaMetadata = { meta -> onAaMediaMetadataFromPhone(meta) }
         commManager.onAaPlaybackStatus = { status -> onAaPlaybackStatusFromPhone(status) }
+        commManager.onUsbHandshakeTimeout = { onHandshakeFailed() }
         settingsPrefs = getSharedPreferences("settings", MODE_PRIVATE).also { prefs ->
             prefs.registerOnSharedPreferenceChangeListener(settingsPreferenceListener)
         }
@@ -766,7 +794,13 @@ class AapService : Service(), UsbReceiver.Listener {
         softApCredentialsProvider = SoftApCredentialsProvider(this, serviceScope, App.provide(this).settings)
         localHotspotCredentialsProvider = LocalHotspotCredentialsProvider(this, serviceScope).also { provider ->
             provider.setCredentialsListener { ssid, psk, ip, bssid -> onNativeCredentials(ssid, psk, ip, bssid) }
-            provider.setInvalidatedListener { nativeAaHandshakeManager?.invalidateCredentials() }
+            provider.setInvalidatedListener {
+                nativeAaHandshakeManager?.invalidateCredentials()
+                if (Build.MODEL.contains("Leapmotor", ignoreCase = true)) {
+                    AppLog.w("AapService: LocalOnlyHotspot invalidated on Leapmotor; starting WifiDirect fallback on p2p0")
+                    wifiDirectManager?.startNativeAaQuietHost()
+                }
+            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -783,14 +817,6 @@ class AapService : Service(), UsbReceiver.Listener {
             }
         }
 
-        // Decided here as well as inside initWifiMode() so a paused start skips the wait-for-WiFi
-        // machinery entirely rather than setting it up and being turned away at the end of it.
-        if (applyBootLoopGuard()) {
-            AppLog.w("AapService: Wireless bring-up paused by the boot-loop guard. USB and the rest of the app are unaffected.")
-        } else {
-            initWifiModeWithOptionalWait()
-        }
-        scheduleBootLoopStrikeClear()
         wifiDirectManager?.setCredentialsListener { ssid, psk, ip, bssid ->
             onNativeCredentials(ssid, psk, ip, bssid)
         }
@@ -803,10 +829,23 @@ class AapService : Service(), UsbReceiver.Listener {
         }
         wifiDirectManager?.setNativeSessionConnectedProvider { commManager.isConnected }
         wifiDirectManager?.setNativeGroupInvalidatedListener { nativeAaHandshakeManager?.invalidateCredentials() }
+        wifiDirectManager?.setNativeGroupCreationFailedListener {
+            AppLog.w("AapService: WiFi Direct group creation failed; falling back to LocalOnlyHotspot (p2p0)...")
+            localHotspotCredentialsProvider?.start()
+        }
         softApCredentialsProvider?.setCredentialsListener { ssid, psk, ip, bssid ->
             onNativeCredentials(ssid, psk, ip, bssid)
         }
         softApCredentialsProvider?.setInvalidatedListener { nativeAaHandshakeManager?.invalidateCredentials() }
+
+        // Decided here as well as inside initWifiMode() so a paused start skips the wait-for-WiFi
+        // machinery entirely rather than setting it up and being turned away at the end of it.
+        if (applyBootLoopGuard()) {
+            AppLog.w("AapService: Wireless bring-up paused by the boot-loop guard. USB and the rest of the app are unaffected.")
+        } else {
+            initWifiModeWithOptionalWait()
+        }
+        scheduleBootLoopStrikeClear()
 
 
         checkAlreadyConnectedUsb()
@@ -1007,6 +1046,7 @@ class AapService : Service(), UsbReceiver.Listener {
         isSwitchingToAccessory.set(false)
         updateNotification()
         acquireWifiLock()
+        nativeAaHandshakeManager?.pauseForActiveSession()
 
         // Silent audio hack removed to prevent mixing/resampling stuttering issues
 
@@ -1805,6 +1845,7 @@ class AapService : Service(), UsbReceiver.Listener {
         mediaNotification.cancel()
         commManager.onAaMediaMetadata = null
         commManager.onAaPlaybackStatus = null
+        commManager.onUsbHandshakeTimeout = null
         settingsPrefs?.unregisterOnSharedPreferenceChangeListener(settingsPreferenceListener)
         settingsPrefs = null
         nativeAaHandshakeManager?.stop()
@@ -1929,6 +1970,23 @@ class AapService : Service(), UsbReceiver.Listener {
 
         when (intent?.action) {
             ACTION_START_SELF_MODE       -> startSelfMode()
+            ACTION_SWITCH_TO_USB         -> {
+                AppLog.i("AapService: Switching from Wireless to USB mode by user confirmation")
+                usbSwitchPrompt.value = null
+                userExitedAA = false
+                userExitCooldownUntil = 0L
+                val settings = App.provide(this).settings
+                settings.wifiConnectionMode = 0
+                initWifiMode(force = true)
+                serviceScope.launch {
+                    if (commManager.isConnected && commManager.isWirelessSession ||
+                        commManager.connectionState.value is CommManager.ConnectionState.Connecting) {
+                        commManager.disconnect(sendByeBye = true, isUserExit = false)
+                        delay(500)
+                    }
+                    checkAlreadyConnectedUsb(force = true)
+                }
+            }
             ACTION_START_WIRELESS        -> {
                 // Asked for from the UI, so the user is present: release the boot-loop pause
                 // rather than silently ignoring them.
@@ -1971,7 +2029,7 @@ class AapService : Service(), UsbReceiver.Listener {
                     userExitCooldownUntil = 0L
 
                     val settings = App.provide(this).settings
-                    if (activeWifiMode != 3 || settings.wifiConnectionMode != 3) {
+                    if (activeWifiMode != 3 || settings.wifiConnectionMode != 3 || nativeTransport() != activeNativeTransport) {
                         AppLog.i("AapService: Initializing Native AA mode before poke...")
                         initWifiMode(force = true)
                     } else if (nativeAaHandshakeManager?.isActive() != true) {
@@ -2059,7 +2117,20 @@ class AapService : Service(), UsbReceiver.Listener {
             AppLog.i("Ignoring non-Android USB device attached in service (VID: ${device.vendorId}): ${device.deviceName}")
             return
         }
+        usbAttachSeen = true
         userExitedAA = false
+        val deviceName = UsbDeviceCompat(device).uniqueName
+        val settings = App.provide(this).settings
+        val wirelessSessionActive = commManager.isConnected && commManager.isWirelessSession
+        val wirelessModeSelected = settings.wifiConnectionMode != 0
+        if (wirelessSessionActive || wirelessModeSelected) {
+            AppLog.i("USB device attached ($deviceName) while wireless mode/session active (wirelessSession=$wirelessSessionActive, mode=${settings.wifiConnectionMode}) — prompting user to switch to USB.")
+            usbSwitchPrompt.value = UsbSwitchPrompt(deviceName = deviceName)
+            if (!wirelessSessionActive) {
+                launchMainActivityIfNeeded("USB attach switch prompt ($deviceName)")
+            }
+            return
+        }
         if (UsbDeviceCompat.isInAccessoryMode(device)) {
             // Device already in AOA mode (re-enumerated after UsbAttachedActivity switched it).
             AppLog.i("USB accessory device attached, connecting.")
@@ -2070,7 +2141,6 @@ class AapService : Service(), UsbReceiver.Listener {
             // filter. However, some headunits (especially Chinese MediaTek units) don't
             // deliver USB_DEVICE_ATTACHED to activities on cold start. As a fallback,
             // check after a delay to give UsbAttachedActivity a chance to handle it first.
-            val deviceName = UsbDeviceCompat(device).uniqueName
             AppLog.i("Normal USB device attached: $deviceName. Will check auto-connect in ${USB_ATTACH_FALLBACK_DELAY_MS}ms...")
             launchMainActivityIfNeeded("USB normal attach ($deviceName)")
             serviceScope.launch {
@@ -2114,6 +2184,7 @@ class AapService : Service(), UsbReceiver.Listener {
         }
         val deviceName = UsbDeviceCompat(device).uniqueName
         if (granted) {
+            usbAttachSeen = true
             AppLog.i("USB permission granted for $deviceName")
             if (UsbDeviceCompat.isInAccessoryMode(device)) {
                 isSwitchingToAccessory.set(true)
@@ -2161,10 +2232,9 @@ class AapService : Service(), UsbReceiver.Listener {
     }
 
     /**
-     * Called when a handshake fails. If an accessory-mode device is still present,
-     * it's likely a stale wireless AA dongle. Force re-enumeration by sending AOA
-     * descriptors — this resets the dongle's USB state so the next connection
-     * starts with clean buffers.
+     * Called when a USB handshake fails. If an accessory-mode device is still present,
+     * its AOA session on the phone is likely stale. Force re-enumeration via ACC_REQ_START
+     * followed by USBDEVFS_RESET if needed so the next connection starts with a fresh pipe.
      */
     private fun onHandshakeFailed() {
         val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
@@ -2176,25 +2246,41 @@ class AapService : Service(), UsbReceiver.Listener {
         val deviceName = UsbDeviceCompat(accessoryDevice).uniqueName
         AppLog.w("Handshake failed on accessory device $deviceName (failure #$accessoryHandshakeFailures)")
 
-        if (accessoryHandshakeFailures > MAX_STALE_ACCESSORY_RETRIES) {
-            AppLog.i("Stale accessory detected: forcing re-enumeration via AOA descriptors for $deviceName")
-            accessoryHandshakeFailures = 0
+        if (isSwitchingToAccessory.compareAndSet(false, true)) {
             val settings = App.provide(this).settings
             val usbMode = UsbAccessoryMode(usbManager)
-            isSwitchingToAccessory.set(true)
             serviceScope.launch(Dispatchers.IO) {
                 try {
-                    if (usbMode.connectAndSwitch(accessoryDevice, settings.useLibusb)) {
-                        AppLog.i("AOA re-enumeration requested for stale device $deviceName")
-                    } else {
-                        AppLog.w("AOA re-enumeration failed for $deviceName")
-                    }
-                } catch (e: Exception) {
-                    AppLog.e("AOA re-enumeration for $deviceName failed with exception", e)
+                    recoverStaleAccessory(usbMode, accessoryDevice, settings.useLibusb, "handshake failure #$accessoryHandshakeFailures")
                 } finally {
                     isSwitchingToAccessory.set(false)
                 }
             }
+        }
+    }
+
+    private fun recoverStaleAccessory(
+        usbMode: UsbAccessoryMode,
+        accessoryDevice: UsbDevice,
+        useLibusb: Boolean,
+        reason: String
+    ) {
+        val deviceName = UsbDeviceCompat(accessoryDevice).uniqueName
+        AppLog.i("Stale accessory recovery ($reason) for $deviceName: trying restartAccessory...")
+        try {
+            if (usbMode.restartAccessory(accessoryDevice)) {
+                AppLog.i("Stale accessory $deviceName re-enumerated via ACC_REQ_START")
+                return
+            }
+            AppLog.i("ACC_REQ_START did not re-enumerate $deviceName; trying USBDEVFS_RESET...")
+            if (usbMode.resetUsbPort(accessoryDevice)) {
+                AppLog.i("Stale accessory $deviceName reset via USBDEVFS_RESET")
+                return
+            }
+            AppLog.i("USBDEVFS_RESET did not re-enumerate $deviceName; falling back to full AOA connectAndSwitch...")
+            usbMode.connectAndSwitch(accessoryDevice, useLibusb)
+        } catch (e: Exception) {
+            AppLog.e("Stale accessory recovery for $deviceName failed with exception", e)
         }
     }
 
@@ -2227,10 +2313,27 @@ class AapService : Service(), UsbReceiver.Listener {
         for (device in deviceList) {
             if (UsbDeviceCompat.isInAccessoryMode(device)) {
                 val deviceName = UsbDeviceCompat(device).uniqueName
-                AppLog.i("Found device already in accessory mode: $deviceName")
+                AppLog.i("Found device already in accessory mode: $deviceName (force=$force, usbAttachSeen=$usbAttachSeen)")
                 if (!usbManager.hasPermission(device)) {
                     AppLog.i("Accessory-mode device has no permission (re-enumerated); requesting permission: $deviceName")
                     requestUsbPermission(device)
+                    return
+                }
+                if (!force && !usbAttachSeen) {
+                    usbAttachSeen = true
+                    isSwitchingToAccessory.set(true)
+                    val usbMode = UsbAccessoryMode(usbManager)
+                    serviceScope.launch(Dispatchers.IO) {
+                        try {
+                            recoverStaleAccessory(usbMode, device, settings.useLibusb, "cold-start stale accessory")
+                            val refreshed = usbManager.deviceList.values.firstOrNull { UsbDeviceCompat.isInAccessoryMode(it) }
+                            if (refreshed != null && usbManager.hasPermission(refreshed)) {
+                                connectUsbWithRetry(refreshed)
+                            }
+                        } finally {
+                            isSwitchingToAccessory.set(false)
+                        }
+                    }
                     return
                 }
                 isSwitchingToAccessory.set(true)
@@ -2306,14 +2409,14 @@ class AapService : Service(), UsbReceiver.Listener {
             }
         }
 
-        // Fallback: if force=true and we have a single Google VID device in normal mode,
+        // Fallback: if force=true and we have a single known phone vendor device in normal mode,
         // switch it to accessory mode. This handles cases where UsbAttachedActivity didn't fire.
         if (force) {
             val nonAccessoryDevices = deviceList.filter { !UsbDeviceCompat.isInAccessoryMode(it) }
-            val googleDevices = nonAccessoryDevices.filter { it.vendorId == 0x18D1 }
-            if (googleDevices.size == 1) {
-                AppLog.i("Fallback: force=true and found single Google normal-mode device ${UsbDeviceCompat(googleDevices[0]).uniqueName}. Switching to accessory mode.")
-                performSingleUsbConnect(googleDevices[0])
+            val phoneDevices = nonAccessoryDevices.filter { UsbDeviceCompat.isKnownPhoneVendor(it) }
+            if (phoneDevices.size == 1) {
+                AppLog.i("Fallback: force=true and found single phone normal-mode device ${UsbDeviceCompat(phoneDevices[0]).uniqueName}. Switching to accessory mode.")
+                performSingleUsbConnect(phoneDevices[0])
             }
         }
     }
@@ -2508,9 +2611,27 @@ class AapService : Service(), UsbReceiver.Listener {
         return false
     }
 
-    /** The transport mode 3 is configured to use. Read fresh: the user can change it in settings. */
-    private fun nativeTransport(): NativeTransport =
-        NativeTransport.fromSetting(App.provide(this).settings.nativeApTransport)
+    /**
+     * The transport mode 3 is configured to use. Read fresh: the user can change it in settings.
+     * On units like Leapmotor C10 where HOTSPOT is selected in settings by default/accident while
+     * the head unit's SoftAP is DISABLED, auto-enable is OFF, and no manual SSID is configured,
+     * automatically fall back to WIFI_DIRECT (p2p0) so wireless AA works out of the box instead of
+     * hanging 60s waiting for a disabled hotspot.
+     */
+    internal fun nativeTransport(): NativeTransport {
+        val settings = App.provide(this).settings
+        val configured = NativeTransport.fromSetting(settings.nativeApTransport)
+        if (configured == NativeTransport.HOTSPOT) {
+            val apState = com.andrerinas.openheadunit.utils.SoftApStateReader.read(this)
+            val systemConfig = com.andrerinas.openheadunit.utils.HotspotConfigReader.getSystemHotspotConfig(this)
+            if ((apState == SoftApState.NOT_ENABLED && !settings.autoEnableHotspot && settings.hotspotSsid.isBlank()) ||
+                (settings.hotspotSsid.isBlank() && systemConfig == null)) {
+                AppLog.w("AapService: Hotspot transport selected, but SoftAP is DISABLED or unreadable and no manual SSID is configured — falling back to WIFI_DIRECT.")
+                return NativeTransport.WIFI_DIRECT
+            }
+        }
+        return configured
+    }
 
     /**
      * Closes an active session while the link it rides still works.
@@ -3380,6 +3501,14 @@ class AapService : Service(), UsbReceiver.Listener {
 
         val wifiDirectName = MutableStateFlow<String?>(null)
 
+        data class UsbSwitchPrompt(
+            val deviceName: String,
+            val timestampMs: Long = System.currentTimeMillis(),
+        )
+
+        /** Emite un aviso cuando se enchufa un móvil por USB mientras hay un modo o sesión Wi-Fi activa. */
+        val usbSwitchPrompt = MutableStateFlow<UsbSwitchPrompt?>(null)
+
         /**
          * Emits `true` while a WiFi NSD scan is in progress.
          * Observed by `HomeFragment` via a lifecycle-aware flow collector.
@@ -3392,6 +3521,7 @@ class AapService : Service(), UsbReceiver.Listener {
 
         // Service action strings used with startService() and sendBroadcast()
         const val ACTION_START_SELF_MODE           = "com.andrerinas.openheadunit.ACTION_START_SELF_MODE"
+        const val ACTION_SWITCH_TO_USB             = "com.andrerinas.openheadunit.ACTION_SWITCH_TO_USB"
         const val ACTION_START_WIRELESS            = "com.andrerinas.openheadunit.ACTION_START_WIRELESS"
         const val ACTION_BT_AUTO_START              = "com.andrerinas.openheadunit.ACTION_BT_AUTO_START"
         const val ACTION_START_WIRELESS_SCAN       = "com.andrerinas.openheadunit.ACTION_START_WIRELESS_SCAN"

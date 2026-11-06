@@ -323,6 +323,7 @@ internal class AapControlService(
         AppLog.i("Service Discovery Request: %s", request.phoneName)
 
         val msg = ServiceDiscoveryResponse(context)
+        AppLog.i("Sending ServiceDiscoveryResponse (size=%d bytes)", msg.size)
         aapTransport.send(msg)
         return 0
     }
@@ -472,6 +473,7 @@ internal class AapControlGateway(
     }
 
     private fun channelOpenRequest(request: Control.ChannelOpenRequest, channel: Int): Int {
+        AppLog.i("Channel Open Request on %s (ch=%d)", Channel.name(channel), channel)
         val msg = AapMessage(channel, Control.ControlMsgType.MESSAGE_CHANNEL_OPEN_RESPONSE_VALUE, Control.ChannelOpenResponse.newBuilder()
                 .setStatus(Common.MessageStatus.STATUS_SUCCESS)
                 .build())

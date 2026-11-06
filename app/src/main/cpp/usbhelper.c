@@ -2,6 +2,9 @@
 #include <android/log.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <sys/ioctl.h>
+#include <linux/usbdevice_fs.h>
 #include "libusb.h"
 
 #define LOG_TAG "UsbNative"
@@ -83,10 +86,10 @@ Java_com_andrerinas_openheadunit_connection_UsbNative_nativeWrite(JNIEnv *env, j
         LOGE("nativeWrite: GetByteArrayElements returned NULL");
         return -2;
     }
-    
+
     int transferred = 0;
     int r = libusb_bulk_transfer(handle, (unsigned char)endpoint, (unsigned char *)buf, length, &transferred, timeout);
-    
+
     (*env)->ReleaseByteArrayElements(env, data, buf, JNI_ABORT);
     if (r < 0) {
         LOGE("libusb_bulk_transfer write failed: %d", r);
@@ -112,10 +115,10 @@ Java_com_andrerinas_openheadunit_connection_UsbNative_nativeRead(JNIEnv *env, jo
         LOGE("nativeRead: GetDirectBufferCapacity returned <= 0");
         return -3;
     }
-    
+
     int transferred = 0;
     int r = libusb_bulk_transfer(handle, (unsigned char)endpoint, (unsigned char *)buffer, (int)capacity, &transferred, timeout);
-    
+
     if (r < 0) {
         if (r != LIBUSB_ERROR_TIMEOUT) {
             LOGE("libusb_bulk_transfer read failed: %d", r);
@@ -132,6 +135,21 @@ Java_com_andrerinas_openheadunit_connection_UsbNative_nativeResetDevice(JNIEnv *
     if (handle) {
         libusb_reset_device(handle);
     }
+}
+
+JNIEXPORT jint JNICALL
+Java_com_andrerinas_openheadunit_connection_UsbNative_nativeResetFd(JNIEnv *env, jclass clazz, jint fd) {
+    if (fd < 0) {
+        return -EINVAL;
+    }
+    int rc = ioctl(fd, USBDEVFS_RESET, 0);
+    if (rc < 0) {
+        int err = errno;
+        LOGE("ioctl(USBDEVFS_RESET) on fd=%d failed: errno=%d (%s)", fd, err, strerror(err));
+        return -err;
+    }
+    LOGI("ioctl(USBDEVFS_RESET) on fd=%d succeeded", fd);
+    return 0;
 }
 
 JNIEXPORT void JNICALL
@@ -154,7 +172,7 @@ JNIEXPORT jint JNICALL
 Java_com_andrerinas_openheadunit_connection_UsbNative_accModeSwitch(JNIEnv *env, jobject thiz, jlong handle_ptr) {
     libusb_device_handle *handle = (libusb_device_handle *)handle_ptr;
     if (!handle) return -1;
-    
+
     unsigned char protocol_bytes[2];
     int r = libusb_control_transfer(handle, 0xC0, 51, 0, 0, protocol_bytes, 2, 1000);
     if (r < 0) {

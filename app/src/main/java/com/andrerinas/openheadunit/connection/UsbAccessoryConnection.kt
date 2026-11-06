@@ -206,11 +206,32 @@ class UsbAccessoryConnection(private val usbMgr: UsbManager, private val device:
     // Volatile reads capture the latest connection/endpoint references; bulkTransfer runs
     // entirely outside any lock. If disconnect() calls close() concurrently, bulkTransfer
     // returns -1 immediately — a safe, recoverable outcome.
+    // On Leapmotor C10 (QTI msmnile dwc3 controller), bulkTransfer writes larger than
+    // endpointOut.maxPacketSize (512 bytes) with short timeouts (250ms) fail with -1 on
+    // ServiceDiscoveryResponse (~1200 bytes). Matching LeapLink's LL3/m.write implementation,
+    // we slice outgoing transfers into maxPacketSize (512B) chunks with >=1000ms per-chunk timeout.
     override fun sendBlocking(buf: ByteArray, length: Int, timeout: Int): Int {
         val connection = usbDeviceConnection ?: return -1
         val ep = endpointOut ?: return -1
         return try {
-            connection.bulkTransfer(ep, buf, length, timeout)
+            val maxPacket = ep.maxPacketSize.let { if (it > 0) it else 512 }
+            val chunkTimeout = maxOf(timeout, 1000)
+            var totalSent = 0
+            while (totalSent < length) {
+                val chunkLen = minOf(length - totalSent, maxPacket)
+                val chunk = if (totalSent == 0 && chunkLen == buf.size) {
+                    buf
+                } else {
+                    buf.copyOfRange(totalSent, totalSent + chunkLen)
+                }
+                val ret = connection.bulkTransfer(ep, chunk, chunkLen, chunkTimeout)
+                if (ret < 0) {
+                    AppLog.e("USB Write Error: bulkTransfer returned $ret after $totalSent/$length bytes (chunk=$chunkLen, maxPacket=$maxPacket, timeout=$chunkTimeout)")
+                    return -1
+                }
+                totalSent += if (ret > 0) ret else chunkLen
+            }
+            totalSent
         } catch (e: Exception) {
             AppLog.e("USB Write Error: ${e.message}")
             -1
@@ -237,12 +258,25 @@ class UsbAccessoryConnection(private val usbMgr: UsbManager, private val device:
                     continue
                 }
 
-                // 2. Internal buffer empty, read new 16KB chunk from USB
-                val read = try {
-                    connection.bulkTransfer(ep, internalBuffer, internalBuffer.size, timeout)
-                } catch (e: Exception) {
-                    AppLog.e("USB Read Error: ${e.message}")
-                    -1
+                // 2. Internal buffer empty, read new 16KB chunk from USB in 1000ms poll slices
+                // (matching LeapLink LL3/o.read so endpointIn never blocks the USB handle for 5000ms).
+                // The caller's timeout is honoured as-is (the handshake drain relies on 50 ms);
+                // only long waits are split into slices of at most 1000 ms.
+                val totalBudgetMs = timeout.coerceAtLeast(1)
+                val readDeadline = SystemClock.elapsedRealtime() + totalBudgetMs
+                var read: Int
+                while (true) {
+                    val remainingMs = (readDeadline - SystemClock.elapsedRealtime()).toInt()
+                    val sliceTimeout = remainingMs.coerceIn(1, 1000)
+                    read = try {
+                        connection.bulkTransfer(ep, internalBuffer, internalBuffer.size, sliceTimeout)
+                    } catch (e: Exception) {
+                        AppLog.e("USB Read Error: ${e.message}")
+                        -1
+                    }
+                    if (read >= 0 || SystemClock.elapsedRealtime() >= readDeadline || usbDeviceConnection == null) {
+                        break
+                    }
                 }
 
                 if (read < 0) {

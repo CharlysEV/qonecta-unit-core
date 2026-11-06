@@ -13,6 +13,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.storage.StorageManager
+import com.headqlink.unit.extended.LeapVehicleDataSource
 import com.headqlink.unit.files.CarFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -25,15 +26,9 @@ import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 
 /**
- * Sonda del coche, solo lectura: qué servicios de Leapmotor hay en la unidad, qué permiso piden y si una app con su
- * nombre de verdad puede conectarse a ellos. Nunca llama a una función de esos servicios: al conectar solo pregunta el
- * nombre de su interfaz (INTERFACE_TRANSACTION, que contesta el código genérico de Binder del servicio, no una función
- * suya), así que no puede accionar nada del coche. Conectar sí arranca el servicio si no estaba en marcha.
- *
- * Los servicios y acciones son los que usa LeapLink para leer el CAN (análisis estático de su APK, 31-10-2026).
- *
- * También mira, sin tocar nada, lo que hace falta para el mapa en el cuadro (qué pantallas deja usar Android) y para
- * instalar sin Vivaldi (de dónde vino Vivaldi, qué tiendas hay y quién abre archivos).
+ * Sonda del coche, solo lectura: qué servicios de Leapmotor hay en la unidad, qué permiso piden, si una app puede
+ * conectarse a ellos y qué telemetría en tiempo real devuelven (`IAutoSdkService` transacciones 17..45 y
+ * `IBinderPool` sub-binders 0..12).
  */
 object CarProbe {
 
@@ -83,7 +78,7 @@ object CarProbe {
         }
 
         out.appendLine()
-        out.appendLine("== Conectar (solo pregunta el nombre de la interfaz)")
+        out.appendLine("== Conectar y leer telemetría en tiempo real")
         for (t in TARGETS) out.appendLine("  ${t.action}\n    " + bind(context, t))
 
         out.appendLine()
@@ -211,15 +206,13 @@ object CarProbe {
     private fun protectionOf(info: PermissionInfo): Int =
         if (Build.VERSION.SDK_INT >= 28) info.protection or info.protectionFlags else info.protectionLevel
 
-    /** Conecta y desconecta en seguida; lo único que se pregunta es el nombre de la interfaz. */
+    /** Conecta, lee los valores de telemetría disponibles en solo lectura y desconecta en seguida. */
     private suspend fun bind(context: Context, t: Target): String = withContext(Dispatchers.Main) {
         val intent = Intent(t.action).setPackage(t.pkg)
         val si = context.packageManager.resolveService(intent, 0)?.serviceInfo
             ?: return@withContext "no hay servicio para esa acción"
         val head = "${si.name} (exportado=${si.exported}, permiso=${si.permission ?: "ninguno"})"
         var conn: ServiceConnection? = null
-        // Se desconecta siempre, también si se cancela a medias (atrás en Diagnóstico): si no, la conexión con el
-        // servicio del coche seguiría hasta que se cerrara la app.
         val result = try {
             withTimeoutOrNull(BIND_TIMEOUT_MS) {
                 suspendCancellableCoroutine<String> { cont ->
@@ -228,7 +221,25 @@ object CarProbe {
                     }
                     val c = object : ServiceConnection {
                         override fun onServiceConnected(name: ComponentName, binder: IBinder?) {
-                            done("CONECTA · interfaz " + (runCatching { binder?.interfaceDescriptor }.getOrNull() ?: "?"))
+                            val desc = runCatching { binder?.interfaceDescriptor }.getOrNull() ?: "?"
+                            val extra = StringBuilder()
+                            if (binder != null && desc == LeapVehicleDataSource.AUTOSDK_DESCRIPTOR) {
+                                for (spec in LeapVehicleDataSource.POLL_SPECS) {
+                                    val v = LeapVehicleDataSource.transactAutoSdkValue(binder, spec)
+                                    if (v != null) {
+                                        extra.append("\n      [tx ${spec.code}] ${spec.label}: $v")
+                                    }
+                                }
+                            } else if (binder != null && (desc == LeapVehicleDataSource.BINDER_POOL_DESCRIPTOR || desc.contains("BinderPool"))) {
+                                for (poolId in 0..12) {
+                                    val sub = LeapVehicleDataSource.queryBinderFromPool(binder, desc, poolId)
+                                    if (sub != null) {
+                                        val subDesc = runCatching { sub.interfaceDescriptor }.getOrNull() ?: "?"
+                                        extra.append("\n      [pool $poolId] -> $subDesc")
+                                    }
+                                }
+                            }
+                            done("CONECTA · interfaz $desc$extra")
                         }
 
                         override fun onServiceDisconnected(name: ComponentName) {}

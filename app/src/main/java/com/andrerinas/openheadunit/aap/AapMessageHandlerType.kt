@@ -34,7 +34,13 @@ internal class AapMessageHandlerType(
 
         // 1. Try processing as Video stream first (ID_VID)
         // High priority for the smoothest possible display.
-        if (message.channel == Channel.ID_VID) {
+        // Control messages on ID_VID are always single-fragment (flags == FLAG_SINGLE) with
+        // msgType >= 32768 (e.g. VIDEO_FOCUS_INDICATION 32776). Passing them into the fragment
+        // assembler while a multi-fragment video frame (flags = 9, 8, ..., 10) is mid-assembly
+        // would falsely trigger TRUNCATED_PREVIOUS and discard the in-flight video frame!
+        if (message.channel == Channel.ID_VID &&
+            (flags.toInt() != VideoFragmentAssembler.FLAG_SINGLE || msgType in 0..1)
+        ) {
              if (aapVideo.process(message)) {
                  if (msgType == 0 || msgType == 1) transport.onMainVideoData()
                  // Send ACK AFTER processing
@@ -47,8 +53,10 @@ internal class AapMessageHandlerType(
 
         // 1b. The dashboard's own video stream, decoded separately from the main screen. Same
         // contract as the main stream: fragments carry no type of their own, so every message is
-        // offered and only what the assembler does not consume falls through to control.
-        if (message.channel == Channel.ID_CLUSTER_VID) {
+        // offered except single-fragment control messages which go directly to AapControl.
+        if (message.channel == Channel.ID_CLUSTER_VID &&
+            (flags.toInt() != VideoFragmentAssembler.FLAG_SINGLE || msgType in 0..1)
+        ) {
             if (transport.clusterVideo.process(message)) {
                 if (msgType == 0 || msgType == 1) {
                     transport.sendMediaAck(message.channel)

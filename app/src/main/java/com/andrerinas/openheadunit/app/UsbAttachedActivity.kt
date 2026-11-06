@@ -1,13 +1,14 @@
 package com.andrerinas.openheadunit.app
 
 import android.app.Activity
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.os.Build
 import android.os.Bundle
 import android.os.UserManager
-import android.os.Build
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.andrerinas.openheadunit.App
@@ -17,10 +18,10 @@ import com.andrerinas.openheadunit.connection.CommManager
 import com.andrerinas.openheadunit.connection.UsbAccessoryMode
 import com.andrerinas.openheadunit.connection.UsbDeviceCompat
 import com.andrerinas.openheadunit.connection.UsbReceiver
+import com.andrerinas.openheadunit.main.MainActivity
 import com.andrerinas.openheadunit.utils.AppLog
 import com.andrerinas.openheadunit.utils.DeviceIntent
 import com.andrerinas.openheadunit.utils.LocaleHelper
-import com.andrerinas.openheadunit.main.MainActivity
 import com.andrerinas.openheadunit.utils.Settings
 import com.andrerinas.openheadunit.utils.ToastUtils
 
@@ -36,6 +37,29 @@ class UsbAttachedActivity : Activity() {
         val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
         val androidDevices = usbManager.deviceList.values.filter { UsbDeviceCompat.isAndroidDevice(it) }
         return resolveDevice(intent, androidDevices)
+    }
+
+    private fun resolveAppleDevice(intent: Intent?): UsbDevice? {
+        DeviceIntent(intent).device?.takeIf { UsbDeviceCompat.isAppleDevice(it) }?.let { return it }
+        val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+        val appleDevices = usbManager.deviceList.values.filter { UsbDeviceCompat.isAppleDevice(it) }
+        return appleDevices.singleOrNull()
+    }
+
+    private fun forwardAppleUsbToCarPlay(device: UsbDevice): Boolean {
+        return try {
+            AppLog.i("Apple USB device attached (${UsbDeviceCompat(device).uniqueName}); forwarding to CarPlayHostActivity")
+            val carPlayIntent = Intent(UsbManager.ACTION_USB_DEVICE_ATTACHED).apply {
+                component = ComponentName(this@UsbAttachedActivity, "com.shilapi.xcertplay.CarPlayHostActivity")
+                putExtra(UsbManager.EXTRA_DEVICE, device)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(carPlayIntent)
+            true
+        } catch (e: Exception) {
+            AppLog.e("Failed to forward Apple USB device to CarPlayHostActivity: ${e.message}", e)
+            false
+        }
     }
 
     companion object {
@@ -74,6 +98,12 @@ class UsbAttachedActivity : Activity() {
 
         AppLog.i("USB Intent: $intent")
 
+        resolveAppleDevice(intent)?.let { appleDevice ->
+            forwardAppleUsbToCarPlay(appleDevice)
+            finish()
+            return
+        }
+
         val device = resolveUsbDevice(intent)
         if (device == null || !UsbDeviceCompat.isAndroidDevice(device)) {
             if (device != null) {
@@ -83,8 +113,8 @@ class UsbAttachedActivity : Activity() {
             return
         }
 
-        val isLocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && 
-                      !(getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
+        val isLocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+            !(getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
 
         val settings = if (!isLocked) Settings(this) else null
 
@@ -96,8 +126,9 @@ class UsbAttachedActivity : Activity() {
             }
         }
 
+        val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+
         if (UsbDeviceCompat.isInAccessoryMode(device)) {
-            val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
             if (!usbManager.hasPermission(device)) {
                 AppLog.i("Usb in accessory mode but no permission. Requesting...")
                 val permissionIntent = UsbReceiver.createPermissionPendingIntent(this)
@@ -115,10 +146,6 @@ class UsbAttachedActivity : Activity() {
 
         val deviceCompat = UsbDeviceCompat(device)
 
-        // Launch app UI if USB auto-start is enabled (for any device — a non-AA
-        // device simply won't complete the AOA handshake, no harm done)
-        // Use device-protected storage for the auto-start check so it works
-        // during locked boot (before credential storage is available)
         val autoStartOnUsb = Settings.isAutoStartOnUsbEnabled(this)
         if (autoStartOnUsb && !App.provide(this).commManager.isConnected) {
             AppLog.i("USB auto-start: launching app for ${deviceCompat.uniqueName}")
@@ -132,23 +159,30 @@ class UsbAttachedActivity : Activity() {
             }
         }
 
-        // Google VID (0x18D1) devices are almost certainly Android Auto phones or AA dongles
-        // (e.g. AAWireless). Always attempt the AOA switch for these — skipping them would
-        // break dongle users who haven't explicitly configured allowlists.
-        val isGoogleDevice = device.vendorId == 0x18D1
-        if (!isGoogleDevice && settings != null && !autoStartOnUsb && !settings.isConnectingDevice(deviceCompat)) {
+        // Known phone OEMs (Google, Samsung, Xiaomi, Motorola, Huawei, Honor, OnePlus, OPPO, vivo, etc.)
+        // are Android Auto phones or AA dongles. Always attempt the AOA switch for these.
+        val isKnownPhone = UsbDeviceCompat.isKnownPhoneVendor(device)
+        if (!isKnownPhone && settings != null && !autoStartOnUsb && !settings.isConnectingDevice(deviceCompat)) {
             AppLog.i("Skipping device ${deviceCompat.uniqueName} (not allowed and USB auto-start disabled)")
             finish()
             return
         }
-        
-        if (isLocked && !autoStartOnUsb) {
+
+        if (isLocked && !autoStartOnUsb && !isKnownPhone) {
             AppLog.w("Device is locked and USB auto-start is disabled. Cannot check allowed devices. Finishing.")
             finish()
             return
         }
 
-        val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+        if (!usbManager.hasPermission(device)) {
+            AppLog.i("Normal-mode USB device ${deviceCompat.uniqueName} has no permission yet; requesting permission...")
+            ContextCompat.startForegroundService(this, Intent(this, AapService::class.java))
+            val permissionIntent = UsbReceiver.createPermissionPendingIntent(this)
+            usbManager.requestPermission(device, permissionIntent)
+            finish()
+            return
+        }
+
         val usbMode = UsbAccessoryMode(usbManager)
         AppLog.i("Switching USB device to accessory mode " + deviceCompat.uniqueName)
         ToastUtils.showToast(this, getString(R.string.switching_usb_accessory_mode, deviceCompat.uniqueName), Toast.LENGTH_SHORT)
@@ -169,6 +203,12 @@ class UsbAttachedActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
 
+        resolveAppleDevice(intent)?.let { appleDevice ->
+            forwardAppleUsbToCarPlay(appleDevice)
+            finish()
+            return
+        }
+
         val device = resolveUsbDevice(intent)
         if (device == null || !UsbDeviceCompat.isAndroidDevice(device)) {
             if (device != null) {
@@ -180,8 +220,8 @@ class UsbAttachedActivity : Activity() {
 
         AppLog.i(UsbDeviceCompat.getUniqueName(device))
 
-        val isLocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && 
-                      !(getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
+        val isLocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+            !(getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
 
         if (!isLocked && App.provide(this).commManager.connectionState.value !is CommManager.ConnectionState.TransportStarted) {
             if (UsbDeviceCompat.isInAccessoryMode(device)) {

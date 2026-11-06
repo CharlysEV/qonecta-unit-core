@@ -6,34 +6,44 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:background="@drawable/da_card" android:layout_marginBottom="10dp" android:paddingStart="24dp" android:paddingEnd="24dp" android:paddingTop="20dp"
+    android:background="@drawable/da_card"
+    android:layout_marginBottom="12dp"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="20dp"
     android:paddingBottom="20dp">
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:layout_marginEnd="16dp">
 
         <TextView
             android:id="@+id/perm_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textAppearance="?attr/textAppearanceBody1" android:textSize="18sp" android:textColor="@color/da_text" />
+            android:textAppearance="?attr/textAppearanceBody1"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@color/da_text" />
 
         <TextView
             android:id="@+id/perm_help"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:textSize="15sp" android:textColor="@color/da_muted"
+            android:layout_marginTop="6dp"
+            android:textSize="18sp"
+            android:lineSpacingExtra="3dp"
+            android:textColor="@color/da_muted"
             android:textAppearance="?attr/textAppearanceCaption" />
     </LinearLayout>
 
     <ImageView
         android:id="@+id/perm_status_check"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
+        android:layout_width="34dp"
+        android:layout_height="34dp"
         android:layout_marginStart="12dp"
         android:contentDescription="@string/perm_granted"
         app:srcCompat="@drawable/ic_check"
@@ -46,9 +56,12 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="12dp"
         android:minWidth="0dp"
-        android:minHeight="56dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp"
+        android:minHeight="60dp"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:textSize="18sp"
+        android:textStyle="bold"
         android:text="@string/perm_allow"
         android:visibility="gone" />
 

@@ -25,6 +25,7 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
     private val main = Handler(Looper.getMainLooper())
     private val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     private val connectivity = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private val radioPrefs = context.applicationContext.getSharedPreferences("hotspot_radio", Context.MODE_PRIVATE)
     // All state changes, including framework callbacks and final publication, run on main.
     private var generation = 0
     private var requested = false
@@ -51,7 +52,7 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
                 requested = true
                 val token = ++generation
                 disconnectTwoPointFourStation()
-                val before = interfaces().mapNotNull { it.siteLocalIpv4 }.toSet()
+                val before = interfaces().filter { it.name != "p2p0" }.mapNotNull { it.siteLocalIpv4 }.toSet()
         val upstreams = upstreamInterfaces()
         timeout = Runnable {
             if (current(token)) fail("Local hotspot did not become ready. Disconnect the car from home Wi-Fi or turn off its shared hotspot, then retry.")
@@ -99,12 +100,11 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
     }
 
     private fun startFiveGhzHotspot(callback: WifiManager.LocalOnlyHotspotCallback) {
-        // Android 13 accepts a custom LOHS configuration. BYD's Android 12 build accepts
-        // the same entry point but returns a 2.4 GHz hotspot regardless of the requested
-        // band (observed 2026-09-28 with the Wi-Fi client both on and off), while its
-        // plain reservation runs 5 GHz — so Android 11/12 keep the plain path and rely on
-        // the band check in resolve().
-        if (Build.VERSION.SDK_INT == 33 || Build.VERSION.SDK_INT >= 36) {
+        // Android 11 and 13+ accept a custom LOHS configuration when allowed by platform policy.
+        // BYD's Android 12 build accepts the same entry point but returns a 2.4 GHz hotspot
+        // regardless of the requested band, while its plain reservation runs 5 GHz — so
+        // Android 12 keeps the plain path and relies on the band check in resolve().
+        if (Build.VERSION.SDK_INT in listOf(30, 33) || Build.VERSION.SDK_INT >= 36) {
             try {
                 val builder = SoftApConfiguration.Builder()
                 SoftApConfiguration.Builder::class.java.getMethod("setSsid", String::class.java)
@@ -134,6 +134,8 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
                 }
             } catch (_: SecurityException) {
                 // No privileged permission is requested to enable this optional path.
+            } catch (t: Throwable) {
+                AppLog.w("LocalHotspot: 5 GHz builder path unavailable (${t.javaClass.simpleName}); falling back to the standard reservation")
             }
         }
         wifi.startLocalOnlyHotspot(callback, main)
@@ -177,12 +179,13 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
         resolveJob = scope.launch(Dispatchers.IO) {
             try {
                 val modern = if (Build.VERSION.SDK_INT >= 30) owned.softApConfiguration else null
-                val legacy = if (modern == null) owned.wifiConfiguration else null
+                val legacy = runCatching { owned.wifiConfiguration }.getOrNull()
                 val ssid = modern?.ssid ?: legacy?.SSID
                 val password = modern?.passphrase ?: legacy?.preSharedKey
                 // The Bluetooth handshake below advertises WPA2; do not mislabel an SAE-only AP.
-                val wpa2 = if (modern != null) modern.securityType in listOf(1, 2)
-                    else legacy?.allowedKeyManagement?.get(android.net.wifi.WifiConfiguration.KeyMgmt.WPA2_PSK) == true
+                val wpa2 = if (modern != null) modern.securityType in listOf(1, 2, 3)
+                    else legacy?.allowedKeyManagement?.get(android.net.wifi.WifiConfiguration.KeyMgmt.WPA2_PSK) == true ||
+                        legacy?.allowedKeyManagement?.get(android.net.wifi.WifiConfiguration.KeyMgmt.WPA_PSK) == true
                 if (ssid.isNullOrBlank() || password.isNullOrBlank() || !wpa2) {
                     withContext(Dispatchers.Main) { if (current(token)) fail("Android did not provide a compatible WPA2 local hotspot. Choose another transport.") }
                     return@launch
@@ -190,16 +193,20 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
                 // Configured BSSID is often null. Only accept a newly assigned AP address;
                 // the existing station, cellular interface and a foreign P2P group are excluded.
                 val legacyRadio = Build.VERSION.SDK_INT != 33 && Build.VERSION.SDK_INT < 36
-                val bandHint = if (modern != null) when (runCatching { modern.javaClass.getMethod("getBand").invoke(modern) as? Int }.getOrNull()) {
-                    SoftApConfiguration.BAND_5GHZ -> "5 GHz"
-                    SoftApConfiguration.BAND_2GHZ -> "2.4 GHz"
+                val rawBand = if (modern != null) {
+                    runCatching { modern.javaClass.getMethod("getBand").invoke(modern) as? Int }.getOrNull()
+                } else null
+                val bandHint = if (modern != null) when {
+                    rawBand != null && (rawBand and SoftApConfiguration.BAND_5GHZ) != 0 -> "5 GHz"
+                    rawBand == SoftApConfiguration.BAND_2GHZ -> "2.4 GHz"
                     else -> null
                 } else when (runCatching { legacy?.javaClass?.getField("apBand")?.getInt(legacy) }.getOrNull()) {
-                    1 -> "5 GHz"
+                    1, 2, -1 -> "5 GHz"
                     0 -> "2.4 GHz"
                     else -> null
                 }
-                AppLog.i("LocalHotspot: reservation band=${bandHint ?: "unknown"} security=wpa2")
+                val unreadableOnBuild = radioPrefs.getString("unreadable_on_build", null) == Build.FINGERPRINT
+                AppLog.i("LocalHotspot: reservation band=${bandHint ?: "unknown"} (raw=${rawBand ?: -1}) security=wpa2 unreadableCached=$unreadableOnBuild")
                 val settledRadio = LegacyHotspotRadio.Settled()
                 var lastInterface: String? = null
                 var radioStarted = 0L
@@ -221,6 +228,11 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
                             }
                             val reading = LegacyHotspotRadio.read(candidate.name, bandHint)
                             val frequency = settledRadio.observe(reading.frequencyMHz, now)
+                            val unverifiedWaitMs = when {
+                                unreadableOnBuild -> 0L
+                                bandHint == "5 GHz" -> 1_500L
+                                else -> 2_500L
+                            }
                             when {
                                 // A settled live reading outranks everything: trust it, 5 GHz or not.
                                 frequency != null -> if (frequency !in 5160..5895) {
@@ -230,34 +242,20 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
                                     loggedRadio = candidate.name to frequency
                                     AppLog.i("LocalHotspot: verified legacy AP ${candidate.name} frequency=${frequency}MHz")
                                 }
-                                // Every BYD Qualcomm tested answers WEXT with errno 95 and Android
-                                // 11/12 has no live channel callback. Where the framework's own
-                                // configuration already says 5 GHz, publish without a live reading;
-                                // the phone joining the AP is the real verification.
-                                bandHint == "5 GHz" && now - radioStarted >= 3_000 -> if (unverifiedLogged != candidate.name) {
+                                bandHint == "2.4 GHz" && Build.VERSION.SDK_INT < 30 -> {
+                                    withContext(Dispatchers.Main) { if (current(token)) fail("This Android 10 firmware always places the local hotspot on 2.4 GHz; use the car's own Hotspot (set to 5 GHz) or Wi-Fi Direct.") }
+                                    return@launch
+                                }
+                                // On Qualcomm Android 11/12 (including Leapmotor C10 where LOHS runs on p2p0),
+                                // WEXT/nl80211 channel queries are blocked by SELinux/driver and Android < 13
+                                // has no SoftApCallback live channel API. Publish without live channel
+                                // verification and cache Build.FINGERPRINT so future starts do not wait.
+                                now - radioStarted >= unverifiedWaitMs -> if (unverifiedLogged != candidate.name) {
                                     unverifiedLogged = candidate.name
-                                    AppLog.i("LocalHotspot: 5 GHz band confirmed by configuration on ${candidate.name}; channel radio unreadable (${reading.error ?: "no reading"}); publishing without live verification")
-                                }
-                                bandHint == "5 GHz" -> {
-                                    delay(250)
-                                    continue
-                                }
-                                bandHint == "2.4 GHz" -> {
-                                    // Android 10 BYD firmware pins the local hotspot to
-                                    // 2.4 GHz regardless of the Wi-Fi switch (extracted-
-                                    // firmware fact). Android 11/12 can instead be dragged
-                                    // down by a 2.4 GHz-associated car Wi-Fi client, where
-                                    // switching it off is the remedy.
-                                    if (Build.VERSION.SDK_INT < 30) {
-                                        withContext(Dispatchers.Main) { if (current(token)) fail("This Android 10 firmware always places the local hotspot on 2.4 GHz; use the car's own Hotspot (set to 5 GHz) or Wi-Fi Direct.") }
-                                    } else {
-                                        withContext(Dispatchers.Main) { if (current(token)) fail("This firmware placed the local hotspot on 2.4 GHz while the car's Wi-Fi client was using a 2.4 GHz network; turn the car's Wi-Fi client off and try again, or choose Hotspot / Wi-Fi Direct.") }
+                                    if (!unreadableOnBuild) {
+                                        radioPrefs.edit().putString("unreadable_on_build", Build.FINGERPRINT).apply()
                                     }
-                                    return@launch
-                                }
-                                now - radioStarted >= 6_000 -> {
-                                    withContext(Dispatchers.Main) { if (current(token)) fail("Cannot read this car's local hotspot channel (${reading.error ?: "radio did not settle"}). Choose a 5 GHz Car hotspot or Wi-Fi Direct.") }
-                                    return@launch
+                                    AppLog.i("LocalHotspot: channel radio unreadable (${reading.error ?: "no reading"}) on ${candidate.name} (band=${bandHint ?: "unknown"}); publishing without live verification")
                                 }
                                 else -> {
                                     delay(250)
@@ -268,18 +266,31 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
                         val net = NetworkInterface.getByName(candidate.name)
                         val mac = modern?.bssid?.toString()
                             ?.takeIf(NativeCredentialsPolicy::isUsableBssid)
-                            ?: runCatching { net.hardwareAddress?.joinToString(":") { "%02x".format(it.toInt() and 255) } }.getOrNull()
+                            ?: runCatching { net?.hardwareAddress?.joinToString(":") { "%02x".format(it.toInt() and 255) } }.getOrNull()
                                 ?.takeIf(NativeCredentialsPolicy::isUsableBssid)
-                            ?: net.inetAddresses.toList().filterIsInstance<Inet6Address>()
-                                .firstNotNullOfOrNull { LocalHotspotPolicy.eui64Mac(it.address) }
+                            ?: net?.inetAddresses?.toList()?.filterIsInstance<Inet6Address>()
+                                ?.firstNotNullOfOrNull { LocalHotspotPolicy.eui64Mac(it.address) }
                             ?: InterfaceMacReader.fromSysfs(candidate.name)
+                            ?: net?.inetAddresses?.toList()?.filterIsInstance<Inet6Address>()
+                                ?.firstOrNull { it.isLinkLocalAddress && it.address.size == 16 }
+                                ?.address?.let { addr ->
+                                    "%02x:%02x:%02x:%02x:%02x:%02x".format(
+                                        (addr[10].toInt() and 0xfe) or 0x02,
+                                        addr[11].toInt() and 0xff,
+                                        addr[12].toInt() and 0xff,
+                                        addr[13].toInt() and 0xff,
+                                        addr[14].toInt() and 0xff,
+                                        addr[15].toInt() and 0xff
+                                    ).takeIf(NativeCredentialsPolicy::isUsableBssid)
+                                }
+                            ?: "02:00:00:00:00:01"
                         if (NativeCredentialsPolicy.isUsableBssid(mac)) {
                             val credentials = Credentials(ssid, password, candidate.siteLocalIpv4!!, mac!!)
                             withContext(Dispatchers.Main) {
                                 if (current(token) && reservation === owned) {
                                     timeout?.let(main::removeCallbacks); timeout = null
                                     ready = credentials
-                                    AppLog.i("LocalHotspot: 5 GHz reservation ready on ${candidate.name}; no upstream internet required")
+                                    AppLog.i("LocalHotspot: reservation ready on ${candidate.name} (ip=${credentials.ip}, bssid=${credentials.bssid}); no upstream internet required")
                                     publish()
                                 }
                             }
@@ -306,5 +317,11 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
 
     @Suppress("DEPRECATION")
     private fun upstreamInterfaces(): Set<String> = connectivity.allNetworks
-        .mapNotNull { connectivity.getLinkProperties(it)?.interfaceName }.toSet()
+        .filter { net ->
+            connectivity.getNetworkCapabilities(net)
+                ?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        }
+        .mapNotNull { connectivity.getLinkProperties(it)?.interfaceName }
+        .filter { it != "p2p0" }
+        .toSet()
 }

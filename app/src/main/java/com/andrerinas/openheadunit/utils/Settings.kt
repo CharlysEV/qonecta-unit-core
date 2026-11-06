@@ -89,14 +89,28 @@ class Settings(private val context: Context) {
         get() = prefs.getBoolean("use_measured_touch_surface", true)
         set(value) { prefs.edit().putBoolean("use_measured_touch_surface", value).apply() }
 
+    private fun defaultUiScalePercent(defaultForStandardScreen: Int): Int {
+        return try {
+            val dm = context.resources.displayMetrics
+            val maxDim = maxOf(dm.widthPixels, dm.heightPixels)
+            // On 2K+ automotive displays (such as Leapmotor C10 2560x1440 at 160-200 dpi),
+            // 100% leaves text and touch controls far too small from the driver's seat.
+            if (maxDim >= 2000 && dm.densityDpi <= 240) 140
+            else if (maxDim >= 1800 && dm.densityDpi <= 200) 130
+            else defaultForStandardScreen
+        } catch (_: Exception) {
+            defaultForStandardScreen
+        }
+    }
+
     // UI Scale percentage for Home
     var uiScaleHomePercent: Int
-        get() = prefs.getInt("ui-scale-home-percent", 100)
+        get() = prefs.getInt("ui-scale-home-percent", defaultUiScalePercent(120))
         set(value) { prefs.edit().putInt("ui-scale-home-percent", value).apply() }
 
     // UI Scale percentage for Settings
     var uiScaleSettingsPercent: Int
-        get() = prefs.getInt("ui-scale-settings-percent", 100)
+        get() = prefs.getInt("ui-scale-settings-percent", defaultUiScalePercent(125))
         set(value) { prefs.edit().putInt("ui-scale-settings-percent", value).apply() }
 
     var micSampleRate: Int
@@ -115,10 +129,14 @@ class Settings(private val context: Context) {
         get() = prefs.getBoolean("byd-navigation-enabled", false)
         set(value) { prefs.edit().putBoolean("byd-navigation-enabled", value).apply() }
 
-    // Instrument-cluster ("dashboard") map from Android Auto. Declared to the phone at connection
-    // time, so changes apply on the next connection. See hud/ClusterMapConfig.
+    // Instrument-cluster ("dashboard") map from Android Auto / CarPlay. Enabled by default when a
+    // secondary cluster display (such as Display 2 on the Leapmotor C10) is present.
     var clusterMapEnabled: Boolean
-        get() = prefs.getBoolean("cluster-map-enabled", false)
+        get() = prefs.getBoolean(
+            "cluster-map-enabled",
+            com.andrerinas.openheadunit.cluster.ClusterMapController.hasClusterDisplay(context) ||
+                android.os.Build.MODEL.contains("Leapmotor", ignoreCase = true)
+        )
         set(value) { prefs.edit().putBoolean("cluster-map-enabled", value).apply() }
 
     var clusterMapSize: Int
@@ -598,7 +616,7 @@ class Settings(private val context: Context) {
     // How the user primarily connects. Drives which options are surfaced in the Basic tab
     // (e.g. cable users do not see the Wireless Connection group there). UNSET shows everything.
     var primaryConnection: ConnectionKind
-        get() = ConnectionKind.fromInt(prefs.getInt("primary-connection", ConnectionKind.NATIVE_AA.value))
+        get() = ConnectionKind.fromInt(prefs.getInt("primary-connection", ConnectionKind.ALL.value))
         set(value) { prefs.edit().putInt("primary-connection", value.value).apply() }
 
     /**
@@ -609,6 +627,14 @@ class Settings(private val context: Context) {
      */
     var connectionModes: Set<ConnectionMode>
         get() {
+            if (!prefs.getBoolean("qonecta-both-conn-modes-v1", false)) {
+                val both = setOf(ConnectionMode.WIFI, ConnectionMode.USB)
+                prefs.edit()
+                    .putStringSet(KEY_CONNECTION_MODES, both.map { it.key }.toSet())
+                    .putBoolean("qonecta-both-conn-modes-v1", true)
+                    .apply()
+                return both
+            }
             val stored = prefs.getStringSet(KEY_CONNECTION_MODES, null)
             if (stored != null) return stored.mapNotNull { ConnectionMode.fromKey(it) }.toSet()
             val migrated = migrateLegacyConnectionModes()
@@ -616,7 +642,10 @@ class Settings(private val context: Context) {
             return migrated
         }
         set(value) {
-            prefs.edit().putStringSet(KEY_CONNECTION_MODES, value.map { it.key }.toSet()).apply()
+            prefs.edit()
+                .putStringSet(KEY_CONNECTION_MODES, value.map { it.key }.toSet())
+                .putBoolean("qonecta-both-conn-modes-v1", true)
+                .apply()
         }
 
     private fun migrateLegacyConnectionModes(): Set<ConnectionMode> = when (primaryConnection) {
@@ -639,7 +668,7 @@ class Settings(private val context: Context) {
         set(value) { prefs.edit().putBoolean("auto-connect-last-session", value).apply() }
 
     var autoConnectSingleUsbDevice: Boolean
-        get() = prefs.getBoolean("auto-connect-single-usb", false)
+        get() = prefs.getBoolean("auto-connect-single-usb", true)
         set(value) { prefs.edit().putBoolean("auto-connect-single-usb", value).apply() }
 
     var lastConnectionType: String
@@ -764,7 +793,7 @@ class Settings(private val context: Context) {
         set(value) { prefs.edit().putBoolean("auto-start-self-mode", value).apply() }
 
     var autoStartOnUsb: Boolean
-        get() = prefs.getBoolean("auto-start-on-usb", false)
+        get() = prefs.getBoolean("auto-start-on-usb", true)
         set(value) { prefs.edit().putBoolean("auto-start-on-usb", value).apply() }
 
     var autoStartOnBoot: Boolean
@@ -1252,7 +1281,7 @@ class Settings(private val context: Context) {
             } else {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             }
-            return prefs.getBoolean(KEY_AUTO_START_ON_USB, false)
+            return prefs.getBoolean(KEY_AUTO_START_ON_USB, true)
         }
 
         fun syncAutoStartOnUsbToDeviceStorage(context: Context, enabled: Boolean) {
@@ -1527,20 +1556,14 @@ class Settings(private val context: Context) {
         set(value) = prefs.edit().putString("bluetooth-manager-service-name", value).apply()
 
     // Which network the Native AA mode (wifiConnectionMode 3) puts the phone on.
-    // 0 = WiFi Direct, 1 = car hotspot. Legacy local-hotspot value 2 migrates to 1.
+    // 0 = WiFi Direct, 1 = car hotspot, 2 = local hotspot (LocalOnlyHotspot).
     //
     // Deliberately not folded into helperConnectionStrategy: that setting belongs to mode 2 and
     // means something different in every one of its five values. A wireless mode that reuses
     // another mode's selector is how the two call sites of the old usesWifiDirect() drifted apart.
     var nativeApTransport: Int
-        get() {
-            val stored = prefs.getInt("native-ap-transport", 1)
-            return if (stored == 2) {
-                prefs.edit().putInt("native-ap-transport", 1).apply()
-                1
-            } else stored
-        }
-        set(value) = prefs.edit().putInt("native-ap-transport", if (value == 2) 1 else value).apply()
+        get() = prefs.getInt("native-ap-transport", 0)
+        set(value) = prefs.edit().putInt("native-ap-transport", value).apply()
 
     // Whether the Native AA handshake opens with a WifiVersionRequest (Type 4), as real head units
     // and the OEM ZLink app do, instead of going straight to WifiStartRequest.
@@ -1553,7 +1576,7 @@ class Settings(private val context: Context) {
     // unit broke on Android Auto 17.4 confirms it helps, since fixing that is the only reason to
     // send it at all.
     var nativeWifiVersionExchange: Boolean
-        get() = prefs.getBoolean("native-wifi-version-exchange", false)
+        get() = prefs.getBoolean("native-wifi-version-exchange", true)
         set(value) = prefs.edit().putBoolean("native-wifi-version-exchange", value).apply()
 
     // Manual fallback for dual-radio head units whose second radio isn't discoverable via

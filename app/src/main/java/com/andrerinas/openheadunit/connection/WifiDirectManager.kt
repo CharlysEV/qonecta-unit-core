@@ -83,6 +83,10 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
     private val discoveryRunnable = object : Runnable {
         override fun run() {
             if (!sessionOwnership.current(generation)) return
+            val isNativeMode = com.andrerinas.openheadunit.App.provide(context).settings.wifiConnectionMode == 3
+            if (isNativeMode || isNativeSessionConnected?.invoke() == true || isNativeHandshakeInFlight?.invoke() == true) {
+                return
+            }
             if (!isClientConnected) {
                 // Skip while a teardown/recreate is in flight (reuse path or the stuck-retry
                 // self-heal) — the group is disappearing/reforming underneath us, so a
@@ -221,8 +225,14 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
         this.isNativeSessionConnected = provider
     }
 
+    private var onNativeGroupCreationFailed: (() -> Unit)? = null
+
     fun setNativeGroupInvalidatedListener(callback: () -> Unit) {
         this.onNativeGroupInvalidated = callback
+    }
+
+    fun setNativeGroupCreationFailedListener(callback: () -> Unit) {
+        this.onNativeGroupCreationFailed = callback
     }
 
 
@@ -446,6 +456,10 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
     override fun onGroupInfoAvailable(group: android.net.wifi.p2p.WifiP2pGroup?) {
         if (!sessionOwnership.current(generation)) return
         if (group != null && group.isGroupOwner) {
+            if (!group.networkName.isNullOrBlank() && !sessionOwnership.owns(true, group.networkName)) {
+                AppLog.i("WifiDirectManager: Adopting existing P2P Group Owner ${group.networkName}")
+                sessionOwnership.expect(group.networkName)
+            }
             sessionOwnership.observeCreatedGroup(true, group.networkName)
             if (!sessionOwnership.owns(true, group.networkName)) {
                 foreignGroupDetected()
@@ -513,9 +527,9 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
             // [FIX] Robust interface detection. group.interface is often null on Android 11+ (hidden API)
             var iface = group.`interface`
             if (iface.isNullOrEmpty()) {
-                iface = getInterfaceByIp("192.168.49.1")
+                iface = getInterfaceByIp("192.168.49.1") ?: findActiveP2pInterfaceName()
                 if (iface != null) {
-                    AppLog.i("WifiDirectManager: Discovered interface name by IP 192.168.49.1: $iface")
+                    AppLog.i("WifiDirectManager: Discovered active P2P interface name: $iface")
                 }
             }
             discoveredInterface = iface
@@ -700,9 +714,9 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
                             // nothing. Without a name the IPv6 read below can never succeed, so
                             // look again each pass: only the GO address, never a p2p name guess.
                             if (groupIface.isNullOrEmpty() && isOwner) {
-                                groupIface = getInterfaceByIp("192.168.49.1")
+                                groupIface = getInterfaceByIp("192.168.49.1") ?: findActiveP2pInterfaceName()
                                 if (groupIface != null) {
-                                    AppLog.i("WifiDirectManager: Discovered interface name by IP 192.168.49.1 after group info: $groupIface")
+                                    AppLog.i("WifiDirectManager: Discovered active P2P interface name after group info: $groupIface")
                                     val found = groupIface
                                     handler.post { if (deliveryEpoch == credentialsEpoch) discoveredInterface = found }
                                 }
@@ -838,6 +852,25 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
                 while (addresses.hasMoreElements()) {
                     val addr = addresses.nextElement()
                     if (addr.hostAddress == targetIp) return iface.name
+                }
+            }
+        } catch (e: Exception) {}
+        return null
+    }
+
+    private fun findActiveP2pInterfaceName(): String? {
+        try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val iface = interfaces.nextElement()
+                if (!iface.isUp || iface.isLoopback) continue
+                if (!iface.name.lowercase().startsWith("p2p")) continue
+                val addresses = iface.inetAddresses
+                while (addresses.hasMoreElements()) {
+                    val addr = addresses.nextElement()
+                    if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
+                        return iface.name
+                    }
                 }
             }
         } catch (e: Exception) {}
@@ -1118,6 +1151,10 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
     fun refreshNativeAaCredentials() {
         val gen = generation
         handler.post {
+            if (!sessionOwnership.enabled) {
+                startNativeAaQuietHost()
+                return@post
+            }
             if (supersededByStop(gen, "credential refresh")) return@post
             val mgr = manager
             val ch = channel
@@ -1202,7 +1239,18 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
         nativeJoinWatchdogSsid = null
         nativeRecreateCount = 0
         cancelNativeJoinWatchdog()
-        recreateNativeGroup(forceStandard = false)
+        val gen = generation
+        mgr.requestGroupInfo(ch) { existingGroup ->
+            if (supersededByStop(gen, "initial group check")) return@requestGroupInfo
+            if (existingGroup != null && existingGroup.isGroupOwner &&
+                !existingGroup.networkName.isNullOrBlank() && !existingGroup.passphrase.isNullOrBlank()) {
+                AppLog.i("WifiDirectManager: Existing P2P Group Owner found on startup (${existingGroup.networkName}); adopting immediately.")
+                nativeGroupCreationMode = NATIVE_GROUP_MODE_5GHZ_REQUESTED
+                onGroupInfoAvailable(existingGroup)
+            } else {
+                recreateNativeGroup(forceStandard = false)
+            }
+        }
     }
 
     private fun delayedCreateQuietGroup(retryCount: Int) {
@@ -1435,6 +1483,13 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
                 } else {
                     AppLog.e("WifiDirectManager: createQuietGroup failed completely! Reason: $reasonStr")
                     isGroupCreatingOrCreated = false
+                    mgr.requestGroupInfo(ch) { existingGroup ->
+                        if (existingGroup != null && existingGroup.isGroupOwner) {
+                            onGroupInfoAvailable(existingGroup)
+                        } else {
+                            onNativeGroupCreationFailed?.invoke()
+                        }
+                    }
                 }
             }
         })
@@ -1715,14 +1770,20 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
             if (gen != generation) return@requestGroupInfo
             if (group == null) {
                 listener.onSuccess()
-            } else if (sessionOwnership.owns(group.isGroupOwner, group.networkName)) {
-                mgr.removeGroup(ch, object : WifiP2pManager.ActionListener {
-                    override fun onSuccess() { if (gen == generation) listener.onSuccess() }
-                    override fun onFailure(reason: Int) { if (gen == generation) listener.onFailure(reason) }
-                })
             } else {
-                // Do not call a retry continuation: it would immediately contend with the owner.
-                foreignGroupDetected()
+                if (group.isGroupOwner && !group.networkName.isNullOrBlank() && !sessionOwnership.owns(true, group.networkName)) {
+                    AppLog.i("WifiDirectManager: Adopting existing P2P Group Owner ${group.networkName} before removal/recreate")
+                    sessionOwnership.expect(group.networkName)
+                }
+                if (sessionOwnership.owns(group.isGroupOwner, group.networkName)) {
+                    mgr.removeGroup(ch, object : WifiP2pManager.ActionListener {
+                        override fun onSuccess() { if (gen == generation) listener.onSuccess() }
+                        override fun onFailure(reason: Int) { if (gen == generation) listener.onFailure(reason) }
+                    })
+                } else {
+                    // Do not call a retry continuation: it would immediately contend with the owner.
+                    foreignGroupDetected()
+                }
             }
         }
     }
