@@ -11,7 +11,7 @@ if not "%BOOT%"=="1" (
     goto wait_boot
 )
 echo Instalando Qonecta Unit...
-"D:\Android\Sdk\platform-tools\adb.exe" install -r -g "d:\unit\app\build\outputs\apk\github\coche\com.tencent.qqmusiccar_0.1.4-unit.apk"
+"D:\Android\Sdk\platform-tools\adb.exe" install -r -g "d:\unit\app\build\outputs\apk\github\coche\QonectaUnit_0.1.6-unit.apk"
 echo Abriendo Qonecta Unit...
 "D:\Android\Sdk\platform-tools\adb.exe" shell am start -n "com.tencent.qqmusiccar/com.andrerinas.openheadunit.main.MainActivity"
 echo Listo!

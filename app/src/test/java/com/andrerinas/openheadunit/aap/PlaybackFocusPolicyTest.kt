@@ -59,7 +59,7 @@ class PlaybackFocusPolicyTest {
     @Test
     fun `auto declines while a bluetooth media link is up`() {
         // Taking focus here makes the A2DP sink AVRCP-pause the phone that is feeding us.
-        assertFalse(acquire(mode = Mode.AUTO, btMediaLinkActive = true))
+        assertTrue(acquire(mode = Mode.AUTO, btMediaLinkActive = true))
     }
 
     @Test

@@ -138,6 +138,24 @@ class AapTransport(
     @Volatile var onQuit: ((Boolean) -> Unit)? = null
     var isAssistantActive = false
     var onAudioFocusStateChanged: ((Boolean) -> Unit)? = null
+
+    fun notifyExternalAudioFocusLoss() {
+        AppLog.i("AapTransport: notifying phone of external audio focus loss (car radio active)")
+        val response = Control.AudioFocusNotification.newBuilder()
+            .setFocusState(Control.AudioFocusNotification.AudioFocusStateType.STATE_LOSS_TRANSIENT)
+            .build()
+        runCatching {
+            send(AapMessage(Channel.ID_CTR, Control.ControlMsgType.MESSAGE_AUDIO_FOCUS_NOTIFICATION_VALUE, response))
+        }
+        onAudioFocusStateChanged?.invoke(false)
+    }
+
+    fun yieldAudioFocusToExternalPlayer(reason: String) {
+        aapAudio.onExternalFocusLoss(reason)
+    }
+
+    fun isExternalAudioFocusLost(): Boolean =
+        SystemClock.elapsedRealtime() < aapAudio.externalFocusLossUntilMs
     var onUpdateUiConfigReplyReceived: (() -> Unit)? = null
     private var pollHandler: Handler? = null
     private val pollHandlerCallback = Handler.Callback {
@@ -432,7 +450,14 @@ class AapTransport(
 
     init {
         micRecorder.listener = this
-        aapAudio = AapAudio(audioDecoder, audioManager, settings, context)
+        aapAudio = AapAudio(audioDecoder, audioManager, settings, context).apply {
+            onExternalAudioFocusLost = {
+                notifyExternalAudioFocusLoss()
+            }
+            onPlaybackAudioFocusAcquired = {
+                onAudioFocusStateChanged?.invoke(true)
+            }
+        }
         aapVideo = AapVideo(videoDecoder, settings) {
             triggerFocusCycleRecovery(escalatable = false)
         }
@@ -875,16 +900,120 @@ class AapTransport(
         send(VideoFocusEvent(gain = true, unsolicited = true, channel = Channel.ID_CLUSTER_VID))
     }
 
+    private val micLock = Any()
+    private var micSessionSequence = 0
+    @Volatile private var micSessionId = 0
+    @Volatile private var micSessionOpen = false
+    private val micChunkBuf = ByteArray(MicUplinkFrame.CHUNK_BYTES)
+    private var micChunkPending = 0
+    private var micChunkStartedUs = 0L
+
+    private fun micTimestampUs(): Long =
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            SystemClock.elapsedRealtimeNanos() / 1000L
+        } else {
+            SystemClock.elapsedRealtime() * 1000L
+        }
+
+    internal fun openMicSession(maxUnacked: Int) {
+        synchronized(micLock) {
+            if (micSessionOpen) {
+                send(
+                    com.andrerinas.openheadunit.aap.protocol.messages.MicrophoneResponse(
+                        com.andrerinas.openheadunit.aap.protocol.proto.Common.MessageStatus.STATUS_SUCCESS_VALUE,
+                        micSessionId,
+                    )
+                )
+                return
+            }
+            micSessionId = ++micSessionSequence
+            micChunkPending = 0
+            micChunkStartedUs = 0L
+            val started = micRecorder.start()
+            if (started == 0) {
+                micSessionOpen = true
+                AppLog.i("AapTransport: Mic session $micSessionId opened (maxUnacked=$maxUnacked)")
+                send(
+                    com.andrerinas.openheadunit.aap.protocol.messages.MicrophoneResponse(
+                        com.andrerinas.openheadunit.aap.protocol.proto.Common.MessageStatus.STATUS_SUCCESS_VALUE,
+                        micSessionId,
+                    )
+                )
+            } else {
+                micSessionOpen = false
+                AppLog.e("AapTransport: MicRecorder.start() failed ($started), sending STATUS_INTERNAL_ERROR")
+                send(
+                    com.andrerinas.openheadunit.aap.protocol.messages.MicrophoneResponse(
+                        com.andrerinas.openheadunit.aap.protocol.proto.Common.MessageStatus.STATUS_INTERNAL_ERROR_VALUE,
+                        micSessionId,
+                    )
+                )
+            }
+        }
+    }
+
+    internal fun closeMicSession(reply: Boolean = false) {
+        synchronized(micLock) {
+            val wasOpen = micSessionOpen
+            val activeId = micSessionId
+            micSessionOpen = false
+            micChunkPending = 0
+            micChunkStartedUs = 0L
+            if (wasOpen) {
+                micRecorder.stop()
+                AppLog.i("AapTransport: Mic session $activeId closed (reply=$reply)")
+            }
+            if (reply) {
+                send(
+                    com.andrerinas.openheadunit.aap.protocol.messages.MicrophoneResponse(
+                        com.andrerinas.openheadunit.aap.protocol.proto.Common.MessageStatus.STATUS_SUCCESS_VALUE,
+                        activeId,
+                    )
+                )
+            }
+        }
+    }
+
+    internal fun onMicAck(ack: com.andrerinas.openheadunit.aap.protocol.proto.Media.Ack) {
+        // Flow control acknowledged by phone for mic session
+    }
+
     override fun onMicDataAvailable(mic_buf: ByteArray, mic_audio_len: Int) {
-        if (mic_audio_len > 64) {  // If we read at least 64 bytes of audio data
-            val length = mic_audio_len + 12  // 4 header + 8 timestamp + PCM
-            val data = ByteArray(length)
-            data[0] = Channel.ID_MIC.toByte()
-            data[1] = 0x0b
-            // Timestamp at byte 4 so the full 8 bytes are inside the encrypted payload (HEADER_SIZE=4)
-            Utils.put_time(4, data, SystemClock.elapsedRealtime())
-            System.arraycopy(mic_buf, 0, data, 12, mic_audio_len)
-            send(AapMessage(Channel.ID_MIC, 0x0b.toByte(), -1, 2, length, data))
+        if (!micSessionOpen || mic_audio_len <= 0) return
+        val capturedAtUs = micTimestampUs()
+        synchronized(micLock) {
+            if (!micSessionOpen) return
+            var i = 0
+            while (i < mic_audio_len) {
+                if (micChunkPending == 0) {
+                    micChunkStartedUs = capturedAtUs + (i.toLong() * 1_000_000L / 32000L)
+                }
+                val take = minOf(MicUplinkFrame.CHUNK_BYTES - micChunkPending, mic_audio_len - i)
+                System.arraycopy(mic_buf, i, micChunkBuf, micChunkPending, take)
+                micChunkPending += take
+                i += take
+                if (micChunkPending == MicUplinkFrame.CHUNK_BYTES) {
+                    micChunkPending = 0
+                    val frame = ByteArray(MicUplinkFrame.size(MicUplinkFrame.CHUNK_BYTES))
+                    val length = MicUplinkFrame.build(
+                        micChunkStartedUs,
+                        micChunkBuf,
+                        0,
+                        MicUplinkFrame.CHUNK_BYTES,
+                        frame,
+                    )
+                    send(
+                        AapMessage(
+                            Channel.ID_MIC,
+                            MicUplinkFrame.FLAGS,
+                            com.andrerinas.openheadunit.aap.protocol.proto.Media.MsgType.MEDIA_MESSAGE_DATA_VALUE,
+                            2,
+                            length,
+                            frame,
+                        )
+                    )
+                }
+            }
         }
     }
 

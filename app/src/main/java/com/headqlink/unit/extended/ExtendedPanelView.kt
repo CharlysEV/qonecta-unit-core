@@ -175,10 +175,10 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         noFocus(batteryCard)
         addView(batteryCard, LayoutParams(MATCH, 0, 1f))
 
-        // 4A. Botón «◫ Pantalla Partida · Mapa + TV/Coche»
+        // 4A. Botón «◫ Extendido» (Pantalla Partida: Mapa AA 53% + Planificador Qonecta+ 47%)
         splitButton.orientation = HORIZONTAL
         splitButton.gravity = Gravity.CENTER
-        splitButtonLabel.text = "◫ Pantalla Partida · Mapa + TV"
+        splitButtonLabel.text = "◫ Extendido"
         splitButtonLabel.setTextColor(QonectaTheme.onAccent)
         splitButtonLabel.typeface = BatteryRingView.MEDIUM
         splitButtonLabel.setSingleLine(true)
@@ -191,10 +191,10 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
         noFocus(splitButton)
         addView(splitButton, LayoutParams(MATCH, WRAP))
 
-        // 4B. Botón «Ruta y Coche · Qonecta+»
+        // 4B. Botón «⚡ Planificador · Qonecta+»
         hubButton.orientation = HORIZONTAL
         hubButton.gravity = Gravity.CENTER
-        hubButtonLabel.text = "⚡ Ruta y Coche · Qonecta+"
+        hubButtonLabel.text = "⚡ Planificador · Qonecta+"
         hubButtonLabel.setTextColor(PanelFormat.ACCENT)
         hubButtonLabel.typeface = BatteryRingView.MEDIUM
         hubButtonLabel.setSingleLine(true)
@@ -417,8 +417,12 @@ class ExtendedPanelView(context: Context) : LinearLayout(context) {
             )
             val spd = snap.effectiveSpeedKmh.roundToInt()
             val pwr = if (!snap.powerKw.isNaN()) String.format(Locale.getDefault(), "%+.1f kW", snap.powerKw) else ""
-            val tmp = if (!snap.tempLeftC.isNaN()) String.format(Locale.getDefault(), "%.0f°C", snap.tempLeftC) else "21°C"
-            setText(telemetryLine, "${ snap.gearLabel() } · $spd km/h · $pwr · $tmp")
+            val tmp = when {
+                !snap.tempExteriorC.isNaN() -> String.format(Locale.getDefault(), "%.0f°C", snap.tempExteriorC)
+                !snap.tempLeftC.isNaN() -> String.format(Locale.getDefault(), "%.0f°C", snap.tempLeftC)
+                else -> "8°C"
+            }
+            setText(telemetryLine, "${snap.gearLabel()} · ${snap.driveModeLabel()} · $spd km/h · $pwr · $tmp")
             setVisible(telemetryLine, true)
 
             val warn = when (data.kind) {

@@ -15,8 +15,8 @@ android {
         applicationId = "com.headqlink.unit.companion"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.5"
+        versionCode = 14
+        versionName = "0.1.17"
         setProperty("archivesBaseName", "QonectaUnitCompanion_${versionName}")
     }
 

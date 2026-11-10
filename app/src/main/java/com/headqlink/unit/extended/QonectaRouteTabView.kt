@@ -16,7 +16,9 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
 import android.text.TextUtils
+import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -54,8 +56,8 @@ object QonectaRouteTabState {
     var statusMessage: String = ""
     var socAdjustDelta: Int = 0
     val pinnedChargerKeys: LinkedHashSet<String> = LinkedHashSet()
-    val favoriteChargerKeys: LinkedHashSet<String> = LinkedHashSet()
-    val bannedChargerKeys: LinkedHashSet<String> = LinkedHashSet()
+    var destChargersCacheKey: String = ""
+    var destChargersCache: List<QonectaRoutePlanner.Charger> = emptyList()
 }
 
 class QonectaRouteTabView(
@@ -68,6 +70,10 @@ class QonectaRouteTabView(
     private val uiHandler = Handler(Looper.getMainLooper())
     private val bgExecutor = Executors.newSingleThreadExecutor()
     private val density: Float = context.resources.displayMetrics.density * 1.30f
+
+    private val contentLayer = FrameLayout(context)
+    private val overlayLayer = FrameLayout(context).apply { visibility = View.GONE }
+    private var activeMapView: QonectaRouteMapView? = null
 
     private var chargerMinKw: Int = prefs.getInt("charger_min_kw", 0)
     private var chargerVolts: Int = prefs.getInt("charger_volts_filter", QonectaRoutePlanner.VOLTS_ANY)
@@ -82,15 +88,28 @@ class QonectaRouteTabView(
     private var arriveMinPct: Double = prefs.getInt("plan_arrive_min_pct", 15).toDouble()
     private var stopMinPct: Double = prefs.getInt("plan_stop_min_pct", 10).toDouble()
     private var maxChargePct: Double = prefs.getInt("plan_max_charge_pct", 80).toDouble()
+    private var destChargeMinPct: Int = prefs.getInt("plan_dest_charge_pct", 20)
     private var fastPriceEur: Double = prefs.getFloat("plan_fast_price_eur", 0.45f).toDouble()
 
     init {
-        QonectaRouteTabState.favoriteChargerKeys.addAll(
-            prefs.getString("fav_charger_keys", "").orEmpty().split("|").filter { it.isNotBlank() },
-        )
-        QonectaRouteTabState.bannedChargerKeys.addAll(
-            prefs.getString("ban_charger_keys", "").orEmpty().split("|").filter { it.isNotBlank() },
-        )
+        addView(contentLayer, LayoutParams(MATCH, MATCH))
+        addView(overlayLayer, LayoutParams(MATCH, MATCH))
+        buildUi()
+    }
+
+    private fun openOverlay(panel: View) {
+        activeMapView?.destroyMap()
+        activeMapView = null
+        overlayLayer.removeAllViews()
+        overlayLayer.addView(panel, LayoutParams(MATCH, MATCH))
+        overlayLayer.visibility = View.VISIBLE
+    }
+
+    private fun closeOverlay() {
+        activeMapView?.destroyMap()
+        activeMapView = null
+        overlayLayer.removeAllViews()
+        overlayLayer.visibility = View.GONE
         buildUi()
     }
 
@@ -117,13 +136,14 @@ class QonectaRouteTabView(
             carPeakKw = variant.peakDcChargeKw.toDouble(),
             capacityKwh = variant.batteryUsableKwh,
             carVolts = variant.architectureVolts.toDouble(),
-            favorites = QonectaRouteTabState.favoriteChargerKeys.toSet(),
+            favorites = QonectaChargerMarks.favoriteKeys(context),
             pinnedKeys = QonectaRouteTabState.pinnedChargerKeys.toList(),
             fastChargePriceEur = fastPriceEur,
         )
     }
 
     private fun filterChargers(all: List<QonectaRoutePlanner.Charger>): List<QonectaRoutePlanner.Charger> {
+        val banned = QonectaChargerMarks.bannedKeys(context)
         return all.filter { c ->
             QonectaRoutePlanner.acceptsCharger(
                 c = c,
@@ -131,13 +151,13 @@ class QonectaRouteTabView(
                 voltsFilter = chargerVolts,
                 networks = selectedNetworks,
                 includeUnknown = chargerIncludeUnknown,
-                bannedKeys = QonectaRouteTabState.bannedChargerKeys,
+                bannedKeys = banned,
             )
         }
     }
 
     private fun buildUi() {
-        removeAllViews()
+        contentLayer.removeAllViews()
         val (socNow, isRealSoc) = currentSocAndReal()
         val plan = QonectaRouteTabState.currentPlan
         val settings = currentChargeSettings()
@@ -149,8 +169,6 @@ class QonectaRouteTabView(
         }
 
         if (isSplitScreen) {
-            // Pantalla partida (idéntico a narrowLayout de RouteTab.java):
-            // Arriba la tarjeta de Ruta + Perfil; debajo Batería al llegar y Cargadores en ruta lado a lado
             val scroll = ScrollView(context).apply {
                 isFillViewport = true
                 isVerticalScrollBarEnabled = false
@@ -159,21 +177,23 @@ class QonectaRouteTabView(
                 orientation = LinearLayout.VERTICAL
             }
             val routeCard = buildRouteMainCard(plan, chargeResult, socNow, compact = true)
-            col.addView(routeCard, LinearLayout.LayoutParams(MATCH, dp(330)))
+            col.addView(routeCard, LinearLayout.LayoutParams(MATCH, dp(310)))
 
-            val bottomRow = LinearLayout(context).apply {
+            val midRow = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 weightSum = 2f
             }
             val batCard = buildBatteryArrivalCard(plan, chargeResult, socNow, isRealSoc, compact = true)
-            val chCard = buildChargersColumnCard(plan, chargeResult, filteredChargers, compact = true)
-            bottomRow.addView(batCard, LinearLayout.LayoutParams(0, dp(340), 0.88f).apply { rightMargin = dp(8) })
-            bottomRow.addView(chCard, LinearLayout.LayoutParams(0, dp(340), 1.12f))
-            col.addView(bottomRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
+            val wxCard = buildWeatherCard(plan)
+            midRow.addView(batCard, LinearLayout.LayoutParams(0, dp(168), 1.18f).apply { rightMargin = dp(8) })
+            midRow.addView(wxCard, LinearLayout.LayoutParams(0, dp(168), 0.82f))
+            col.addView(midRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
+
+            val chCard = buildChargersColumnCard(plan, chargeResult, filteredChargers, socNow, compact = true)
+            col.addView(chCard, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
             scroll.addView(col)
-            addView(scroll, LayoutParams(MATCH, MATCH))
+            contentLayer.addView(scroll, LayoutParams(MATCH, MATCH))
         } else {
-            // Pantalla completa (idéntico a RouteTab.java wide layout: 1.95f izquierda + 1.0f derecha)
             val rootRow = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 weightSum = 2.95f
@@ -184,7 +204,7 @@ class QonectaRouteTabView(
             }
             val batCard = buildBatteryArrivalCard(plan, chargeResult, socNow, isRealSoc, compact = false)
             val wxCard = buildWeatherCard(plan)
-            val chCard = buildChargersColumnCard(plan, chargeResult, filteredChargers, compact = false)
+            val chCard = buildChargersColumnCard(plan, chargeResult, filteredChargers, socNow, compact = false)
 
             rightCol.addView(batCard, LinearLayout.LayoutParams(MATCH, dp(192)).apply { bottomMargin = dp(10) })
             rightCol.addView(wxCard, LinearLayout.LayoutParams(MATCH, dp(106)).apply { bottomMargin = dp(10) })
@@ -192,7 +212,7 @@ class QonectaRouteTabView(
 
             rootRow.addView(leftRouteCard, LinearLayout.LayoutParams(0, MATCH, 1.95f).apply { rightMargin = dp(12) })
             rootRow.addView(rightCol, LinearLayout.LayoutParams(0, MATCH, 1.0f))
-            addView(rootRow, LayoutParams(MATCH, MATCH))
+            contentLayer.addView(rootRow, LayoutParams(MATCH, MATCH))
         }
     }
 
@@ -213,7 +233,8 @@ class QonectaRouteTabView(
             background = cardDrawable()
         }
 
-        // Barra superior de píldoras de acción (Desde, Buscar destino, Casa, Trabajo, Guardados, Guiar con Google Maps, Terminar)
+        // Barra superior idéntica a RouteTab.java:
+        // Destino/Buscar | Casa | Trabajo | ★ Guardados | (con ruta: Viaje | 🗺 Mapa | Ir en Google Maps ↗ | ✕)
         val actionsScroll = HorizontalScrollView(context).apply {
             isHorizontalScrollBarEnabled = false
         }
@@ -223,67 +244,98 @@ class QonectaRouteTabView(
         }
 
         val (originPlace, isRealGps) = QonectaRoutePlanner.resolveOrigin(context)
-        val originShort = if (QonectaRoutePlanner.getCustomOrigin() != null) {
-            "📍 Desde: ${originPlace.name.take(16)}"
-        } else if (isRealGps) {
-            "🛰️ Desde: GPS"
-        } else {
-            "📍 Desde: ${originPlace.name.substringBefore("(").trim().take(14)}"
-        }
-        val originPill = pillButton(originShort, primary = false, small = compact) {
-            showPlaceSearchDialog(isOrigin = true)
-        }
-        actionsRow.addView(originPill)
+        val savedList = QonectaSavedPlaces.load(context)
+        val homeSaved = QonectaSavedPlaces.tagged(savedList, QonectaSavedPlaces.HOME)
+        val workSaved = QonectaSavedPlaces.tagged(savedList, QonectaSavedPlaces.WORK)
 
-        val searchPill = pillButton("🔍 Buscar destino", primary = plan == null, small = compact) {
-            showPlaceSearchDialog(isOrigin = false)
+        val searchLabel = if (plan == null) "🔍 ¿A dónde vamos?" else "📍 Cambiar destino"
+        val searchPill = pillButton(searchLabel, primary = plan == null, small = compact) {
+            openSearchOverlay(isOrigin = false, forVia = false, saveAsTag = null)
         }
-        actionsRow.addView(searchPill, spacedParams())
+        actionsRow.addView(searchPill)
 
-        val favs = loadFavorites()
-        favs.take(2).forEach { slot ->
-            val pill = pillButton("${slot.icon} ${slot.title}", primary = false, small = compact) {
-                if (slot.address.isNotBlank()) {
-                    startRouteToFavorite(slot)
+        if (plan == null) {
+            val homePill = pillButton(if (homeSaved != null) "🏠 Casa" else "🏠 Fijar Casa", primary = false, small = compact) {
+                if (homeSaved != null) {
+                    startSavedDestination(homeSaved)
                 } else {
-                    showFavoriteEditDialog(slot)
+                    openSearchOverlay(isOrigin = false, forVia = false, saveAsTag = QonectaSavedPlaces.HOME)
                 }
             }
-            pill.setOnLongClickListener {
-                showFavoriteEditDialog(slot)
+            homePill.setOnLongClickListener {
+                openSavedOverlay()
                 true
             }
-            actionsRow.addView(pill, spacedParams())
+            actionsRow.addView(homePill, spacedParams())
+
+            val workPill = pillButton(if (workSaved != null) "💼 Trabajo" else "💼 Fijar Trabajo", primary = false, small = compact) {
+                if (workSaved != null) {
+                    startSavedDestination(workSaved)
+                } else {
+                    openSearchOverlay(isOrigin = false, forVia = false, saveAsTag = QonectaSavedPlaces.WORK)
+                }
+            }
+            workPill.setOnLongClickListener {
+                openSavedOverlay()
+                true
+            }
+            actionsRow.addView(workPill, spacedParams())
         }
 
-        val savedPill = pillButton("★ Favoritos", primary = false, small = compact) {
-            showAllFavoritesDialog()
+        val savedPill = pillButton("★ Guardados", primary = false, small = compact) {
+            openSavedOverlay()
         }
         actionsRow.addView(savedPill, spacedParams())
 
-        if (plan != null) {
-            val roundPill = pillButton(
-                if (QonectaRouteTabState.roundTrip) "⇄ Ida y vuelta: Sí" else "⇄ Ida y vuelta",
-                primary = QonectaRouteTabState.roundTrip,
-                small = compact,
-            ) {
-                QonectaRouteTabState.roundTrip = !QonectaRouteTabState.roundTrip
-                QonectaRouteTabState.lastDestinationPlace?.let { recalculateRoute(it) }
+        if (plan == null) {
+            val originShort = if (QonectaRoutePlanner.getCustomOrigin() != null) {
+                "📍 Salida: ${originPlace.name.take(14)}"
+            } else if (isRealGps) {
+                "🛰️ Salida: GPS"
+            } else {
+                "📍 Salida: ${originPlace.name.substringBefore("(").trim().take(12)}"
             }
-            actionsRow.addView(roundPill, spacedParams())
+            actionsRow.addView(
+                pillButton(originShort, primary = false, small = compact) {
+                    openSearchOverlay(isOrigin = true, forVia = false, saveAsTag = null)
+                },
+                spacedParams(),
+            )
+        }
 
-            val goMapsPill = pillButton("Guiar con Google Maps ↗", primary = true, small = compact) {
+        if (plan != null) {
+            val viaCount = QonectaRouteTabState.viaPlaces.size
+            val isRound = QonectaRouteTabState.roundTrip
+            val tripLabel = when {
+                viaCount > 0 && isRound -> "Viaje · $viaCount par. ⇄"
+                viaCount == 1 -> "Viaje · 1 parada"
+                viaCount > 1 -> "Viaje · $viaCount paradas"
+                isRound -> "Viaje · ida y vuelta"
+                else -> "Viaje"
+            }
+            val tripPill = pillButton(tripLabel, primary = viaCount > 0 || isRound, small = compact) {
+                openTripOverlay()
+            }
+            actionsRow.addView(tripPill, spacedParams())
+
+            val mapPill = pillButton("🗺 Mapa", primary = false, small = compact) {
+                openMapOverlay(plan, chargeResult, filterChargers(plan.chargers))
+            }
+            actionsRow.addView(mapPill, spacedParams())
+
+            val goMapsPill = pillButton("Ir en Google Maps ↗", primary = true, small = compact) {
                 sendPlanToPhoneMaps(plan, chargeResult)
             }
             actionsRow.addView(goMapsPill, spacedParams())
 
-            val clearPill = pillButton("✕ Terminar ruta", primary = false, small = compact) {
+            val clearPill = pillButton("✕", primary = false, small = compact) {
                 QonectaRouteTabState.currentPlan = null
                 QonectaRouteTabState.lastDestinationPlace = null
                 QonectaRouteTabState.viaPlaces.clear()
+                QonectaRouteTabState.roundTrip = false
                 QonectaRouteTabState.pinnedChargerKeys.clear()
                 QonectaRouteTabState.statusMessage = ""
-                onRequestRefresh()
+                buildUi()
             }
             actionsRow.addView(clearPill, spacedParams())
         }
@@ -299,7 +351,7 @@ class QonectaRouteTabView(
                 statusText = QonectaRouteTabState.statusMessage,
                 originSummary = "${originPlace.name} · ${originPlace.detail}",
                 compact = compact,
-                onSearchClicked = { showPlaceSearchDialog(isOrigin = false) },
+                onSearchClicked = { openSearchOverlay(isOrigin = false, forVia = false, saveAsTag = null) },
             )
             card.addView(emptyCanvas, LinearLayout.LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(8) })
             return card
@@ -317,7 +369,12 @@ class QonectaRouteTabView(
         if (!compact) {
             destTextCol.addView(
                 TextView(context).apply {
-                    val viaSuffix = if (plan.roundTrip) " · IDA Y VUELTA ⇄" else ""
+                    val viaCount = QonectaRouteTabState.viaPlaces.size
+                    val viaSuffix = buildString {
+                        if (viaCount > 0) append(" · $viaCount PARADA(S)")
+                        if (plan.roundTrip) append(" · IDA Y VUELTA ⇄")
+                        if (plan.speedCapKmh > 0) append(" · TOPE ${plan.speedCapKmh} KM/H")
+                    }
                     text = "📍 DESTINO EN RUTA$viaSuffix · DESDE ${plan.originName.uppercase(Locale.getDefault())}"
                     setTextSp(11.5f)
                     setTextColor(QonectaTheme.faint)
@@ -357,7 +414,7 @@ class QonectaRouteTabView(
         val totalRemSec = plan.remainingSeconds + chargeSec
         val etaStr = SimpleDateFormat("HH:mm", Locale.getDefault())
             .format(Date(System.currentTimeMillis() + totalRemSec * 1000L))
-        val durStr = formatDuration(totalRemSec)
+        val durStr = formatDuration(totalRemSec) + (if (plan.speedCapKmh > 0) " (a ${plan.speedCapKmh})" else "")
         val remKwh = plan.remainingKwh
         val per100 = if (remKm > 0.5) remKwh / remKm * 100.0 else Double.NaN
 
@@ -407,10 +464,19 @@ class QonectaRouteTabView(
                 },
                 LinearLayout.LayoutParams(0, WRAP, 1f),
             )
-            val srcText = if (plan.dgtCount > 0) {
-                "Ruta OSRM · DGT (${plan.dgtCount}) + OSM (${plan.chargers.size})"
-            } else {
-                "Ruta OSRM · OpenStreetMap (${plan.chargers.size} cargadores)"
+            if (plan.speedCapKmh > 0) {
+                explainRow.addView(
+                    pillButton("Sin límite (${plan.speedCapKmh} km/h)", primary = false, small = true) {
+                        QonectaRouteTabState.currentPlan = QonectaRoutePlanner.applySpeedCap(context, plan, 0)
+                        buildUi()
+                    },
+                    LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) },
+                )
+            }
+            val srcText = when {
+                plan.chargersLoading -> "⏳ Completando cargadores DGT / OSM…"
+                plan.dgtCount > 0 -> "Ruta OSRM · DGT (${plan.dgtCount}) + OSM (${plan.chargers.size})"
+                else -> "Ruta OSRM · OpenStreetMap (${plan.chargers.size} cargadores)"
             }
             explainRow.addView(
                 TextView(context).apply {
@@ -653,6 +719,7 @@ class QonectaRouteTabView(
         plan: QonectaRoutePlanner.Plan?,
         chargeResult: QonectaRoutePlanner.ChargeResult?,
         filteredChargers: List<QonectaRoutePlanner.Charger>,
+        socNow: Double,
         compact: Boolean,
     ): View {
         val card = LinearLayout(context).apply {
@@ -662,16 +729,16 @@ class QonectaRouteTabView(
             background = cardDrawable()
         }
 
-        // Cabecera: Título + Botón «Ver todos»
+        // Cabecera: Título + Botón «Ver lista»
         val titleRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         titleRow.addView(
             TextView(context).apply {
-                text = "CARGADORES EN RUTA"
+                text = if (plan?.chargersLoading == true) "CARGADORES EN RUTA · BUSCANDO…" else "CARGADORES EN RUTA"
                 setTextSp(11f)
-                setTextColor(QonectaTheme.faint)
+                setTextColor(if (plan?.chargersLoading == true) QonectaTheme.accent else QonectaTheme.faint)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                 letterSpacing = 0.08f
             },
@@ -679,11 +746,11 @@ class QonectaRouteTabView(
         )
         if (plan != null && plan.chargers.isNotEmpty()) {
             val allBtn = TextView(context).apply {
-                text = "Ver lista (${filteredChargers.size}/${plan.chargers.size}) ↗"
+                text = "Ver lista (${filteredChargers.size}/${plan.chargers.size}) ▸"
                 setTextSp(11.5f)
                 setTextColor(QonectaTheme.accent)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                setOnClickListener { showFullRouteChargersDialog(plan, chargeResult) }
+                setOnClickListener { openFullRouteChargersOverlay(plan, chargeResult) }
             }
             titleRow.addView(allBtn)
         }
@@ -696,10 +763,10 @@ class QonectaRouteTabView(
             setPadding(0, dp(6), 0, dp(6))
         }
         val filterBtn = pillButton("⚙ Filtrar", primary = false, small = true) {
-            showChargerFilterDialog(plan)
+            openChargerFilterOverlay(plan)
         }
         val nearbyBtn = pillButton("📍 Cerca de mí", primary = false, small = true) {
-            showNearbyChargersDialog()
+            openNearbyChargersOverlay()
         }
         val summaryText = buildFilterSummaryText()
         val summaryTv = TextView(context).apply {
@@ -716,9 +783,6 @@ class QonectaRouteTabView(
         filterRow.addView(summaryTv, LinearLayout.LayoutParams(0, WRAP, 1f))
         card.addView(filterRow, LinearLayout.LayoutParams(MATCH, WRAP))
 
-        val listScroll = ScrollView(context).apply {
-            isVerticalScrollBarEnabled = false
-        }
         val listCol = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -732,9 +796,18 @@ class QonectaRouteTabView(
                     setPadding(0, dp(8), 0, dp(8))
                 },
             )
-            listScroll.addView(listCol)
-            card.addView(listScroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
+            if (compact) {
+                card.addView(listCol, LinearLayout.LayoutParams(MATCH, WRAP))
+            } else {
+                val listScroll = ScrollView(context).apply { isVerticalScrollBarEnabled = false; addView(listCol) }
+                card.addView(listScroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
+            }
             return card
+        }
+
+        // 0. Etapas intermedias e ida y vuelta (addLegs() de RouteTab.java)
+        if (plan.waypoints.size > 1 && chargeResult != null) {
+            listCol.addView(buildLegsSection(plan, chargeResult), LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
         }
 
         // 1. Sección PLAN DE CARGA (idéntico a addPlan() de RouteTab.java)
@@ -745,27 +818,31 @@ class QonectaRouteTabView(
                         TextView(context).apply {
                             text = String.format(
                                 Locale.getDefault(),
-                                "✓ Llegas sin parar con un %.0f %% de batería (margen mínimo configurado: %.0f %%).",
+                                "✓ Llegas sin parar con un %.0f %% de batería (mínimo configurado: %.0f %%).",
                                 max(0.0, chargeResult.arrivalPct),
                                 arriveMinPct,
                             )
                             setTextSp(13.5f)
                             setTextColor(QonectaTheme.green)
                             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                            setPadding(0, dp(4), 0, dp(8))
+                            setPadding(0, dp(4), 0, dp(6))
                         },
                     )
+                    if (plan.speedCapKmh > 0) {
+                        listCol.addView(buildSpeedCapActiveBox(plan), LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
+                    }
                 }
                 chargeResult.outcome == QonectaRoutePlanner.Outcome.NO_CHARGER && chargeResult.stops.isEmpty() -> {
                     listCol.addView(
                         TextView(context).apply {
-                            text = "⚠ Con este filtro no hay ningún cargador alcanzable para llegar al destino. Prueba a abrir «Filtrar» y activar más redes o menor potencia."
+                            text = "⚠ Con este filtro no hay ningún cargador alcanzable para llegar al destino. Abre «Filtrar» o prueba el consejo de velocidad:"
                             setTextSp(13.5f)
                             setTextColor(QonectaTheme.amber)
                             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                            setPadding(0, dp(4), 0, dp(8))
+                            setPadding(0, dp(4), 0, dp(6))
                         },
                     )
+                    addSpeedAdviceIfHelpful(listCol, plan, chargeResult, socNow, filteredChargers)
                 }
                 else -> {
                     listCol.addView(
@@ -816,6 +893,9 @@ class QonectaRouteTabView(
                         },
                     )
 
+                    // Consejo de velocidad (SpeedAdvice.java: 110 / 100 / 90 km/h)
+                    addSpeedAdviceIfHelpful(listCol, plan, chargeResult, socNow, filteredChargers)
+
                     chargeResult.stops.forEachIndexed { idx, stop ->
                         listCol.addView(
                             buildPlannedStopRow(idx, stop, plan, chargeResult, filteredChargers),
@@ -823,7 +903,6 @@ class QonectaRouteTabView(
                         )
                     }
 
-                    // Botón primario de Qonecta+: «Ir con las paradas» -> envía destino + hasta 3 paradas al móvil
                     val goWithStopsBtn = pillButton(
                         text = if (chargeResult.stops.size == 1) {
                             "Ir con la parada en Google Maps ↗"
@@ -844,6 +923,11 @@ class QonectaRouteTabView(
                     )
                 }
             }
+
+            // Cargadores en el destino si llegas con menos de destChargeMinPct (addDestChargers de RouteTab.java)
+            if (destChargeMinPct > 0 && chargeResult.arrivalPct < destChargeMinPct) {
+                addDestChargersSection(listCol, plan, chargeResult.arrivalPct)
+            }
         }
 
         // 2. Sección OTROS CARGADORES EN RUTA
@@ -853,15 +937,16 @@ class QonectaRouteTabView(
         listCol.addView(
             TextView(context).apply {
                 text = if (chargeResult != null && chargeResult.stops.isNotEmpty()) {
-                    "OTROS CARGADORES EN RUTA (${otherChargers.size})"
+                    "OTROS CARGADORES EN RUTA (${otherChargers.size}) ▸"
                 } else {
-                    "CARGADORES EN EL CORREDOR DE LA RUTA (${otherChargers.size})"
+                    "CARGADORES EN EL CORREDOR DE LA RUTA (${otherChargers.size}) ▸"
                 }
                 setTextSp(11f)
                 setTextColor(QonectaTheme.faint)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                 letterSpacing = 0.08f
                 setPadding(0, dp(4), 0, dp(6))
+                setOnClickListener { openFullRouteChargersOverlay(plan, chargeResult) }
             },
         )
 
@@ -891,7 +976,7 @@ class QonectaRouteTabView(
                 )
             }
         } else {
-            otherChargers.take(15).forEach { ch ->
+            otherChargers.take(if (compact) 8 else 15).forEach { ch ->
                 listCol.addView(
                     buildOtherChargerRow(ch, plan.currentKm),
                     LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(6) },
@@ -899,9 +984,204 @@ class QonectaRouteTabView(
             }
         }
 
-        listScroll.addView(listCol)
-        card.addView(listScroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        if (compact) {
+            card.addView(listCol, LinearLayout.LayoutParams(MATCH, WRAP))
+        } else {
+            val listScroll = ScrollView(context).apply {
+                isVerticalScrollBarEnabled = false
+                addView(listCol)
+            }
+            card.addView(listScroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        }
         return card
+    }
+
+    private fun buildLegsSection(
+        plan: QonectaRoutePlanner.Plan,
+        chargeResult: QonectaRoutePlanner.ChargeResult,
+    ): View {
+        val box = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(QonectaTheme.surfaceTop)
+                setStroke(dp(1), QonectaTheme.outline)
+            }
+        }
+        box.addView(
+            TextView(context).apply {
+                text = "ETAPAS DEL VIAJE"
+                setTextSp(10.5f)
+                setTextColor(QonectaTheme.faint)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                letterSpacing = 0.08f
+                setPadding(0, 0, 0, dp(4))
+            },
+        )
+        val viaCount = if (plan.roundTrip) max(0, plan.waypoints.size - 2) else max(0, plan.waypoints.size - 1)
+        for (i in plan.waypoints.indices) {
+            val wp = plan.waypoints[i]
+            val kmLeg = plan.waypointKm.getOrElse(i) { plan.totalKm }
+            val pctAtLeg = chargeResult.pctAt(kmLeg)
+            val prefix = when {
+                i < viaCount -> "• Parada ${i + 1}: ${wp.name.take(22)}"
+                plan.roundTrip && i == plan.waypoints.lastIndex -> "⇄ Vuelta: ${wp.name.take(22)}"
+                else -> "🏁 Destino: ${wp.name.take(22)}"
+            }
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(2), 0, dp(2))
+            }
+            row.addView(
+                TextView(context).apply {
+                    text = prefix
+                    setTextSp(12.5f)
+                    setTextColor(QonectaTheme.text)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                },
+                LinearLayout.LayoutParams(0, WRAP, 1f),
+            )
+            row.addView(
+                TextView(context).apply {
+                    text = String.format(Locale.getDefault(), "km %.0f · %.0f %%", kmLeg, max(0.0, pctAtLeg))
+                    setTextSp(12f)
+                    setTextColor(if (pctAtLeg >= 15.0) QonectaTheme.accent else QonectaTheme.amber)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                },
+            )
+            box.addView(row)
+        }
+        return box
+    }
+
+    private fun buildSpeedCapActiveBox(plan: QonectaRoutePlanner.Plan): View {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(7), dp(10), dp(7))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(QonectaTheme.withAlpha(QonectaTheme.green, 0x1A))
+                setStroke(dp(1), QonectaTheme.green)
+            }
+        }
+        row.addView(
+            TextView(context).apply {
+                text = "⚡ Vas con tope de ${plan.speedCapKmh} km/h en el cálculo"
+                setTextSp(12.5f)
+                setTextColor(QonectaTheme.green)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f),
+        )
+        row.addView(
+            pillButton("Sin límite", primary = false, small = true) {
+                QonectaRouteTabState.currentPlan = QonectaRoutePlanner.applySpeedCap(context, plan, 0)
+                buildUi()
+            },
+        )
+        return row
+    }
+
+    private fun addSpeedAdviceIfHelpful(
+        listCol: LinearLayout,
+        plan: QonectaRoutePlanner.Plan,
+        chargeResult: QonectaRoutePlanner.ChargeResult,
+        socNow: Double,
+        filteredChargers: List<QonectaRoutePlanner.Charger>,
+    ) {
+        if (plan.speedCapKmh > 0) {
+            listCol.addView(buildSpeedCapActiveBox(plan), LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
+            return
+        }
+        val advice = QonectaSpeedAdvice.computeBest(
+            context = context,
+            plan = plan,
+            baseResult = chargeResult,
+            socNow = socNow,
+            filteredChargers = filteredChargers,
+            settings = currentChargeSettings(),
+        ) ?: return
+
+        val box = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(QonectaTheme.withAlpha(QonectaTheme.green, 0x1A))
+                setStroke(dp(1), QonectaTheme.green)
+            }
+        }
+        box.addView(
+            TextView(context).apply {
+                text = QonectaSpeedAdvice.formatText(advice)
+                setTextSp(12.5f)
+                setTextColor(QonectaTheme.green)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) },
+        )
+        box.addView(
+            pillButton("Ir a ${advice.capKmh} km/h", primary = true, small = true) {
+                QonectaRouteTabState.currentPlan = QonectaRoutePlanner.applySpeedCap(context, plan, advice.capKmh)
+                buildUi()
+            },
+        )
+        listCol.addView(box, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
+    }
+
+    private fun addDestChargersSection(
+        listCol: LinearLayout,
+        plan: QonectaRoutePlanner.Plan,
+        arrivalPct: Double,
+    ) {
+        val cacheKey = String.format(Locale.US, "%.4f,%.4f", plan.destLat, plan.destLon)
+        if (QonectaRouteTabState.destChargersCacheKey != cacheKey) {
+            QonectaRouteTabState.destChargersCacheKey = cacheKey
+            val appCtx = context.applicationContext
+            QonectaRouteTabState.destChargersCache = QonectaRoutePlanner.findNearbyChargers(
+                appCtx,
+                plan.destLat,
+                plan.destLon,
+                radiusKm = 2.0,
+                fetchOverpass = false,
+            ).take(3)
+            bgExecutor.execute {
+                val full = QonectaRoutePlanner.findNearbyChargers(appCtx, plan.destLat, plan.destLon, radiusKm = 2.0, fetchOverpass = true).take(3)
+                if (full.size != QonectaRouteTabState.destChargersCache.size) {
+                    uiHandler.post {
+                        QonectaRouteTabState.destChargersCache = full
+                        buildUi()
+                    }
+                }
+            }
+        }
+        val nearDest = QonectaRouteTabState.destChargersCache
+        if (nearDest.isEmpty()) return
+
+        listCol.addView(
+            TextView(context).apply {
+                text = String.format(
+                    Locale.getDefault(),
+                    "CARGAR EN EL DESTINO (LLEGAS CON %.0f %%)",
+                    max(0.0, arrivalPct),
+                )
+                setTextSp(11f)
+                setTextColor(QonectaTheme.amber)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                letterSpacing = 0.08f
+                setPadding(0, dp(4), 0, dp(4))
+            },
+        )
+        for (c in nearDest) {
+            listCol.addView(
+                buildOtherChargerRow(c, 0.0, isDestCharger = true),
+                LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(6) },
+            )
+        }
     }
 
     private fun buildPlannedStopRow(
@@ -949,11 +1229,12 @@ class QonectaRouteTabView(
             TextView(context).apply {
                 text = String.format(
                     Locale.getDefault(),
-                    "km %.0f · %.0f %% → %.0f %% (%s) · %s%s",
+                    "km %.0f · %.0f %% → %.0f %% (%s · +%.0f kWh) · %s%s",
                     stop.km,
                     stop.arrivePct,
                     stop.departPct,
                     stopDur,
+                    stop.kwh,
                     QonectaRoutePlanner.kwText(c),
                     lowNote,
                 )
@@ -972,12 +1253,12 @@ class QonectaRouteTabView(
             setPadding(0, dp(6), 0, 0)
         }
         val changeBtn = pillButton("Cambiar", primary = false, small = true) {
-            showStopAlternativesDialog(idx, plan, chargeResult, filteredChargers)
+            openStopAlternativesOverlay(idx, plan, chargeResult, filteredChargers)
         }
         actionsRow.addView(changeBtn)
 
-        val favBtn = buildFavoriteChargerButton(c)
-        actionsRow.addView(favBtn, spacedParams(dp(6)))
+        val markBtn = buildMarkChargerButton(c) { buildUi() }
+        actionsRow.addView(markBtn, spacedParams(dp(6)))
 
         val goBtn = pillButton("Ir ↗", primary = false, small = true) {
             sendSinglePointToPhoneMaps(c.lat, c.lon, c.name)
@@ -987,7 +1268,12 @@ class QonectaRouteTabView(
         return box
     }
 
-    private fun buildOtherChargerRow(c: QonectaRoutePlanner.Charger, hereKm: Double): View {
+    private fun buildOtherChargerRow(
+        c: QonectaRoutePlanner.Charger,
+        hereKm: Double,
+        isDestCharger: Boolean = false,
+        onChanged: (() -> Unit)? = null,
+    ): View {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1016,16 +1302,14 @@ class QonectaRouteTabView(
         )
         val remKm = max(0.0, c.kmAlong - hereKm)
         val detailSuffix = if (c.detail.isNotBlank()) " · ${c.detail}" else ""
+        val locPrefix = if (isDestCharger) {
+            String.format(Locale.getDefault(), "A %.1f km del destino", c.distFromRouteKm)
+        } else {
+            String.format(Locale.getDefault(), "km %.0f (a %.0f km)", c.kmAlong, remKm)
+        }
         txtCol.addView(
             TextView(context).apply {
-                text = String.format(
-                    Locale.getDefault(),
-                    "km %.0f (a %.0f km) · %s%s",
-                    c.kmAlong,
-                    remKm,
-                    QonectaRoutePlanner.kwText(c),
-                    detailSuffix,
-                )
+                text = "$locPrefix · ${QonectaRoutePlanner.kwText(c)}$detailSuffix"
                 setTextSp(11.5f)
                 setTextColor(QonectaTheme.dim)
                 maxLines = 2
@@ -1034,16 +1318,23 @@ class QonectaRouteTabView(
         )
         row.addView(txtCol, LinearLayout.LayoutParams(0, WRAP, 1f))
 
-        val isPinned = QonectaRouteTabState.pinnedChargerKeys.contains(c.stableKey)
-        val pinBtn = pillButton(if (isPinned) "📌 Fijada" else "📌 Parar", primary = isPinned, small = true) {
-            if (isPinned) {
-                QonectaRouteTabState.pinnedChargerKeys.remove(c.stableKey)
-            } else {
-                QonectaRouteTabState.pinnedChargerKeys.add(c.stableKey)
+        if (!isDestCharger) {
+            val isPinned = QonectaRouteTabState.pinnedChargerKeys.contains(c.stableKey)
+            val pinBtn = pillButton(if (isPinned) "📌 Fijada" else "📌 Parar", primary = isPinned, small = true) {
+                if (isPinned) {
+                    QonectaRouteTabState.pinnedChargerKeys.remove(c.stableKey)
+                } else {
+                    QonectaRouteTabState.pinnedChargerKeys.add(c.stableKey)
+                }
+                onChanged?.invoke() ?: buildUi()
             }
-            buildUi()
+            row.addView(pinBtn)
         }
-        row.addView(pinBtn)
+
+        row.addView(
+            buildMarkChargerButton(c) { onChanged?.invoke() ?: buildUi() },
+            spacedParams(dp(6)),
+        )
 
         val goBtn = pillButton("Ir ↗", primary = false, small = true) {
             sendSinglePointToPhoneMaps(c.lat, c.lon, c.name)
@@ -1052,25 +1343,46 @@ class QonectaRouteTabView(
         return row
     }
 
-    private fun buildFavoriteChargerButton(c: QonectaRoutePlanner.Charger): View {
-        val isFav = QonectaRouteTabState.favoriteChargerKeys.contains(c.stableKey)
-        return pillButton(if (isFav) "★ Fav" else "☆", primary = isFav, small = true) {
-            if (isFav) {
-                QonectaRouteTabState.favoriteChargerKeys.remove(c.stableKey)
-            } else {
-                QonectaRouteTabState.favoriteChargerKeys.add(c.stableKey)
-                QonectaRouteTabState.bannedChargerKeys.remove(c.stableKey)
-            }
-            saveChargerMarks()
-            buildUi()
+    /**
+     * Botón de marca en 3 estados idéntico a `RouteTab.java` (`☆` Normal → `★` Favorito → `⊘` Vetado).
+     */
+    private fun buildMarkChargerButton(c: QonectaRoutePlanner.Charger, onUpdated: () -> Unit): View {
+        val mark = QonectaChargerMarks.getMark(context, c.stableKey)
+        val label = when (mark) {
+            QonectaChargerMarks.MARK_FAV -> "★"
+            QonectaChargerMarks.MARK_BAN -> "⊘"
+            else -> "☆"
         }
-    }
-
-    private fun saveChargerMarks() {
-        prefs.edit()
-            .putString("fav_charger_keys", QonectaRouteTabState.favoriteChargerKeys.joinToString("|"))
-            .putString("ban_charger_keys", QonectaRouteTabState.bannedChargerKeys.joinToString("|"))
-            .apply()
+        return TextView(context).apply {
+            text = label
+            setTextSp(13.5f)
+            setTextColor(
+                when (mark) {
+                    QonectaChargerMarks.MARK_FAV -> QonectaTheme.green
+                    QonectaChargerMarks.MARK_BAN -> QonectaTheme.red
+                    else -> QonectaTheme.dim
+                },
+            )
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(999).toFloat()
+                setColor(QonectaTheme.surfaceTop)
+                setStroke(
+                    dp(1),
+                    when (mark) {
+                        QonectaChargerMarks.MARK_FAV -> QonectaTheme.green
+                        QonectaChargerMarks.MARK_BAN -> QonectaTheme.red
+                        else -> QonectaTheme.outline
+                    },
+                )
+            }
+            setOnClickListener {
+                QonectaChargerMarks.cycleMark(context, c)
+                onUpdated()
+            }
+        }
     }
 
     // =========================================================================
@@ -1125,10 +1437,10 @@ class QonectaRouteTabView(
     }
 
     // =========================================================================
-    // MODALES: CAMBIAR PARADA, BUSCADOR DE DESTINO, FILTRO, CERCA DE MÍ, LISTA COMPLETA
+    // OVERLAYS DE PANTALLA COMPLETA DE QONECTA+ (1 A 1 CON RouteTab.java)
     // =========================================================================
 
-    private fun showStopAlternativesDialog(
+    private fun openStopAlternativesOverlay(
         stopIdx: Int,
         plan: QonectaRoutePlanner.Plan,
         chargeResult: QonectaRoutePlanner.ChargeResult,
@@ -1138,12 +1450,10 @@ class QonectaRouteTabView(
         val settings = currentChargeSettings()
         val alts = QonectaRoutePlanner.stopAlternatives(chargeResult, stopIdx, filteredChargers, settings)
 
-        val container = LinearLayout(context).apply {
+        val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(18), dp(22), dp(18))
-            setBackgroundColor(QonectaTheme.surface)
+            setPadding(dp(20), dp(14), dp(20), dp(14))
         }
-        val dialog = AlertDialog.Builder(context).setView(container).create()
 
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1158,12 +1468,23 @@ class QonectaRouteTabView(
             },
             LinearLayout.LayoutParams(0, WRAP, 1f),
         )
+        if (stop.isPinned) {
+            header.addView(
+                pillButton("Quitar mi elección", primary = false, small = true) {
+                    QonectaRouteTabState.pinnedChargerKeys.remove(stop.charger.stableKey)
+                    closeOverlay()
+                    buildUi()
+                },
+                spacedParams(dp(8)),
+            )
+        }
         header.addView(
-            pillButton("Cerrar", primary = true, small = true) { dialog.dismiss() },
+            pillButton("Cerrar", primary = true, small = true) { closeOverlay() },
+            spacedParams(dp(8)),
         )
-        container.addView(header, LinearLayout.LayoutParams(MATCH, WRAP))
+        panel.addView(header, LinearLayout.LayoutParams(MATCH, WRAP))
 
-        container.addView(
+        panel.addView(
             TextView(context).apply {
                 text = String.format(
                     Locale.getDefault(),
@@ -1176,17 +1497,6 @@ class QonectaRouteTabView(
                 setPadding(0, dp(6), 0, dp(10))
             },
         )
-
-        if (stop.isPinned) {
-            container.addView(
-                pillButton("Quitar mi elección manual y dejar que el plan elija", primary = false, small = true) {
-                    QonectaRouteTabState.pinnedChargerKeys.remove(stop.charger.stableKey)
-                    dialog.dismiss()
-                    buildUi()
-                },
-                LinearLayout.LayoutParams(WRAP, WRAP).apply { bottomMargin = dp(10) },
-            )
-        }
 
         val scroll = ScrollView(context)
         val listCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
@@ -1269,7 +1579,7 @@ class QonectaRouteTabView(
                         pillButton("Usar esta", primary = true, small = true) {
                             QonectaRouteTabState.pinnedChargerKeys.remove(stop.charger.stableKey)
                             QonectaRouteTabState.pinnedChargerKeys.add(c.stableKey)
-                            dialog.dismiss()
+                            closeOverlay()
                             buildUi()
                         },
                     )
@@ -1278,17 +1588,81 @@ class QonectaRouteTabView(
             }
         }
         scroll.addView(listCol)
-        container.addView(scroll, LinearLayout.LayoutParams(MATCH, dp(360)))
-        dialog.show()
+        panel.addView(scroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        openOverlay(panel)
     }
 
-    private fun showPlaceSearchDialog(isOrigin: Boolean) {
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(18), dp(22), dp(18))
-            setBackgroundColor(QonectaTheme.surface)
+    private fun openSearchOverlay(
+        isOrigin: Boolean,
+        forVia: Boolean,
+        saveAsTag: String?,
+    ) {
+        when {
+            isOrigin -> openSearchOverlay("Elegir punto de salida") { place ->
+                QonectaRoutePlanner.setCustomOrigin(place)
+                closeOverlay()
+                QonectaRouteTabState.lastDestinationPlace?.let { recalculateRoute(it) } ?: buildUi()
+            }
+            forVia -> openSearchOverlay("Añadir parada intermedia en el viaje") { place ->
+                if (QonectaRouteTabState.viaPlaces.size < 3) {
+                    QonectaRouteTabState.viaPlaces.add(place)
+                }
+                closeOverlay()
+                QonectaRouteTabState.lastDestinationPlace?.let { recalculateRoute(it) } ?: openTripOverlay()
+            }
+            saveAsTag != null -> {
+                val label = if (saveAsTag == QonectaSavedPlaces.HOME) "Casa" else "Trabajo"
+                openSearchOverlay(
+                    titleText = "Elegir dirección de $label",
+                    saveSlotKey = saveAsTag,
+                    saveSlotLabel = label,
+                ) { place ->
+                    QonectaSavedPlaces.putFixed(context, saveAsTag, place)
+                    closeOverlay()
+                    recalculateRoute(place.copy(name = "$label (${place.name})"))
+                }
+            }
+            else -> openSearchOverlay("¿A dónde vamos?") { place ->
+                closeOverlay()
+                recalculateRoute(place)
+            }
         }
-        val dialog = AlertDialog.Builder(context).setView(container).create()
+    }
+
+    private fun startSavedDestination(saved: QonectaSavedPlaces.Saved) {
+        if (saved.isTrip) {
+            QonectaRouteTabState.viaPlaces.clear()
+            QonectaRouteTabState.viaPlaces.addAll(saved.via)
+            QonectaRouteTabState.roundTrip = saved.roundTrip
+        }
+        recalculateRoute(saved.toPlace())
+    }
+
+    private fun openSearchOverlay(
+        titleText: String,
+        saveSlotKey: String? = null,
+        saveSlotLabel: String? = null,
+        onPicked: (QonectaRoutePlanner.Place) -> Unit,
+    ) {
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(8))
+        }
+        val (origPlace, _) = QonectaRoutePlanner.resolveOrigin(context)
+        val input = EditText(context).apply {
+            hint = "Ciudad, calle o lugar (ej. Valencia, Calle Alcalá, Ikea…)"
+            setTextColor(QonectaTheme.text)
+            setHintTextColor(QonectaTheme.faint)
+            setTextSp(16.5f)
+            setSingleLine(true)
+            showSoftInputOnFocus = false
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(QonectaTheme.surfaceTop)
+                setStroke(dp(2), QonectaTheme.accent)
+            }
+        }
 
         val topRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1296,138 +1670,352 @@ class QonectaRouteTabView(
         }
         topRow.addView(
             TextView(context).apply {
-                text = if (isOrigin) "📍 Elegir punto de salida" else "🔍 Buscar destino (Photon / OpenStreetMap)"
-                setTextSp(20f)
-                setTextColor(QonectaTheme.text)
+                text = titleText
+                setTextSp(16f)
+                setTextColor(QonectaTheme.dim)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setPadding(0, 0, dp(10), 0)
             },
-            LinearLayout.LayoutParams(0, WRAP, 1f),
         )
-        if (isOrigin && QonectaRoutePlanner.getCustomOrigin() != null) {
+        topRow.addView(input, LinearLayout.LayoutParams(0, dp(42), 1f))
+        if (titleText.contains("salida", ignoreCase = true) && QonectaRoutePlanner.getCustomOrigin() != null) {
             topRow.addView(
-                pillButton("🛰️ Usar GPS del coche", primary = true, small = true) {
+                pillButton("🛰️ GPS del coche", primary = false, small = true) {
                     QonectaRoutePlanner.setCustomOrigin(null)
-                    dialog.dismiss()
+                    closeOverlay()
                     QonectaRouteTabState.lastDestinationPlace?.let { recalculateRoute(it) } ?: buildUi()
                 },
                 spacedParams(dp(8)),
             )
         }
-        topRow.addView(pillButton("Cerrar", primary = false, small = true) { dialog.dismiss() })
-        container.addView(topRow, LinearLayout.LayoutParams(MATCH, WRAP))
-
-        val inputRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, dp(10))
+        val statusTv = TextView(context).apply {
+            text = ""
+            setTextSp(12.5f)
+            setTextColor(QonectaTheme.dim)
+            setPadding(dp(10), 0, dp(6), 0)
         }
-        val input = EditText(context).apply {
-            hint = if (isOrigin) "Ciudad o dirección de salida (ej. Sevilla, Valencia, Calle Alcalá…)"
-            else "Dirección, ciudad o lugar (ej. Barcelona, Puerto Banús, Burgos…)"
-            setTextColor(QonectaTheme.text)
-            setHintTextColor(QonectaTheme.faint)
-            setTextSp(16.5f)
-            setSingleLine(true)
-            imeOptions = EditorInfo.IME_ACTION_SEARCH
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(QonectaTheme.surfaceTop)
-                setStroke(dp(2), QonectaTheme.accent)
+        topRow.addView(statusTv)
+        topRow.addView(
+            pillButton("Cerrar", primary = false, small = true) { closeOverlay() },
+            spacedParams(dp(6)),
+        )
+        panel.addView(topRow, LinearLayout.LayoutParams(MATCH, WRAP))
+
+        val resultsCol = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(6), 0, dp(4))
+        }
+        val scroll = ScrollView(context).apply { addView(resultsCol) }
+        panel.addView(scroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+        fun addPlaceRow(place: QonectaRoutePlanner.Place, badgeText: String? = null) {
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat()
+                    setColor(QonectaTheme.surfaceTop)
+                    setStroke(dp(1), QonectaTheme.outline)
+                }
+                setOnClickListener {
+                    QonectaRoutePlanner.saveRecentPlace(context, place)
+                    onPicked(place)
+                }
+            }
+            val textCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            val namePrefix = if (badgeText != null) "$badgeText · " else ""
+            textCol.addView(
+                TextView(context).apply {
+                    text = "$namePrefix${place.name}"
+                    setTextSp(15f)
+                    setTextColor(QonectaTheme.text)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                },
+            )
+            if (place.detail.isNotBlank()) {
+                textCol.addView(
+                    TextView(context).apply {
+                        text = place.detail
+                        setTextSp(12f)
+                        setTextColor(QonectaTheme.dim)
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                    },
+                )
+            }
+            row.addView(textCol, LinearLayout.LayoutParams(0, WRAP, 1f))
+
+            if (!origPlace.lat.isNaN() && !place.lat.isNaN()) {
+                val distKm = QonectaRoutePlanner.distanceKm(origPlace.lat, origPlace.lon, place.lat, place.lon)
+                row.addView(
+                    TextView(context).apply {
+                        text = if (distKm < 10.0) String.format(Locale.getDefault(), "%.1f km", distKm)
+                        else String.format(Locale.getDefault(), "%.0f km", distKm)
+                        setTextSp(13f)
+                        setTextColor(QonectaTheme.dim)
+                        typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                        setPadding(dp(8), 0, dp(8), 0)
+                    },
+                )
+            }
+
+            if (saveSlotKey == null) {
+                val matchingSaved = QonectaSavedPlaces.findMatching(context, place)
+                val starBtn = TextView(context).apply {
+                    text = if (matchingSaved != null) "★" else "☆"
+                    setTextSp(18f)
+                    setTextColor(if (matchingSaved != null) QonectaTheme.accent else QonectaTheme.dim)
+                    gravity = Gravity.CENTER
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat()
+                        setColor(QonectaTheme.surface)
+                        setStroke(dp(1), if (matchingSaved != null) QonectaTheme.accent else QonectaTheme.outline)
+                    }
+                    setOnClickListener {
+                        openSaveChoiceOverlay(place, matchingSaved) {
+                            closeOverlay()
+                            openSearchOverlay(titleText, saveSlotKey, saveSlotLabel, onPicked)
+                        }
+                    }
+                }
+                row.addView(starBtn, LinearLayout.LayoutParams(dp(36), dp(34)).apply { rightMargin = dp(8) })
+            }
+
+            val actionLabel = if (saveSlotLabel != null) "Guardar como $saveSlotLabel" else "Ir ⚡"
+            row.addView(
+                TextView(context).apply {
+                    text = actionLabel
+                    setTextSp(13f)
+                    setTextColor(QonectaTheme.accent)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                },
+            )
+            resultsCol.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(5) })
+        }
+
+        fun showDefaultList() {
+            resultsCol.removeAllViews()
+            val savedList = QonectaSavedPlaces.all(context)
+            val recents = QonectaRoutePlanner.loadRecentPlaces(context)
+            statusTv.text = if (savedList.isNotEmpty() || recents.isNotEmpty()) "Guardados y recientes" else "Escribe al menos 2 letras"
+            for (sp in savedList) {
+                addPlaceRow(sp.toPlace(), sp.displayLabel())
+            }
+            for (rp in recents) {
+                if (QonectaSavedPlaces.findMatching(context, rp) == null) {
+                    addPlaceRow(rp, "Reciente")
+                }
             }
         }
-        val resultsCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        val statusTv = TextView(context).apply {
-            text = "Escribe una ciudad, calle o punto de interés y pulsa «Buscar»."
-            setTextSp(13.5f)
-            setTextColor(QonectaTheme.dim)
-            setPadding(0, 0, 0, dp(8))
-        }
 
-        val doSearch = {
-            val q = input.text?.toString()?.trim().orEmpty()
-            if (q.length >= 2) {
-                statusTv.text = "Buscando «$q» en Photon y OpenStreetMap…"
-                statusTv.setTextColor(QonectaTheme.accent)
-                val (orig, _) = QonectaRoutePlanner.resolveOrigin(context)
-                bgExecutor.execute {
-                    val found = QonectaRoutePlanner.searchPlaces(q, orig.lat, orig.lon, limit = 7)
-                    uiHandler.post {
-                        resultsCol.removeAllViews()
-                        if (found.isEmpty()) {
-                            statusTv.text = "No se encontraron resultados para «$q»."
-                            statusTv.setTextColor(QonectaTheme.amber)
-                        } else {
-                            statusTv.text = "Selecciona un lugar (${found.size} resultados):"
-                            statusTv.setTextColor(QonectaTheme.dim)
-                            found.forEach { place ->
-                                val item = LinearLayout(context).apply {
-                                    orientation = LinearLayout.HORIZONTAL
-                                    gravity = Gravity.CENTER_VERTICAL
-                                    setPadding(dp(14), dp(10), dp(14), dp(10))
-                                    background = GradientDrawable().apply {
-                                        cornerRadius = dp(12).toFloat()
-                                        setColor(QonectaTheme.surfaceTop)
-                                        setStroke(dp(1), QonectaTheme.outline)
-                                    }
-                                    setOnClickListener {
-                                        dialog.dismiss()
-                                        if (isOrigin) {
-                                            QonectaRoutePlanner.setCustomOrigin(place)
-                                            QonectaRouteTabState.lastDestinationPlace?.let { recalculateRoute(it) } ?: buildUi()
-                                        } else {
-                                            recalculateRoute(place)
-                                        }
-                                    }
-                                }
-                                val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-                                col.addView(
-                                    TextView(context).apply {
-                                        text = "📍 ${place.name}"
-                                        setTextSp(15.5f)
-                                        setTextColor(QonectaTheme.text)
-                                        typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                                    },
-                                )
-                                if (place.detail.isNotBlank()) {
-                                    col.addView(
-                                        TextView(context).apply {
-                                            text = place.detail
-                                            setTextSp(12.5f)
-                                            setTextColor(QonectaTheme.dim)
-                                        },
-                                    )
-                                }
-                                item.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
-                                item.addView(
-                                    TextView(context).apply {
-                                        text = if (isOrigin) "Salir de aquí" else "Calcular ruta ⚡"
-                                        setTextSp(13.5f)
-                                        setTextColor(QonectaTheme.accent)
-                                        typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                                    },
-                                )
-                                resultsCol.addView(item, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(6) })
-                            }
-                        }
+        var searchSeq = 0
+        var pendingSearch: Runnable? = null
+
+        fun runSearchNow(rawQuery: String) {
+            val q = rawQuery.trim()
+            if (q.length < 2) {
+                showDefaultList()
+                return
+            }
+            val seq = ++searchSeq
+            statusTv.text = "Buscando…"
+            statusTv.setTextColor(QonectaTheme.accent)
+            bgExecutor.execute {
+                val found = QonectaRoutePlanner.searchPlaces(q, origPlace.lat, origPlace.lon, limit = 8)
+                uiHandler.post {
+                    if (seq != searchSeq) return@post
+                    resultsCol.removeAllViews()
+                    if (found.isEmpty()) {
+                        statusTv.text = "Sin resultados"
+                        statusTv.setTextColor(QonectaTheme.amber)
+                    } else {
+                        statusTv.text = "${found.size} lugares"
+                        statusTv.setTextColor(QonectaTheme.dim)
+                        found.forEach { addPlaceRow(it) }
                     }
                 }
             }
         }
 
-        val searchBtn = pillButton("Buscar", primary = true, small = false) { doSearch() }
-        input.setOnEditorActionListener { _, _, _ ->
-            doSearch()
-            true
-        }
-        inputRow.addView(input, LinearLayout.LayoutParams(0, dp(48), 1f).apply { rightMargin = dp(10) })
-        inputRow.addView(searchBtn, LinearLayout.LayoutParams(WRAP, dp(48)))
-        container.addView(inputRow, LinearLayout.LayoutParams(MATCH, WRAP))
-        container.addView(statusTv)
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                pendingSearch?.let { uiHandler.removeCallbacks(it) }
+                val q = s?.toString().orEmpty()
+                if (q.trim().length < 2) {
+                    showDefaultList()
+                } else {
+                    val r = Runnable { runSearchNow(q) }
+                    pendingSearch = r
+                    uiHandler.postDelayed(r, 320L)
+                }
+            }
+        })
 
-        val scroll = ScrollView(context).apply { addView(resultsCol) }
-        container.addView(scroll, LinearLayout.LayoutParams(MATCH, dp(290)))
-        dialog.show()
+        showDefaultList()
+        val keyboard = QonectaCarKeyboard.attach(context, input) {
+            pendingSearch?.let { uiHandler.removeCallbacks(it) }
+            runSearchNow(input.text?.toString().orEmpty())
+        }
+        panel.addView(keyboard, LinearLayout.LayoutParams(MATCH, WRAP))
+        openOverlay(panel)
+        input.requestFocus()
+    }
+
+    private fun openSaveChoiceOverlay(
+        place: QonectaRoutePlanner.Place,
+        existing: QonectaSavedPlaces.Saved?,
+        onDone: () -> Unit,
+    ) {
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(14), dp(20), dp(14))
+        }
+        val top = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        top.addView(
+            TextView(context).apply {
+                text = "★ Guardar «${place.name}»"
+                setTextSp(19f)
+                setTextColor(QonectaTheme.text)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f),
+        )
+        top.addView(pillButton("Volver", primary = false, small = true) { onDone() })
+        panel.addView(top, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) })
+
+        if (place.detail.isNotBlank()) {
+            panel.addView(
+                TextView(context).apply {
+                    text = place.detail
+                    setTextSp(13.5f)
+                    setTextColor(QonectaTheme.dim)
+                    setPadding(0, 0, 0, dp(12))
+                },
+            )
+        }
+
+        val btnsRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        btnsRow.addView(
+            pillButton("🏠 Guardar como Casa", primary = true) {
+                QonectaSavedPlaces.putFixed(context, QonectaSavedPlaces.HOME, place)
+                Toast.makeText(context, "Guardado como Casa", Toast.LENGTH_SHORT).show()
+                onDone()
+            },
+        )
+        btnsRow.addView(
+            pillButton("💼 Guardar como Trabajo", primary = true) {
+                QonectaSavedPlaces.putFixed(context, QonectaSavedPlaces.WORK, place)
+                Toast.makeText(context, "Guardado como Trabajo", Toast.LENGTH_SHORT).show()
+                onDone()
+            },
+            spacedParams(dp(10)),
+        )
+        btnsRow.addView(
+            pillButton("★ Guardar con otro nombre…", primary = false) {
+                openNamePromptOverlay(place.name) { chosenLabel ->
+                    QonectaSavedPlaces.addFavorite(context, chosenLabel, place)
+                    Toast.makeText(context, "Guardado en ★ Guardados", Toast.LENGTH_SHORT).show()
+                    onDone()
+                }
+            },
+            spacedParams(dp(10)),
+        )
+        if (existing != null) {
+            btnsRow.addView(
+                pillButton("Quitar de guardados", primary = false) {
+                    QonectaSavedPlaces.remove(context, existing.key)
+                    Toast.makeText(context, "Eliminado de guardados", Toast.LENGTH_SHORT).show()
+                    onDone()
+                },
+                spacedParams(dp(10)),
+            )
+        }
+        panel.addView(btnsRow, LinearLayout.LayoutParams(MATCH, WRAP))
+        openOverlay(panel)
+    }
+
+    private fun openNamePromptOverlay(defaultName: String, onSaved: (String) -> Unit) {
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(8))
+        }
+        val input = EditText(context).apply {
+            setText(defaultName)
+            setSelection(text.length)
+            hint = "Etiqueta (ej. Gimnasio, Casa padres, Playa…)"
+            setTextColor(QonectaTheme.text)
+            setHintTextColor(QonectaTheme.faint)
+            setTextSp(16.5f)
+            setSingleLine(true)
+            showSoftInputOnFocus = false
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(QonectaTheme.surfaceTop)
+                setStroke(dp(2), QonectaTheme.accent)
+            }
+        }
+        val topRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        topRow.addView(
+            TextView(context).apply {
+                text = "Nombre del favorito:"
+                setTextSp(16f)
+                setTextColor(QonectaTheme.dim)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setPadding(0, 0, dp(10), 0)
+            },
+        )
+        topRow.addView(input, LinearLayout.LayoutParams(0, dp(42), 1f))
+        topRow.addView(
+            pillButton("Guardar", primary = true, small = true) {
+                onSaved(input.text?.toString()?.trim().orEmpty().ifBlank { defaultName })
+            },
+            spacedParams(dp(8)),
+        )
+        topRow.addView(
+            pillButton("Cancelar", primary = false, small = true) { closeOverlay() },
+            spacedParams(dp(6)),
+        )
+        panel.addView(topRow, LinearLayout.LayoutParams(MATCH, WRAP))
+        panel.addView(View(context), LinearLayout.LayoutParams(MATCH, 0, 1f))
+        val kb = QonectaCarKeyboard.attach(context, input, "Guardar") {
+            onSaved(input.text?.toString()?.trim().orEmpty().ifBlank { defaultName })
+        }
+        panel.addView(kb, LinearLayout.LayoutParams(MATCH, WRAP))
+        openOverlay(panel)
+        input.requestFocus()
+    }
+
+    private fun startSavedDestination(slotKey: String) {
+        val saved = QonectaSavedPlaces.get(context, slotKey)
+        if (saved != null) {
+            recalculateRoute(saved.toPlace())
+        } else {
+            val label = if (slotKey == QonectaSavedPlaces.HOME) "Casa" else "Trabajo"
+            openSearchOverlay(
+                titleText = "Elegir dirección de $label",
+                saveSlotKey = slotKey,
+                saveSlotLabel = label,
+            ) { place ->
+                QonectaSavedPlaces.putFixed(context, slotKey, place)
+                closeOverlay()
+                recalculateRoute(place.copy(name = "$label (${place.name})"))
+            }
+        }
     }
 
     private fun recalculateRoute(destPlace: QonectaRoutePlanner.Place) {
@@ -1435,7 +2023,7 @@ class QonectaRouteTabView(
         QonectaRouteTabState.routeLoading = true
         QonectaRouteTabState.currentPlan = null
         QonectaRouteTabState.pinnedChargerKeys.clear()
-        QonectaRouteTabState.statusMessage = "Calculando trazado OSRM, altitud Open-Meteo, viento y cargadores hacia ${destPlace.name}…"
+        QonectaRouteTabState.statusMessage = "Calculando ruta rápida, relieve y cargadores hacia ${destPlace.name}…"
         buildUi()
 
         val appCtx = context.applicationContext
@@ -1473,15 +2061,373 @@ class QonectaRouteTabView(
         }
     }
 
-    private fun showChargerFilterDialog(plan: QonectaRoutePlanner.Plan?) {
-        val container = LinearLayout(context).apply {
+    private fun openSavedOverlay() {
+        val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(18), dp(22), dp(18))
-            setBackgroundColor(QonectaTheme.surface)
+            setPadding(dp(20), dp(14), dp(20), dp(14))
         }
-        val dialog = AlertDialog.Builder(context).setView(container).create()
+        val top = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        top.addView(
+            TextView(context).apply {
+                text = "★ Destinos Guardados (Casa, Trabajo y Favoritos)"
+                setTextSp(19f)
+                setTextColor(QonectaTheme.text)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f),
+        )
+        top.addView(
+            pillButton("+ Añadir favorito", primary = false, small = true) {
+                openSearchOverlay("Elegir lugar para añadir a ★ Guardados") { place ->
+                    openNamePromptOverlay(place.name) { chosenLabel ->
+                        QonectaSavedPlaces.addFavorite(context, chosenLabel, place)
+                        openSavedOverlay()
+                    }
+                }
+            },
+            spacedParams(dp(8)),
+        )
+        top.addView(
+            pillButton("Cerrar", primary = true, small = true) { closeOverlay() },
+            spacedParams(dp(8)),
+        )
+        panel.addView(top, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) })
 
-        var activeTab = 0 // 0 = Cargadores, 1 = Plan de carga
+        val listCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(context).apply { addView(listCol) }
+        panel.addView(scroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+        fun addSavedSlotRow(
+            icon: String,
+            title: String,
+            saved: QonectaSavedPlaces.Saved?,
+            onChange: () -> Unit,
+            onClear: (() -> Unit)? = null,
+        ) {
+            val r = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(14).toFloat()
+                    setColor(QonectaTheme.surfaceTop)
+                    setStroke(dp(1), QonectaTheme.outline)
+                }
+                if (saved != null) {
+                    setOnClickListener {
+                        closeOverlay()
+                        recalculateRoute(saved.toPlace())
+                    }
+                }
+            }
+            val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            col.addView(
+                TextView(context).apply {
+                    text = "$icon $title"
+                    setTextSp(15.5f)
+                    setTextColor(QonectaTheme.text)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                },
+            )
+            col.addView(
+                TextView(context).apply {
+                    text = if (saved != null) "${saved.name}${if (saved.detail.isNotBlank()) " · ${saved.detail}" else ""}"
+                    else "Sin configurar — toca «Elegir» para guardarlo"
+                    setTextSp(13f)
+                    setTextColor(if (saved != null) QonectaTheme.accent else QonectaTheme.dim)
+                },
+            )
+            r.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
+            if (saved != null) {
+                r.addView(
+                    pillButton("Ir ⚡", primary = true, small = true) {
+                        closeOverlay()
+                        recalculateRoute(saved.toPlace())
+                    },
+                )
+            }
+            r.addView(
+                pillButton(if (saved != null) "Cambiar" else "Elegir", primary = false, small = true) { onChange() },
+                spacedParams(dp(6)),
+            )
+            if (saved != null && onClear != null) {
+                r.addView(
+                    pillButton("✕", primary = false, small = true) { onClear() },
+                    spacedParams(dp(6)),
+                )
+            }
+            listCol.addView(r, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
+        }
+
+        val homeSaved = QonectaSavedPlaces.get(context, QonectaSavedPlaces.HOME)
+        addSavedSlotRow(
+            icon = "🏠",
+            title = "Casa",
+            saved = homeSaved,
+            onChange = {
+                openSearchOverlay("Elegir dirección de Casa", QonectaSavedPlaces.HOME, "Casa") { place ->
+                    QonectaSavedPlaces.putFixed(context, QonectaSavedPlaces.HOME, place)
+                    openSavedOverlay()
+                }
+            },
+            onClear = {
+                QonectaSavedPlaces.remove(context, QonectaSavedPlaces.HOME)
+                openSavedOverlay()
+            },
+        )
+
+        val workSaved = QonectaSavedPlaces.get(context, QonectaSavedPlaces.WORK)
+        addSavedSlotRow(
+            icon = "💼",
+            title = "Trabajo",
+            saved = workSaved,
+            onChange = {
+                openSearchOverlay("Elegir dirección de Trabajo", QonectaSavedPlaces.WORK, "Trabajo") { place ->
+                    QonectaSavedPlaces.putFixed(context, QonectaSavedPlaces.WORK, place)
+                    openSavedOverlay()
+                }
+            },
+            onClear = {
+                QonectaSavedPlaces.remove(context, QonectaSavedPlaces.WORK)
+                openSavedOverlay()
+            },
+        )
+
+        val otherFavs = QonectaSavedPlaces.all(context).filter {
+            it.key != QonectaSavedPlaces.HOME && it.key != QonectaSavedPlaces.WORK
+        }
+        otherFavs.forEach { fav ->
+            addSavedSlotRow(
+                icon = "★",
+                title = fav.label,
+                saved = fav,
+                onChange = {
+                    openNamePromptOverlay(fav.label) { newLabel ->
+                        QonectaSavedPlaces.remove(context, fav.key)
+                        QonectaSavedPlaces.addFavorite(context, newLabel, fav.toPlace())
+                        openSavedOverlay()
+                    }
+                },
+                onClear = {
+                    QonectaSavedPlaces.remove(context, fav.key)
+                    openSavedOverlay()
+                },
+            )
+        }
+
+        openOverlay(panel)
+    }
+
+    private fun openTripOverlay() {
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(14), dp(20), dp(14))
+        }
+        val top = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        top.addView(
+            TextView(context).apply {
+                text = "Viaje · Ida y vuelta y paradas intermedias"
+                setTextSp(19f)
+                setTextColor(QonectaTheme.text)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f),
+        )
+        top.addView(
+            pillButton("Cerrar", primary = true, small = true) { closeOverlay() },
+        )
+        panel.addView(top, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) })
+
+        val roundRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(QonectaTheme.surfaceTop)
+                setStroke(dp(1), QonectaTheme.outline)
+            }
+        }
+        val roundCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        roundCol.addView(
+            TextView(context).apply {
+                text = "Tipo de trayecto"
+                setTextSp(15f)
+                setTextColor(QonectaTheme.text)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            },
+        )
+        roundCol.addView(
+            TextView(context).apply {
+                text = "Ida y vuelta calcula el viaje completo regresando al punto de salida."
+                setTextSp(12.5f)
+                setTextColor(QonectaTheme.dim)
+            },
+        )
+        roundRow.addView(roundCol, LinearLayout.LayoutParams(0, WRAP, 1f))
+        roundRow.addView(
+            pillButton("Solo ida", primary = !QonectaRouteTabState.roundTrip, small = true) {
+                if (QonectaRouteTabState.roundTrip) {
+                    QonectaRouteTabState.roundTrip = false
+                    openTripOverlay()
+                    QonectaRouteTabState.lastDestinationPlace?.let { recalculateRoute(it) } ?: buildUi()
+                }
+            },
+        )
+        roundRow.addView(
+            pillButton("⇆ Ida y vuelta", primary = QonectaRouteTabState.roundTrip, small = true) {
+                if (!QonectaRouteTabState.roundTrip) {
+                    QonectaRouteTabState.roundTrip = true
+                    openTripOverlay()
+                    QonectaRouteTabState.lastDestinationPlace?.let { recalculateRoute(it) } ?: buildUi()
+                }
+            },
+            spacedParams(dp(8)),
+        )
+        panel.addView(roundRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) })
+
+        val viaHeader = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        viaHeader.addView(
+            TextView(context).apply {
+                text = "PARADAS INTERMEDIAS (${QonectaRouteTabState.viaPlaces.size}/3)"
+                setTextSp(12f)
+                setTextColor(QonectaTheme.faint)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                letterSpacing = 0.08f
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f),
+        )
+        if (QonectaRouteTabState.viaPlaces.size < 3) {
+            viaHeader.addView(
+                pillButton("+ Añadir parada intermedia", primary = true, small = true) {
+                    openSearchOverlay("Añadir parada intermedia en el viaje") { place ->
+                        if (QonectaRouteTabState.viaPlaces.size < 3) {
+                            QonectaRouteTabState.viaPlaces.add(place)
+                        }
+                        closeOverlay()
+                        QonectaRouteTabState.lastDestinationPlace?.let { recalculateRoute(it) } ?: openTripOverlay()
+                    }
+                },
+            )
+        }
+        if (QonectaRouteTabState.viaPlaces.isNotEmpty()) {
+            viaHeader.addView(
+                pillButton("Quitar todas", primary = false, small = true) {
+                    QonectaRouteTabState.viaPlaces.clear()
+                    openTripOverlay()
+                    QonectaRouteTabState.lastDestinationPlace?.let { recalculateRoute(it) } ?: buildUi()
+                },
+                spacedParams(dp(8)),
+            )
+        }
+        panel.addView(viaHeader, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
+
+        val viaCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        if (QonectaRouteTabState.viaPlaces.isEmpty()) {
+            viaCol.addView(
+                TextView(context).apply {
+                    text = "Sin paradas intermedias. Puedes añadir hasta 3 lugares de paso obligatorios antes del destino."
+                    setTextSp(14f)
+                    setTextColor(QonectaTheme.dim)
+                    setPadding(0, dp(6), 0, dp(6))
+                },
+            )
+        } else {
+            QonectaRouteTabState.viaPlaces.forEachIndexed { idx, vp ->
+                val r = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(8), dp(12), dp(8))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(12).toFloat()
+                        setColor(QonectaTheme.surfaceTop)
+                        setStroke(dp(1), QonectaTheme.outline)
+                    }
+                }
+                r.addView(
+                    TextView(context).apply {
+                        text = "Parada ${idx + 1}: ${vp.name}"
+                        setTextSp(14.5f)
+                        setTextColor(QonectaTheme.text)
+                        typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                    },
+                    LinearLayout.LayoutParams(0, WRAP, 1f),
+                )
+                r.addView(
+                    pillButton("Quitar", primary = false, small = true) {
+                        QonectaRouteTabState.viaPlaces.removeAt(idx)
+                        openTripOverlay()
+                        QonectaRouteTabState.lastDestinationPlace?.let { recalculateRoute(it) } ?: buildUi()
+                    },
+                )
+                viaCol.addView(r, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(6) })
+            }
+        }
+        panel.addView(ScrollView(context).apply { addView(viaCol) }, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        openOverlay(panel)
+    }
+
+    private fun openMapOverlay(
+        plan: QonectaRoutePlanner.Plan,
+        chargeResult: QonectaRoutePlanner.ChargeResult?,
+        filteredChargers: List<QonectaRoutePlanner.Charger>,
+    ) {
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+        }
+        val top = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        top.addView(
+            TextView(context).apply {
+                val stopsCount = chargeResult?.stops?.size ?: 0
+                val stopsText = if (stopsCount > 0) " · $stopsCount parada(s)" else " · Directo"
+                text = String.format(Locale.getDefault(), "🗺 Mapa · %s (%.0f km%s)", plan.destination, plan.totalKm, stopsText)
+                setTextSp(18f)
+                setTextColor(QonectaTheme.text)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f),
+        )
+        top.addView(
+            pillButton("📲 Enviar al móvil", primary = false, small = true) {
+                sendPlanToPhoneMaps(plan, chargeResult)
+            },
+        )
+        top.addView(
+            pillButton("Cerrar", primary = true, small = true) { closeOverlay() },
+            spacedParams(dp(8)),
+        )
+        panel.addView(top, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
+
+        val mapView = QonectaRouteMapView(
+            context = context,
+            plan = plan,
+            chargeResult = chargeResult,
+            filteredChargers = filteredChargers,
+        )
+        panel.addView(mapView, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        openOverlay(panel)
+    }
+
+    private fun openChargerFilterOverlay(plan: QonectaRoutePlanner.Plan?) {
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(14), dp(20), dp(14))
+        }
+
+        var activeTab = 0 // 0 = Cargadores, 1 = Plan de carga, 2 = Favoritos y vetados
         val bodyScroll = ScrollView(context)
         val bodyCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         bodyScroll.addView(bodyCol)
@@ -1491,165 +2437,276 @@ class QonectaRouteTabView(
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        fun rebuildDialogBody() {
+        fun rebuildOverlayBody() {
             tabsRow.removeAllViews()
-            val tab0 = pillButton("⚡ Filtro de Cargadores", primary = activeTab == 0, small = true) {
-                activeTab = 0
-                rebuildDialogBody()
-            }
-            val tab1 = pillButton("🔋 Ajustes del Plan de Carga", primary = activeTab == 1, small = true) {
-                activeTab = 1
-                rebuildDialogBody()
-            }
-            tabsRow.addView(tab0)
-            tabsRow.addView(tab1, spacedParams(dp(8)))
+            val favCount = QonectaChargerMarks.allByState(context, QonectaChargerMarks.FAV).size
+            val banCount = QonectaChargerMarks.allByState(context, QonectaChargerMarks.BAN).size
+            val tab2Suffix = if (favCount + banCount > 0) " (${favCount + banCount})" else ""
+
+            tabsRow.addView(
+                pillButton("⚡ Cargadores", primary = activeTab == 0, small = true) {
+                    activeTab = 0
+                    rebuildOverlayBody()
+                },
+            )
+            tabsRow.addView(
+                pillButton("🔋 Plan de carga", primary = activeTab == 1, small = true) {
+                    activeTab = 1
+                    rebuildOverlayBody()
+                },
+                spacedParams(dp(8)),
+            )
+            tabsRow.addView(
+                pillButton("★ Favoritos y vetados$tab2Suffix", primary = activeTab == 2, small = true) {
+                    activeTab = 2
+                    rebuildOverlayBody()
+                },
+                spacedParams(dp(8)),
+            )
             tabsRow.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
-            tabsRow.addView(pillButton("Cerrar", primary = true, small = true) { dialog.dismiss() })
+            tabsRow.addView(pillButton("Cerrar", primary = true, small = true) { closeOverlay() })
 
             bodyCol.removeAllViews()
-            if (activeTab == 0) {
-                // Potencia mínima
-                bodyCol.addView(dialogSectionTitle("POTENCIA MÍNIMA DEL CARGADOR"))
-                val kwRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-                for (kw in QonectaRoutePlanner.MIN_KW_CHOICES) {
-                    val label = if (kw == 0) "Cualquiera" else "≥ $kw kW"
-                    val btn = pillButton(label, primary = chargerMinKw == kw, small = true) {
-                        chargerMinKw = kw
-                        saveFilterPrefs()
-                        rebuildDialogBody()
-                        buildUi()
-                    }
-                    kwRow.addView(btn, LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(6) })
-                }
-                val kwScroll = HorizontalScrollView(context).apply {
-                    isHorizontalScrollBarEnabled = false
-                    addView(kwRow)
-                }
-                bodyCol.addView(kwScroll, LinearLayout.LayoutParams(MATCH, WRAP))
-
-                // Voltaje
-                bodyCol.addView(dialogSectionTitle("VOLTAJE EN CONTINUA (ARQUITECTURA C10)"))
-                val vRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-                for (v in QonectaRoutePlanner.VOLTS_CHOICES) {
-                    val label = when (v) {
-                        QonectaRoutePlanner.VOLTS_800 -> "800 V (≥ 150 kW / 800 V)"
-                        QonectaRoutePlanner.VOLTS_400 -> "400–500 V"
-                        else -> "Cualquiera"
-                    }
-                    val btn = pillButton(label, primary = chargerVolts == v, small = true) {
-                        chargerVolts = v
-                        saveFilterPrefs()
-                        rebuildDialogBody()
-                        buildUi()
-                    }
-                    vRow.addView(btn, LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) })
-                }
-                bodyCol.addView(vRow, LinearLayout.LayoutParams(MATCH, WRAP))
-
-                // Redes
-                bodyCol.addView(dialogSectionTitle("REDES DE CARGA (NINGUNA MARCADA = TODAS)"))
-                val allNetsRow = LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(0, 0, 0, dp(8))
-                }
-                allNetsRow.addView(
-                    pillButton("Todas las redes", primary = selectedNetworks.isEmpty(), small = true) {
-                        selectedNetworks.clear()
-                        saveFilterPrefs()
-                        rebuildDialogBody()
-                        buildUi()
-                    },
-                )
-                bodyCol.addView(allNetsRow)
-
-                val routeCounts = HashMap<String, Int>()
-                plan?.chargers?.forEach { c ->
-                    val k = c.network.ifEmpty { QonectaRoutePlanner.OTHER_NETWORK }
-                    routeCounts[k] = (routeCounts[k] ?: 0) + 1
-                }
-
-                QonectaRoutePlanner.NETWORKS.chunked(4).forEach { rowNets ->
-                    val r = LinearLayout(context).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        weightSum = 4f
-                    }
-                    rowNets.forEach { net ->
-                        val active = selectedNetworks.contains(net.key)
-                        val count = routeCounts[net.key] ?: 0
-                        val countSuffix = if (count > 0) " ($count)" else ""
-                        val btn = pillButton("${net.initials} · ${net.label}$countSuffix", primary = active, small = true) {
-                            if (!selectedNetworks.remove(net.key)) selectedNetworks.add(net.key)
+            when (activeTab) {
+                0 -> {
+                    bodyCol.addView(dialogSectionTitle("POTENCIA MÍNIMA DEL CARGADOR"))
+                    val kwRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+                    for (kw in QonectaRoutePlanner.MIN_KW_CHOICES) {
+                        val label = if (kw == 0) "Cualquiera" else "≥ $kw kW"
+                        val btn = pillButton(label, primary = chargerMinKw == kw, small = true) {
+                            chargerMinKw = kw
                             saveFilterPrefs()
-                            rebuildDialogBody()
+                            rebuildOverlayBody()
                             buildUi()
                         }
-                        r.addView(btn, LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(6); bottomMargin = dp(6) })
+                        kwRow.addView(btn, LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(6) })
                     }
-                    bodyCol.addView(r, LinearLayout.LayoutParams(MATCH, WRAP))
-                }
-            } else {
-                // Pestaña Plan de Carga
-                bodyCol.addView(dialogSectionTitle("BATERÍA MÍNIMA AL LLEGAR AL DESTINO"))
-                val arrRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-                for (pct in listOf(10, 15, 20, 25, 30)) {
-                    arrRow.addView(
-                        pillButton("$pct %", primary = arriveMinPct.roundToInt() == pct, small = true) {
-                            arriveMinPct = pct.toDouble()
-                            prefs.edit().putInt("plan_arrive_min_pct", pct).apply()
-                            rebuildDialogBody()
-                            buildUi()
+                    bodyCol.addView(
+                        HorizontalScrollView(context).apply {
+                            isHorizontalScrollBarEnabled = false
+                            addView(kwRow)
                         },
-                        LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) },
+                        LinearLayout.LayoutParams(MATCH, WRAP),
                     )
-                }
-                bodyCol.addView(arrRow)
 
-                bodyCol.addView(dialogSectionTitle("BATERÍA MÍNIMA AL LLEGAR A CADA CARGADOR"))
-                val stopRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-                for (pct in listOf(5, 10, 15, 20)) {
-                    stopRow.addView(
-                        pillButton("$pct %", primary = stopMinPct.roundToInt() == pct, small = true) {
-                            stopMinPct = pct.toDouble()
-                            prefs.edit().putInt("plan_stop_min_pct", pct).apply()
-                            rebuildDialogBody()
+                    bodyCol.addView(dialogSectionTitle("VOLTAJE EN CONTINUA (ARQUITECTURA C10)"))
+                    val vRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+                    for (v in QonectaRoutePlanner.VOLTS_CHOICES) {
+                        val label = when (v) {
+                            QonectaRoutePlanner.VOLTS_800 -> "800 V (≥ 150 kW / 800 V)"
+                            QonectaRoutePlanner.VOLTS_400 -> "400–500 V"
+                            else -> "Cualquiera"
+                        }
+                        val btn = pillButton(label, primary = chargerVolts == v, small = true) {
+                            chargerVolts = v
+                            saveFilterPrefs()
+                            rebuildOverlayBody()
                             buildUi()
-                        },
-                        LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) },
-                    )
-                }
-                bodyCol.addView(stopRow)
+                        }
+                        vRow.addView(btn, LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) })
+                    }
+                    bodyCol.addView(vRow, LinearLayout.LayoutParams(MATCH, WRAP))
 
-                bodyCol.addView(dialogSectionTitle("CARGAR EN PARADA HASTA COMO MUCHO"))
-                val maxRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-                for (pct in listOf(70, 75, 80, 85, 90)) {
-                    maxRow.addView(
-                        pillButton("$pct %", primary = maxChargePct.roundToInt() == pct, small = true) {
-                            maxChargePct = pct.toDouble()
-                            prefs.edit().putInt("plan_max_charge_pct", pct).apply()
-                            rebuildDialogBody()
+                    bodyCol.addView(dialogSectionTitle("REDES DE CARGA (NINGUNA MARCADA = TODAS)"))
+                    val allNetsRow = LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(0, 0, 0, dp(8))
+                    }
+                    allNetsRow.addView(
+                        pillButton("Todas las redes", primary = selectedNetworks.isEmpty(), small = true) {
+                            selectedNetworks.clear()
+                            saveFilterPrefs()
+                            rebuildOverlayBody()
                             buildUi()
                         },
-                        LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) },
                     )
+                    bodyCol.addView(allNetsRow)
+
+                    val routeCounts = HashMap<String, Int>()
+                    plan?.chargers?.forEach { c ->
+                        val k = c.network.ifEmpty { QonectaRoutePlanner.OTHER_NETWORK }
+                        routeCounts[k] = (routeCounts[k] ?: 0) + 1
+                    }
+
+                    QonectaRoutePlanner.NETWORKS.chunked(4).forEach { rowNets ->
+                        val r = LinearLayout(context).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            weightSum = 4f
+                        }
+                        rowNets.forEach { net ->
+                            val active = selectedNetworks.contains(net.key)
+                            val count = routeCounts[net.key] ?: 0
+                            val countSuffix = if (count > 0) " ($count)" else ""
+                            val btn = pillButton("${net.initials} · ${net.label}$countSuffix", primary = active, small = true) {
+                                if (!selectedNetworks.remove(net.key)) selectedNetworks.add(net.key)
+                                saveFilterPrefs()
+                                rebuildOverlayBody()
+                                buildUi()
+                            }
+                            r.addView(btn, LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(6); bottomMargin = dp(6) })
+                        }
+                        bodyCol.addView(r, LinearLayout.LayoutParams(MATCH, WRAP))
+                    }
                 }
-                bodyCol.addView(maxRow)
+
+                1 -> {
+                    bodyCol.addView(dialogSectionTitle("BATERÍA MÍNIMA AL LLEGAR AL DESTINO"))
+                    val arrRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+                    for (pct in listOf(10, 15, 20, 25, 30)) {
+                        arrRow.addView(
+                            pillButton("$pct %", primary = arriveMinPct.roundToInt() == pct, small = true) {
+                                arriveMinPct = pct.toDouble()
+                                prefs.edit().putInt("plan_arrive_min_pct", pct).apply()
+                                rebuildOverlayBody()
+                                buildUi()
+                            },
+                            LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) },
+                        )
+                    }
+                    bodyCol.addView(arrRow)
+
+                    bodyCol.addView(dialogSectionTitle("BATERÍA MÍNIMA AL LLEGAR A CADA CARGADOR"))
+                    val stopRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+                    for (pct in listOf(5, 10, 15, 20)) {
+                        stopRow.addView(
+                            pillButton("$pct %", primary = stopMinPct.roundToInt() == pct, small = true) {
+                                stopMinPct = pct.toDouble()
+                                prefs.edit().putInt("plan_stop_min_pct", pct).apply()
+                                rebuildOverlayBody()
+                                buildUi()
+                            },
+                            LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) },
+                        )
+                    }
+                    bodyCol.addView(stopRow)
+
+                    bodyCol.addView(dialogSectionTitle("CARGAR EN PARADA HASTA COMO MUCHO"))
+                    val maxRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+                    for (pct in listOf(70, 75, 80, 85, 90)) {
+                        maxRow.addView(
+                            pillButton("$pct %", primary = maxChargePct.roundToInt() == pct, small = true) {
+                                maxChargePct = pct.toDouble()
+                                prefs.edit().putInt("plan_max_charge_pct", pct).apply()
+                                rebuildOverlayBody()
+                                buildUi()
+                            },
+                            LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) },
+                        )
+                    }
+                    bodyCol.addView(maxRow)
+                }
+
+                else -> {
+                    bodyCol.addView(
+                        TextView(context).apply {
+                            text = "Toca ☆ junto a cualquier cargador para marcarlo como ★ Favorito (el planificador lo prioriza con +40 kW virtuales) o ⊘ Vetado (nunca lo usará)."
+                            setTextSp(13.5f)
+                            setTextColor(QonectaTheme.dim)
+                            setPadding(0, dp(4), 0, dp(8))
+                        },
+                    )
+                    val favs = QonectaChargerMarks.allByState(context, QonectaChargerMarks.FAV)
+                    val bans = QonectaChargerMarks.allByState(context, QonectaChargerMarks.BAN)
+
+                    bodyCol.addView(dialogSectionTitle("★ CARGADORES FAVORITOS (${favs.size})"))
+                    if (favs.isEmpty()) {
+                        bodyCol.addView(
+                            TextView(context).apply {
+                                text = "Ningún cargador marcado como favorito todavía."
+                                setTextSp(13.5f)
+                                setTextColor(QonectaTheme.faint)
+                            },
+                        )
+                    } else {
+                        favs.forEach { m ->
+                            val r = LinearLayout(context).apply {
+                                orientation = LinearLayout.HORIZONTAL
+                                gravity = Gravity.CENTER_VERTICAL
+                                setPadding(dp(12), dp(8), dp(12), dp(8))
+                                background = GradientDrawable().apply {
+                                    cornerRadius = dp(12).toFloat()
+                                    setColor(QonectaTheme.surfaceTop)
+                                    setStroke(dp(1), QonectaTheme.accent)
+                                }
+                            }
+                            r.addView(
+                                TextView(context).apply {
+                                    val kwStr = if (m.maxKw > 0) " · ${m.maxKw.roundToInt()} kW" else ""
+                                    text = "★ ${m.name}$kwStr"
+                                    setTextSp(14f)
+                                    setTextColor(QonectaTheme.text)
+                                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                                },
+                                LinearLayout.LayoutParams(0, WRAP, 1f),
+                            )
+                            r.addView(
+                                pillButton("Quitar", primary = false, small = true) {
+                                    QonectaChargerMarks.remove(context, m.key)
+                                    rebuildOverlayBody()
+                                    buildUi()
+                                },
+                            )
+                            bodyCol.addView(r, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(6) })
+                        }
+                    }
+
+                    bodyCol.addView(dialogSectionTitle("⊘ CARGADORES VETADOS (${bans.size})"))
+                    if (bans.isEmpty()) {
+                        bodyCol.addView(
+                            TextView(context).apply {
+                                text = "Ningún cargador vetado."
+                                setTextSp(13.5f)
+                                setTextColor(QonectaTheme.faint)
+                            },
+                        )
+                    } else {
+                        bans.forEach { m ->
+                            val r = LinearLayout(context).apply {
+                                orientation = LinearLayout.HORIZONTAL
+                                gravity = Gravity.CENTER_VERTICAL
+                                setPadding(dp(12), dp(8), dp(12), dp(8))
+                                background = GradientDrawable().apply {
+                                    cornerRadius = dp(12).toFloat()
+                                    setColor(QonectaTheme.surfaceTop)
+                                    setStroke(dp(1), QonectaTheme.red)
+                                }
+                            }
+                            r.addView(
+                                TextView(context).apply {
+                                    val kwStr = if (m.maxKw > 0) " · ${m.maxKw.roundToInt()} kW" else ""
+                                    text = "⊘ ${m.name}$kwStr"
+                                    setTextSp(14f)
+                                    setTextColor(QonectaTheme.text)
+                                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                                },
+                                LinearLayout.LayoutParams(0, WRAP, 1f),
+                            )
+                            r.addView(
+                                pillButton("Desbloquear", primary = false, small = true) {
+                                    QonectaChargerMarks.remove(context, m.key)
+                                    rebuildOverlayBody()
+                                    buildUi()
+                                },
+                            )
+                            bodyCol.addView(r, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(6) })
+                        }
+                    }
+                }
             }
         }
 
-        rebuildDialogBody()
-        container.addView(tabsRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) })
-        container.addView(bodyScroll, LinearLayout.LayoutParams(MATCH, dp(360)))
-        dialog.show()
+        rebuildOverlayBody()
+        panel.addView(tabsRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) })
+        panel.addView(bodyScroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        openOverlay(panel)
     }
 
-    private fun showNearbyChargersDialog() {
-        val container = LinearLayout(context).apply {
+    private fun openNearbyChargersOverlay() {
+        val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(18), dp(22), dp(18))
-            setBackgroundColor(QonectaTheme.surface)
+            setPadding(dp(20), dp(14), dp(20), dp(14))
         }
-        val dialog = AlertDialog.Builder(context).setView(container).create()
         var radiusKm = 15
         var minKw = 50
         val (origin, _) = QonectaRoutePlanner.resolveOrigin(context)
@@ -1658,15 +2715,17 @@ class QonectaRouteTabView(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val titleTv = TextView(context).apply {
-            text = "📍 Cargadores cerca de ${origin.name.take(24)}"
-            setTextSp(19f)
-            setTextColor(QonectaTheme.text)
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        }
-        topRow.addView(titleTv, LinearLayout.LayoutParams(0, WRAP, 1f))
-        topRow.addView(pillButton("Cerrar", primary = true, small = true) { dialog.dismiss() })
-        container.addView(topRow, LinearLayout.LayoutParams(MATCH, WRAP))
+        topRow.addView(
+            TextView(context).apply {
+                text = "📍 Cargadores cerca de ${origin.name.take(26)}"
+                setTextSp(19f)
+                setTextColor(QonectaTheme.text)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f),
+        )
+        topRow.addView(pillButton("Cerrar", primary = true, small = true) { closeOverlay() })
+        panel.addView(topRow, LinearLayout.LayoutParams(MATCH, WRAP))
 
         val filterBar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1675,7 +2734,7 @@ class QonectaRouteTabView(
         }
         val listCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         val statusTv = TextView(context).apply {
-            text = "Buscando electrolineras reales en un radio de $radiusKm km…"
+            text = "Buscando electrolineras en un radio de $radiusKm km…"
             setTextSp(13.5f)
             setTextColor(QonectaTheme.accent)
             setPadding(0, 0, 0, dp(6))
@@ -1712,7 +2771,7 @@ class QonectaRouteTabView(
                     statusTv.text = "${all.size} cargadores encontrados a menos de $radiusKm km:"
                     statusTv.setTextColor(QonectaTheme.dim)
                     listCol.removeAllViews()
-                    all.take(40).forEach { c ->
+                    all.take(45).forEach { c ->
                         listCol.addView(
                             buildOtherChargerRow(c, 0.0),
                             LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(6) },
@@ -1722,38 +2781,38 @@ class QonectaRouteTabView(
             }
         }
 
-        container.addView(filterBar, LinearLayout.LayoutParams(MATCH, WRAP))
-        container.addView(statusTv)
-        container.addView(ScrollView(context).apply { addView(listCol) }, LinearLayout.LayoutParams(MATCH, dp(330)))
+        panel.addView(filterBar, LinearLayout.LayoutParams(MATCH, WRAP))
+        panel.addView(statusTv)
+        panel.addView(ScrollView(context).apply { addView(listCol) }, LinearLayout.LayoutParams(MATCH, 0, 1f))
         loadNearby()
-        dialog.show()
+        openOverlay(panel)
     }
 
-    private fun showFullRouteChargersDialog(
+    private fun openFullRouteChargersOverlay(
         plan: QonectaRoutePlanner.Plan,
         chargeResult: QonectaRoutePlanner.ChargeResult?,
     ) {
-        val container = LinearLayout(context).apply {
+        val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(18), dp(22), dp(18))
-            setBackgroundColor(QonectaTheme.surface)
+            setPadding(dp(20), dp(14), dp(20), dp(14))
         }
-        val dialog = AlertDialog.Builder(context).setView(container).create()
         var showAll = false
 
         val topRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val titleTv = TextView(context).apply {
-            text = "Cargadores en la ruta a ${plan.destination}"
-            setTextSp(19f)
-            setTextColor(QonectaTheme.text)
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        }
-        topRow.addView(titleTv, LinearLayout.LayoutParams(0, WRAP, 1f))
-        topRow.addView(pillButton("Cerrar", primary = true, small = true) { dialog.dismiss() })
-        container.addView(topRow)
+        topRow.addView(
+            TextView(context).apply {
+                text = "Cargadores en la ruta a ${plan.destination}"
+                setTextSp(19f)
+                setTextColor(QonectaTheme.text)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            },
+            LinearLayout.LayoutParams(0, WRAP, 1f),
+        )
+        topRow.addView(pillButton("Cerrar", primary = true, small = true) { closeOverlay() })
+        panel.addView(topRow)
 
         val toggleRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1786,211 +2845,9 @@ class QonectaRouteTabView(
             }
         }
         rebuildList()
-        container.addView(toggleRow)
-        container.addView(ScrollView(context).apply { addView(listCol) }, LinearLayout.LayoutParams(MATCH, dp(350)))
-        dialog.show()
-    }
-
-    // =========================================================================
-    // FAVORITOS (Casa, Trabajo y 2 más)
-    // =========================================================================
-
-    private data class FavSlot(
-        val key: String,
-        val icon: String,
-        val title: String,
-        val fixedTitle: Boolean,
-        val address: String,
-        val lat: Double,
-        val lon: Double,
-    )
-
-    private fun loadFavorites(): List<FavSlot> {
-        return listOf(
-            FavSlot(
-                "home", "🏠", "Casa", true,
-                prefs.getString("fav_addr_home", "").orEmpty(),
-                prefs.getFloat("fav_lat_home", Float.NaN).toDouble(),
-                prefs.getFloat("fav_lon_home", Float.NaN).toDouble(),
-            ),
-            FavSlot(
-                "work", "💼", "Trabajo", true,
-                prefs.getString("fav_addr_work", "").orEmpty(),
-                prefs.getFloat("fav_lat_work", Float.NaN).toDouble(),
-                prefs.getFloat("fav_lon_work", Float.NaN).toDouble(),
-            ),
-            FavSlot(
-                "fav1", "📍", prefs.getString("fav_title_fav1", "Favorito 1").orEmpty().ifBlank { "Favorito 1" }, false,
-                prefs.getString("fav_addr_fav1", "").orEmpty(),
-                prefs.getFloat("fav_lat_fav1", Float.NaN).toDouble(),
-                prefs.getFloat("fav_lon_fav1", Float.NaN).toDouble(),
-            ),
-            FavSlot(
-                "fav2", "⭐", prefs.getString("fav_title_fav2", "Favorito 2").orEmpty().ifBlank { "Favorito 2" }, false,
-                prefs.getString("fav_addr_fav2", "").orEmpty(),
-                prefs.getFloat("fav_lat_fav2", Float.NaN).toDouble(),
-                prefs.getFloat("fav_lon_fav2", Float.NaN).toDouble(),
-            ),
-        )
-    }
-
-    private fun startRouteToFavorite(slot: FavSlot) {
-        if (!slot.lat.isNaN() && !slot.lon.isNaN()) {
-            recalculateRoute(QonectaRoutePlanner.Place(slot.title, slot.address, slot.lat, slot.lon))
-            return
-        }
-        val appCtx = context.applicationContext
-        QonectaRouteTabState.routeLoading = true
-        QonectaRouteTabState.statusMessage = "Buscando coordenadas de ${slot.title} (${slot.address})…"
-        buildUi()
-        bgExecutor.execute {
-            val found = QonectaRoutePlanner.searchPlaces(slot.address, limit = 1).firstOrNull()
-            uiHandler.post {
-                if (found != null) {
-                    prefs.edit()
-                        .putFloat("fav_lat_${slot.key}", found.lat.toFloat())
-                        .putFloat("fav_lon_${slot.key}", found.lon.toFloat())
-                        .apply()
-                    recalculateRoute(found.copy(name = "${slot.title} (${found.name})"))
-                } else {
-                    QonectaRouteTabState.routeLoading = false
-                    QonectaRouteTabState.statusMessage = "No se encontró «${slot.address}»."
-                    buildUi()
-                }
-            }
-        }
-    }
-
-    private fun showFavoriteEditDialog(slot: FavSlot) {
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(18), dp(22), dp(18))
-            setBackgroundColor(QonectaTheme.surface)
-        }
-        val dialog = AlertDialog.Builder(context).setView(container).create()
-        container.addView(
-            TextView(context).apply {
-                text = "${slot.icon} Configurar ${slot.title}"
-                setTextSp(19f)
-                setTextColor(QonectaTheme.text)
-                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-            },
-        )
-        var titleEdit: EditText? = null
-        if (!slot.fixedTitle) {
-            titleEdit = EditText(context).apply {
-                setText(slot.title)
-                hint = "Nombre del favorito"
-                setTextColor(QonectaTheme.text)
-                setHintTextColor(QonectaTheme.faint)
-                setTextSp(15.5f)
-            }
-            container.addView(titleEdit, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
-        }
-        val addrEdit = EditText(context).apply {
-            setText(slot.address)
-            hint = "Dirección o ciudad (ej. Av. de América 12, Madrid)"
-            setTextColor(QonectaTheme.text)
-            setHintTextColor(QonectaTheme.faint)
-            setTextSp(15.5f)
-        }
-        container.addView(addrEdit, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
-
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-            setPadding(0, dp(12), 0, 0)
-        }
-        row.addView(pillButton("Cancelar", primary = false, small = true) { dialog.dismiss() })
-        row.addView(
-            pillButton("Guardar e Ir ⚡", primary = true, small = true) {
-                val addr = addrEdit.text?.toString()?.trim().orEmpty()
-                val newTitle = titleEdit?.text?.toString()?.trim().orEmpty().ifBlank { slot.title }
-                if (addr.isNotEmpty()) {
-                    val ed = prefs.edit().putString("fav_addr_${slot.key}", addr)
-                        .remove("fav_lat_${slot.key}")
-                        .remove("fav_lon_${slot.key}")
-                    if (!slot.fixedTitle) ed.putString("fav_title_${slot.key}", newTitle)
-                    ed.apply()
-                    dialog.dismiss()
-                    startRouteToFavorite(slot.copy(title = newTitle, address = addr, lat = Double.NaN, lon = Double.NaN))
-                }
-            },
-            spacedParams(dp(8)),
-        )
-        container.addView(row)
-        dialog.show()
-    }
-
-    private fun showAllFavoritesDialog() {
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(18), dp(22), dp(18))
-            setBackgroundColor(QonectaTheme.surface)
-        }
-        val dialog = AlertDialog.Builder(context).setView(container).create()
-        val top = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        top.addView(
-            TextView(context).apply {
-                text = "★ Destinos Guardados (Casa, Trabajo y Favoritos)"
-                setTextSp(19f)
-                setTextColor(QonectaTheme.text)
-                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-            },
-            LinearLayout.LayoutParams(0, WRAP, 1f),
-        )
-        top.addView(pillButton("Cerrar", primary = true, small = true) { dialog.dismiss() })
-        container.addView(top, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) })
-
-        loadFavorites().forEach { slot ->
-            val r = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(12).toFloat()
-                    setColor(QonectaTheme.surfaceTop)
-                    setStroke(dp(1), QonectaTheme.outline)
-                }
-            }
-            val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-            col.addView(
-                TextView(context).apply {
-                    text = "${slot.icon} ${slot.title}"
-                    setTextSp(15.5f)
-                    setTextColor(QonectaTheme.text)
-                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                },
-            )
-            col.addView(
-                TextView(context).apply {
-                    text = slot.address.ifBlank { "Sin configurar" }
-                    setTextSp(13f)
-                    setTextColor(if (slot.address.isNotBlank()) QonectaTheme.accent else QonectaTheme.dim)
-                },
-            )
-            r.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
-            if (slot.address.isNotBlank()) {
-                r.addView(
-                    pillButton("Ir ⚡", primary = true, small = true) {
-                        dialog.dismiss()
-                        startRouteToFavorite(slot)
-                    },
-                )
-            }
-            r.addView(
-                pillButton("✎ Editar", primary = false, small = true) {
-                    dialog.dismiss()
-                    showFavoriteEditDialog(slot)
-                },
-                spacedParams(dp(6)),
-            )
-            container.addView(r, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
-        }
-        dialog.show()
+        panel.addView(toggleRow)
+        panel.addView(ScrollView(context).apply { addView(listCol) }, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        openOverlay(panel)
     }
 
     // =========================================================================
@@ -2154,9 +3011,9 @@ class QonectaRouteTabView(
             paint.textAlign = Paint.Align.LEFT
             canvas.drawText("BATERÍA AL LLEGAR", 0f, 13f * d, paint)
 
-            val rad = if (compact) min(46f * d, (h - 28f * d) / 2f) else min(64f * d, (h - 24f * d) / 2f)
+            val rad = if (compact) min(40f * d, (h - 26f * d) / 2f) else min(52f * d, (h - 24f * d) / 2f)
             val cx = rad + 6f * d
-            val cy = 20f * d + (h - 20f * d) / 2f
+            val cy = 18f * d + (h - 18f * d) / 2f
             ringRect.set(cx - rad, cy - rad, cx + rad, cy + rad)
 
             val col = when {
@@ -2205,23 +3062,23 @@ class QonectaRouteTabView(
             canvas.drawText("AL LLEGAR", cx, cy + rad - 2f * d, paint)
 
             // Columna derecha: AHORA + % actual + kWh + Estado
-            val tx = cx + rad + (if (compact) 14f else 22f) * d
+            val tx = cx + rad + (if (compact) 12f else 16f) * d
             paint.textAlign = Paint.Align.LEFT
-            paint.textSize = 11f * d
+            paint.textSize = (if (compact) 10f else 10.5f) * d
             paint.color = if (isRealSoc) QonectaTheme.accent else QonectaTheme.faint
             val srcLabel = if (isRealSoc) "AHORA · REAL C10" else "AHORA · INDICADO"
-            canvas.drawText(srcLabel, tx, 34f * d, paint)
+            canvas.drawText(srcLabel, tx, 32f * d, paint)
 
             val nowKwh = socNow / 100.0 * capKwh
-            paint.textSize = (if (compact) 24f else 30f) * d
+            paint.textSize = (if (compact) 21f else 25f) * d
             paint.color = QonectaTheme.text
             val socStr = String.format(Locale.getDefault(), "%.0f %%", socNow)
-            canvas.drawText(socStr, tx, 64f * d, paint)
+            canvas.drawText(socStr, tx, 58f * d, paint)
 
             val socW = paint.measureText(socStr)
-            paint.textSize = 13f * d
+            paint.textSize = (if (compact) 11f else 12f) * d
             paint.color = QonectaTheme.dim
-            canvas.drawText(String.format(Locale.getDefault(), " (%.1f kWh)", nowKwh), tx + socW + 2f * d, 62f * d, paint)
+            canvas.drawText(String.format(Locale.getDefault(), " (%.1f kWh)", nowKwh), tx + socW + 2f * d, 57f * d, paint)
 
             val (statusMsg, statusCol) = when {
                 arrivalPct.isNaN() -> "Elige un destino para calcular la llegada" to QonectaTheme.dim
@@ -2237,7 +3094,7 @@ class QonectaRouteTabView(
                 arrivalPct < 15.0 -> "Llegas justo de batería (< 15 %)" to QonectaTheme.amber
                 else -> "Llegas sin parar con buen margen" to QonectaTheme.green
             }
-            paint.textSize = (if (compact) 11.5f else 13f) * d
+            paint.textSize = (if (compact) 10.5f else 11.5f) * d
             paint.color = statusCol
             val maxTextW = max(40f, w - tx - 4f * d)
             val ellipsized = TextUtils.ellipsize(
@@ -2246,7 +3103,7 @@ class QonectaRouteTabView(
                 maxTextW,
                 TextUtils.TruncateAt.END,
             ).toString()
-            canvas.drawText(ellipsized, tx, 86f * d, paint)
+            canvas.drawText(ellipsized, tx, 78f * d, paint)
         }
     }
 
@@ -2442,8 +3299,9 @@ class QonectaRouteTabView(
             val planned = chargeResult != null && chargeResult.stops.isNotEmpty()
             var stopIdx = 0
             val prog = plan.progressIdx.coerceIn(0, plan.n - 1)
+            val activeKwh = plan.activeKwhCum
             for (i in prog until plan.n) {
-                var sp = socNow - (plan.kwhCum[i] - plan.kwhCum[prog]) / max(10.0, capacityKwh) * 100.0
+                var sp = socNow - (activeKwh[i] - activeKwh[prog]) / max(10.0, capacityKwh) * 100.0
                 if (isReev) sp = max(min(socNow, 20.0), sp)
                 if (planned && chargeResult != null) {
                     while (stopIdx < chargeResult.stops.size && chargeResult.stops[stopIdx].km <= plan.km[i]) {
@@ -2536,8 +3394,8 @@ class QonectaRouteTabView(
             val vals = DoubleArray(segCount)
             var maxVal = 28.0
             for (j in 0 until segCount) {
-                val a = QonectaRoutePlanner.kwhAt(plan.km, plan.kwhCum, j * segLenKm)
-                val b = QonectaRoutePlanner.kwhAt(plan.km, plan.kwhCum, (j + 1) * segLenKm)
+                val a = QonectaRoutePlanner.kwhAt(plan.km, activeKwh, j * segLenKm)
+                val b = QonectaRoutePlanner.kwhAt(plan.km, activeKwh, (j + 1) * segLenKm)
                 vals[j] = (b - a) / segLenKm * 100.0
                 maxVal = max(maxVal, vals[j])
             }
@@ -2641,22 +3499,25 @@ class QonectaRouteTabView(
             val h = height.toFloat()
             if (w <= 20f || h <= 20f) return
             val cx = w / 2f
-            val top = if (compact) 16f * d else max(24f * d, (h - 240f * d) / 2f)
+            val ctaReserved = (if (compact) 68f else 88f) * d
+            val availH = max(120f * d, h - ctaReserved)
+            val contentH = (if (compact) 148f else 182f) * d
+            val top = max(8f * d, (availH - contentH) / 2f)
 
             // Carretera curva con guiones hasta la chincheta
             roadPath.rewind()
-            roadPath.moveTo(cx - 110f * d, top + (if (compact) 110f else 150f) * d)
+            roadPath.moveTo(cx - 100f * d, top + (if (compact) 86f else 112f) * d)
             roadPath.cubicTo(
-                cx - 30f * d,
-                top + (if (compact) 105f else 140f) * d,
+                cx - 28f * d,
+                top + (if (compact) 82f else 104f) * d,
                 cx - 10f * d,
-                top + 45f * d,
-                cx + 55f * d,
-                top + 38f * d,
+                top + 34f * d,
+                cx + 50f * d,
+                top + 28f * d,
             )
             paint.style = Paint.Style.STROKE
             paint.strokeCap = Paint.Cap.ROUND
-            paint.strokeWidth = (if (compact) 18f else 24f) * d
+            paint.strokeWidth = (if (compact) 16f else 20f) * d
             paint.color = QonectaTheme.surfaceTop
             canvas.drawPath(roadPath, paint)
 
@@ -2669,27 +3530,27 @@ class QonectaRouteTabView(
 
             // Chincheta en el extremo de la carretera
             paint.color = QonectaTheme.accent
-            canvas.drawCircle(cx + 55f * d, top + 24f * d, (if (compact) 12f else 16f) * d, paint)
+            canvas.drawCircle(cx + 50f * d, top + 18f * d, (if (compact) 11f else 14f) * d, paint)
             paint.color = QonectaTheme.surface
-            canvas.drawCircle(cx + 55f * d, top + 24f * d, (if (compact) 5f else 6.5f) * d, paint)
+            canvas.drawCircle(cx + 50f * d, top + 18f * d, (if (compact) 4.5f else 5.5f) * d, paint)
 
             // Título «¿A dónde vamos?»
             paint.textAlign = Paint.Align.CENTER
             paint.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-            paint.textSize = (if (compact) 20f else 26f) * d
+            paint.textSize = (if (compact) 18f else 22f) * d
             paint.color = QonectaTheme.text
-            val titleY = top + (if (compact) 142f else 192f) * d
+            val titleY = top + (if (compact) 116f else 146f) * d
             canvas.drawText(if (loading) "Calculando tu ruta…" else "¿A dónde vamos?", cx, titleY, paint)
 
             val sub = statusText.ifBlank {
                 "Salida actual: $originSummary · Perfil de altitud Open-Meteo, viento, DGT + OpenStreetMap y paradas C10"
             }
             paint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-            paint.textSize = (if (compact) 12f else 14f) * d
+            paint.textSize = (if (compact) 11.5f else 13f) * d
             paint.color = if (statusText.startsWith("⚠")) QonectaTheme.amber else QonectaTheme.dim
             val maxW = max(100f, w - 48f * d)
             val ellipsized = TextUtils.ellipsize(sub, android.text.TextPaint(paint), maxW, TextUtils.TruncateAt.END).toString()
-            canvas.drawText(ellipsized, cx, titleY + (if (compact) 22f else 28f) * d, paint)
+            canvas.drawText(ellipsized, cx, titleY + (if (compact) 20f else 24f) * d, paint)
         }
     }
 

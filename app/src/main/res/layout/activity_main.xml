@@ -5,7 +5,8 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="@color/hql_bg">
 
     <TextView
         android:id="@+id/wifi_direct_info"
@@ -39,7 +40,7 @@
         android:id="@+id/auto_connect_loading_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#CC000000"
+        android:background="#F50A0E14"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone">
@@ -67,6 +68,22 @@
             android:gravity="center"
             android:padding="16dp">
 
+            <ImageView
+                android:layout_width="116dp"
+                android:layout_height="116dp"
+                android:layout_marginBottom="10dp"
+                android:src="@drawable/hql_logo"
+                android:importantForAccessibility="no" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="18dp"
+                android:text="@string/da_brand"
+                android:textColor="@color/hql_accent"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -77,7 +94,7 @@
                     android:layout_width="32dp"
                     android:layout_height="32dp"
                     android:indeterminate="true"
-                    android:indeterminateTint="@android:color/white" />
+                    android:indeterminateTint="@color/hql_accent" />
 
                 <TextView
                     android:id="@+id/auto_connect_loading_default_text"
@@ -101,7 +118,7 @@
                 android:layout_width="24dp"
                 android:layout_height="24dp"
                 android:indeterminate="true"
-                android:indeterminateTint="@android:color/white" />
+                android:indeterminateTint="@color/hql_accent" />
 
             <TextView
                 android:id="@+id/auto_connect_loading_custom_text"
@@ -162,7 +179,7 @@
             android:layout_width="18dp"
             android:layout_height="18dp"
             android:indeterminate="true"
-            android:indeterminateTint="@android:color/white" />
+            android:indeterminateTint="@color/hql_accent" />
 
         <TextView
             android:id="@+id/auto_connect_pill_text"
@@ -181,7 +198,7 @@
         android:id="@+id/splash_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/da_background"
+        android:background="@color/hql_bg"
         android:clickable="true"
         android:focusable="true"
         android:gravity="center">
@@ -195,25 +212,26 @@
             <ImageView
                 android:layout_width="160dp"
                 android:layout_height="160dp"
-                android:src="@drawable/ic_android_auto" />
+                android:src="@drawable/hql_logo" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="-10dp"
+                android:layout_marginTop="-8dp"
                 android:text="@string/da_brand"
                 android:textColor="@color/splash_text_white"
-                android:textSize="24sp"
+                android:textSize="26sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="-4dp"
-                android:text="@string/da_wireless"
+                android:layout_marginTop="2dp"
+                android:text="LEAPMOTOR C10  ·  QONECTA+"
                 android:textAllCaps="true"
-                android:textColor="@color/da_accent"
-                android:textSize="24sp"
+                android:textColor="@color/hql_accent"
+                android:textSize="15sp"
+                android:letterSpacing="0.08"
                 android:textStyle="bold" />
 
         </LinearLayout>

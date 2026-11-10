@@ -122,6 +122,7 @@ class MainActivity : BaseActivity() {
 
         logLaunchSource()
         clearBootLoopGuardIfOpenedByHand()
+        volumeControlStream = android.media.AudioManager.STREAM_MUSIC
 
         // If an Android Auto session is active, bring the projection activity to front
         if (App.provide(this).commManager.isConnected && !App.isPiPActive) {
@@ -135,6 +136,7 @@ class MainActivity : BaseActivity() {
         }
 
         setTheme(R.style.AppTheme)
+        window.setBackgroundDrawableResource(R.color.hql_bg)
         val mainSettings = Settings(this)
         val isNightActive = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         if (mainSettings.appTheme == Settings.AppTheme.EXTREME_DARK ||
@@ -154,6 +156,7 @@ class MainActivity : BaseActivity() {
         // and ensures the USB system modal only appears when the user has opted in to listen for ALL USB devices.
         lifecycleScope.launch(Dispatchers.IO) {
             Settings.setUsbAttachedActivityEnabled(applicationContext, appSettings.listenForUsbDevices)
+            com.andrerinas.openheadunit.decoder.MicRecorder.canHeadUnitCaptureAudio(applicationContext)
         }
 
         // Start main service immediately to handle connections and wireless server
@@ -188,7 +191,7 @@ class MainActivity : BaseActivity() {
 
         if (savedInstanceState == null) {
             val elapsedSinceStart = SystemClock.elapsedRealtime() - App.appStartTime
-            val targetTotalDuration = 250L
+            val targetTotalDuration = 650L
             val actualDelay = (targetTotalDuration - elapsedSinceStart).coerceAtLeast(0L)
             
             showSplashWithDelay(actualDelay)
@@ -488,7 +491,7 @@ class MainActivity : BaseActivity() {
             customTextOverlay?.visibility = View.GONE
             customImage?.visibility = View.GONE
             customVideo?.visibility = View.GONE
-            overlay?.setBackgroundColor(Color.parseColor("#CC000000"))
+            overlay?.setBackgroundColor(Color.parseColor("#F50A0E14"))
             return
         }
 
@@ -501,7 +504,7 @@ class MainActivity : BaseActivity() {
             customTextOverlay?.visibility = View.GONE
             customImage?.visibility = View.GONE
             customVideo?.visibility = View.GONE
-            overlay?.setBackgroundColor(Color.parseColor("#CC000000"))
+            overlay?.setBackgroundColor(Color.parseColor("#F50A0E14"))
             return
         }
 
@@ -614,7 +617,7 @@ class MainActivity : BaseActivity() {
                         findViewById<View>(R.id.auto_connect_loading_custom_video)?.visibility = View.GONE
                         customTextOverlay?.visibility = View.GONE
                         defaultContent?.visibility = View.VISIBLE
-                        overlay?.setBackgroundColor(Color.parseColor("#CC000000"))
+                        overlay?.setBackgroundColor(Color.parseColor("#F50A0E14"))
                         true
                     }
                     customVideo?.start()
@@ -626,7 +629,7 @@ class MainActivity : BaseActivity() {
             customVideo?.visibility = View.GONE
             customTextOverlay?.visibility = View.GONE
             defaultContent?.visibility = View.VISIBLE
-            overlay?.setBackgroundColor(Color.parseColor("#CC000000"))
+            overlay?.setBackgroundColor(Color.parseColor("#F50A0E14"))
         }
     }
 
@@ -785,6 +788,24 @@ class MainActivity : BaseActivity() {
             }
             ContextCompat.startForegroundService(this, exitIntent)
             finishAffinity()
+            return
+        }
+
+        if (intentAction == Intent.ACTION_VOICE_COMMAND ||
+            intentAction == Intent.ACTION_ASSIST ||
+            intentAction == android.speech.RecognizerIntent.ACTION_VOICE_SEARCH_HANDS_FREE
+        ) {
+            AppLog.i("MainActivity: Steering wheel voice assistant button pressed ($intentAction)")
+            val triggered = com.andrerinas.openheadunit.cluster.ClusterMapController.triggerVoiceAssistant(this)
+            if (triggered) {
+                bringProjectionToFront()
+            } else {
+                Toast.makeText(
+                    this,
+                    "🎙 Conecta Android Auto o CarPlay para usar el asistente de voz del volante",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
             return
         }
 

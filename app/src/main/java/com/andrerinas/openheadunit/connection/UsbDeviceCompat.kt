@@ -83,10 +83,24 @@ class UsbDeviceCompat(val wrappedDevice: UsbDevice) {
 
         fun isIgnoredInternalDevice(device: UsbDevice): Boolean {
             if (isIgnoredInternalVidPid(device.vendorId, device.productId)) return true
-            for (i in 0 until device.interfaceCount) {
-                if (device.getInterface(i).interfaceClass == UsbConstants.USB_CLASS_HUB) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val pName = device.productName?.lowercase(Locale.US).orEmpty()
+                if (pName.contains("dr receiver") || pName.contains("dab") || pName.contains("tuner")) {
                     return true
                 }
+            }
+            var hasOnlyAudioOrHub = device.interfaceCount > 0
+            for (i in 0 until device.interfaceCount) {
+                val cls = device.getInterface(i).interfaceClass
+                if (cls == UsbConstants.USB_CLASS_HUB) {
+                    return true
+                }
+                if (cls != UsbConstants.USB_CLASS_AUDIO && cls != UsbConstants.USB_CLASS_HID) {
+                    hasOnlyAudioOrHub = false
+                }
+            }
+            if (hasOnlyAudioOrHub && !isInAccessoryMode(device)) {
+                return true
             }
             return false
         }

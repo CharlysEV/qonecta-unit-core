@@ -728,7 +728,7 @@ class CarPlayHostActivity : ComponentActivity() {
             onOpenSplitScreen = {
                 com.headqlink.unit.extended.ExtendedHubView.showDialog(
                     context = this@CarPlayHostActivity,
-                    initialTab = com.headqlink.unit.extended.ExtendedHubView.Tab.TV,
+                    initialTab = com.headqlink.unit.extended.ExtendedHubView.Tab.ROUTE,
                     initialSplitScreen = true,
                 )
             }

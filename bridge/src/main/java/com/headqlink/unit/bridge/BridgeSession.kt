@@ -15,6 +15,11 @@ class BridgeServerSession(
     val transport: String,
     private val auth: BridgeAuthenticator,
     private val carName: String,
+    private val carAppVersion: String = "",
+    private val carVersionCode: Int = 0,
+    private val logsProvider: (Int) -> Pair<String, String> = { _ -> "qonecta-unit-logs.txt" to "" },
+    private val telemetryHandler: ((BridgeMessage.TelemetrySync) -> Unit)? = null,
+    private val apkPushHandler: ((BridgeMessage.ApkPushStart, (BridgeMessage) -> Unit) -> Unit)? = null,
 ) {
     @Volatile
     var deviceName: String = ""
@@ -56,7 +61,16 @@ class BridgeServerSession(
         val code = hello.pairCode
         return when {
             token != null && auth.isValidToken(token) -> {
-                channel.send(BridgeMessage.Welcome(BridgeConstants.PROTOCOL_VERSION, carName, token, newlyPaired = false))
+                channel.send(
+                    BridgeMessage.Welcome(
+                        BridgeConstants.PROTOCOL_VERSION,
+                        carName,
+                        token,
+                        newlyPaired = false,
+                        carAppVersion = carAppVersion,
+                        carVersionCode = carVersionCode,
+                    )
+                )
                 true
             }
             code != null -> {
@@ -69,7 +83,16 @@ class BridgeServerSession(
                         deny(BridgeMessage.Denied.BAD_CODE)
                         false
                     } else {
-                        channel.send(BridgeMessage.Welcome(BridgeConstants.PROTOCOL_VERSION, carName, newToken, newlyPaired = true))
+                        channel.send(
+                            BridgeMessage.Welcome(
+                                BridgeConstants.PROTOCOL_VERSION,
+                                carName,
+                                newToken,
+                                newlyPaired = true,
+                                carAppVersion = carAppVersion,
+                                carVersionCode = carVersionCode,
+                            )
+                        )
                         true
                     }
                 }
@@ -101,6 +124,42 @@ class BridgeServerSession(
                         it.result = msg
                         it.latch.countDown()
                     }
+                    is BridgeMessage.LogsRequest -> {
+                        Thread({
+                            val (fileName, logText) = runCatching {
+                                logsProvider(msg.maxLines.coerceIn(100, 4000))
+                            }.getOrElse { e ->
+                                "qonecta-unit-logs-error.txt" to "Error al leer los registros de Qonecta Unit: ${e.message}"
+                            }
+                            runCatching {
+                                channel.send(BridgeMessage.LogsResult(msg.id, fileName, logText))
+                            }
+                        }, "BridgeServer-Logs-${msg.id}").apply { isDaemon = true }.start()
+                    }
+                    is BridgeMessage.TelemetrySync -> runCatching { telemetryHandler?.invoke(msg) }
+                    is BridgeMessage.ApkPushStart -> {
+                        val h = apkPushHandler
+                        if (h == null) {
+                            runCatching {
+                                channel.send(
+                                    BridgeMessage.ApkPushStatus(
+                                        id = msg.id,
+                                        stage = "unsupported",
+                                        progressPct = 0,
+                                        message = "La versión instalada en el coche aún no soporta envío Push de 1 toque.",
+                                        done = true,
+                                        ok = false,
+                                    )
+                                )
+                            }
+                        } else {
+                            Thread({
+                                runCatching {
+                                    h(msg) { replyMsg -> runCatching { channel.send(replyMsg) } }
+                                }
+                            }, "BridgeServer-ApkPush-${msg.id}").apply { isDaemon = true }.start()
+                        }
+                    }
                     BridgeMessage.Ping -> channel.send(BridgeMessage.Pong)
                     else -> Unit
                 }
@@ -116,6 +175,9 @@ class BridgeServerSession(
     }
 
     fun ping(): Boolean = runCatching { channel.send(BridgeMessage.Ping) }.isSuccess
+
+    /** Manda al móvil el estado en vivo del coche (JSON). false si la conexión ya no vale. */
+    fun sendTelemetry(json: String): Boolean = runCatching { channel.send(BridgeMessage.TelemetrySync(json)) }.isSuccess
 
     /**
      * Pide al móvil que abra Google Maps. Bloquea hasta la respuesta o [timeoutMs].
@@ -175,6 +237,21 @@ class BridgeClientSession(
     var lastSeenMs: Long = System.currentTimeMillis()
         private set
 
+    private val nextId = AtomicInteger(1)
+    private val pendingLogs = ConcurrentHashMap<String, PendingLogs>()
+    private val pendingApkReady = ConcurrentHashMap<String, PendingApkReady>()
+    private val apkStatusListeners = ConcurrentHashMap<String, (BridgeMessage.ApkPushStatus) -> Unit>()
+
+    private class PendingLogs {
+        val latch = CountDownLatch(1)
+        @Volatile var result: BridgeMessage.LogsResult? = null
+    }
+
+    private class PendingApkReady {
+        val latch = CountDownLatch(1)
+        @Volatile var result: BridgeMessage.ApkPushReady? = null
+    }
+
     /** Envía el `hello` y espera la respuesta del coche: [BridgeMessage.Welcome] o [BridgeMessage.Denied]. */
     @Throws(IOException::class)
     fun handshake(hello: BridgeMessage.Hello): BridgeMessage {
@@ -194,6 +271,7 @@ class BridgeClientSession(
     fun runLoop(
         handler: (BridgeMessage.Navigate) -> BridgeMessage.NavResult,
         httpHandler: ((BridgeMessage.HttpFetch) -> BridgeMessage.HttpResult)?,
+        telemetryHandler: ((BridgeMessage.TelemetrySync) -> Unit)? = null,
     ) {
         try {
             while (!channel.isClosed) {
@@ -219,6 +297,23 @@ class BridgeClientSession(
                             }, "BridgeClient-Http-${msg.id}").apply { isDaemon = true }.start()
                         }
                     }
+                    is BridgeMessage.TelemetrySync -> runCatching { telemetryHandler?.invoke(msg) }
+                    is BridgeMessage.LogsResult -> pendingLogs.remove(msg.id)?.let {
+                        it.result = msg
+                        it.latch.countDown()
+                    }
+                    is BridgeMessage.ApkPushReady -> pendingApkReady.remove(msg.id)?.let {
+                        it.result = msg
+                        it.latch.countDown()
+                    }
+                    is BridgeMessage.ApkPushStatus -> {
+                        val cb = if (msg.done) apkStatusListeners.remove(msg.id) else apkStatusListeners[msg.id]
+                        // Si el coche respondió directamente con error/unsupported antes de ApkPushReady, desbloquear latch
+                        if (msg.done) {
+                            pendingApkReady.remove(msg.id)?.latch?.countDown()
+                        }
+                        runCatching { cb?.invoke(msg) }
+                    }
                     BridgeMessage.Ping -> channel.send(BridgeMessage.Pong)
                     else -> Unit
                 }
@@ -226,8 +321,77 @@ class BridgeClientSession(
         } catch (_: IOException) {
         } finally {
             channel.close()
+            pendingLogs.values.forEach { it.latch.countDown() }
+            pendingLogs.clear()
+            pendingApkReady.values.forEach { it.latch.countDown() }
+            pendingApkReady.clear()
+            apkStatusListeners.clear()
         }
     }
 
+    /**
+     * Inicia una actualización Push de 1 toque enviando [ApkPushStart] y registrando un listener de progreso.
+     */
+    fun startApkPush(
+        fileName: String,
+        sizeBytes: Long,
+        sha256: String,
+        versionName: String,
+        versionCode: Int,
+        httpUrls: List<String>,
+        onStatus: (BridgeMessage.ApkPushStatus) -> Unit,
+        timeoutMs: Long = 8_000L,
+    ): Pair<String, BridgeMessage.ApkPushReady?> {
+        val id = "ota" + nextId.getAndIncrement()
+        val p = PendingApkReady()
+        pendingApkReady[id] = p
+        apkStatusListeners[id] = onStatus
+        val sent = runCatching {
+            channel.send(
+                BridgeMessage.ApkPushStart(
+                    id = id,
+                    fileName = fileName,
+                    sizeBytes = sizeBytes,
+                    sha256 = sha256,
+                    versionName = versionName,
+                    versionCode = versionCode,
+                    httpUrls = httpUrls,
+                )
+            )
+        }.isSuccess
+        if (!sent) {
+            pendingApkReady.remove(id)
+            apkStatusListeners.remove(id)
+            return id to null
+        }
+        p.latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        pendingApkReady.remove(id)
+        return id to p.result
+    }
+
+    fun unregisterApkStatusListener(id: String) {
+        apkStatusListeners.remove(id)
+    }
+
+    /**
+     * Solicita al coche (Qonecta Unit) el paquete de registros de diagnóstico y bloquea hasta recibirlo.
+     */
+    fun fetchLogs(maxLines: Int = 800, timeoutMs: Long = 20_000L): BridgeMessage.LogsResult? {
+        val id = "log" + nextId.getAndIncrement()
+        val p = PendingLogs()
+        pendingLogs[id] = p
+        val sent = runCatching { channel.send(BridgeMessage.LogsRequest(id, maxLines)) }.isSuccess
+        if (!sent) {
+            pendingLogs.remove(id)
+            return null
+        }
+        p.latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        pendingLogs.remove(id)
+        return p.result
+    }
+
     fun ping(): Boolean = runCatching { channel.send(BridgeMessage.Ping) }.isSuccess
+
+    /** Manda al coche un paquete JSON de sincronización (precios de energía/combustible, viajes eliminados u ocultos). */
+    fun sendTelemetry(json: String): Boolean = runCatching { channel.send(BridgeMessage.TelemetrySync(json)) }.isSuccess
 }

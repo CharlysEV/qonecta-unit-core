@@ -73,9 +73,9 @@ android {
         applicationId = "com.tencent.qqmusiccar"
         minSdk = 28
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.1.5-unit"
-        setProperty("archivesBaseName", "${applicationId}_${versionName}")
+        versionCode = 18
+        versionName = "0.1.17-unit"
+        setProperty("archivesBaseName", "QonectaUnit_${versionName}")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled = true
         vectorDrawables.useSupportLibrary = true
@@ -223,9 +223,9 @@ android {
         variant.outputs
             .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
             .forEach { output ->
-                var outputFileName = "${variant.applicationId}_${variant.versionName}_debug.apk"
+                var outputFileName = "QonectaUnit_${variant.versionName}_debug.apk"
                 if(variant.buildType.name == "release" || variant.buildType.name == "coche") {
-                    outputFileName = "${variant.applicationId}_${variant.versionName}.apk"
+                    outputFileName = "QonectaUnit_${variant.versionName}.apk"
                     output.outputFileName = outputFileName
                 }
                 output.outputFileName = outputFileName

@@ -184,8 +184,18 @@ object QonectaRoutePlanner {
         val waypoints: List<Place> = emptyList(),
         val waypointKm: DoubleArray = DoubleArray(0),
         val roundTrip: Boolean = false,
+        val chargersLoading: Boolean = false,
+        val speedCapKmh: Int = 0,
+        val cappedKwhCum: DoubleArray? = null,
+        val cappedTotalSeconds: Long = 0L,
         val builtAtMs: Long = System.currentTimeMillis(),
     ) {
+        val activeKwhCum: DoubleArray
+            get() = if (speedCapKmh > 0 && cappedKwhCum != null && cappedKwhCum.size == n) cappedKwhCum else kwhCum
+
+        val activeTotalSeconds: Long
+            get() = if (speedCapKmh > 0 && cappedTotalSeconds > 0L) cappedTotalSeconds else totalSeconds
+
         val currentKm: Double
             get() = if (n > 0) km[progressIdx.coerceIn(0, n - 1)] else 0.0
 
@@ -193,10 +203,13 @@ object QonectaRoutePlanner {
             get() = max(0.0, totalKm - currentKm)
 
         val remainingSeconds: Long
-            get() = if (totalKm > 0.1) (totalSeconds * (remainingKm / totalKm)).roundToInt().toLong() else totalSeconds
+            get() = if (totalKm > 0.1) (activeTotalSeconds * (remainingKm / totalKm)).roundToInt().toLong() else activeTotalSeconds
 
         val remainingKwh: Double
-            get() = if (n >= 2) max(0.0, kwhCum[n - 1] - kwhCum[progressIdx.coerceIn(0, n - 1)]) else 0.0
+            get() {
+                val arr = activeKwhCum
+                return if (n >= 2) max(0.0, arr[n - 1] - arr[progressIdx.coerceIn(0, n - 1)]) else 0.0
+            }
     }
 
     data class ChargeSettings(
@@ -435,49 +448,202 @@ object QonectaRoutePlanner {
     }
 
     // -------------------------------------------------------------------------
-    // Geocodificación real (Photon + Nominatim)
+    // Geocodificación real en paralelo (Índice España instantáneo + Geocoder + Photon + Nominatim) y Recientes
     // -------------------------------------------------------------------------
 
-    fun searchPlaces(query: String, nearLat: Double = Double.NaN, nearLon: Double = Double.NaN, limit: Int = 6): List<Place> {
-        val q = query.trim()
-        if (q.isEmpty()) return emptyList()
-        val results = mutableListOf<Place>()
+    private val INSTANT_SPAIN_PLACES: List<Place> = listOf(
+        Place("Madrid", "Comunidad de Madrid, España", 40.4168, -3.7038),
+        Place("Barcelona", "Cataluña, España", 41.3874, 2.1686),
+        Place("Valencia", "Comunidad Valenciana, España", 39.4699, -0.3763),
+        Place("Sevilla", "Andalucía, España", 37.3891, -5.9845),
+        Place("Zaragoza", "Aragón, España", 41.6488, -0.8891),
+        Place("Málaga", "Andalucía, España", 36.7213, -4.4214),
+        Place("Murcia", "Región de Murcia, España", 37.9922, -1.1307),
+        Place("Bilbao", "Vizcaya, País Vasco, España", 43.2630, -2.9350),
+        Place("Alicante", "Comunidad Valenciana, España", 38.3452, -0.4810),
+        Place("Córdoba", "Andalucía, España", 37.8882, -4.7794),
+        Place("Valladolid", "Castilla y León, España", 41.6523, -4.7245),
+        Place("Vigo", "Pontevedra, Galicia, España", 42.2406, -8.7207),
+        Place("Gijón", "Asturias, España", 43.5322, -5.6611),
+        Place("Vitoria-Gasteiz", "Álava, País Vasco, España", 42.8467, -2.6716),
+        Place("A Coruña", "Galicia, España", 43.3623, -8.4115),
+        Place("Granada", "Andalucía, España", 37.1773, -3.5986),
+        Place("Elche", "Alicante, España", 38.2699, -0.7126),
+        Place("Oviedo", "Asturias, España", 43.3619, -5.8494),
+        Place("Cartagena", "Región de Murcia, España", 37.6257, -0.9966),
+        Place("Jerez de la Frontera", "Cádiz, Andalucía, España", 36.6850, -6.1261),
+        Place("Pamplona", "Navarra, España", 42.8125, -1.6458),
+        Place("Almería", "Andalucía, España", 36.8340, -2.4637),
+        Place("San Sebastián / Donostia", "Guipúzcoa, País Vasco, España", 43.3183, -1.9812),
+        Place("Burgos", "Castilla y León, España", 42.3440, -3.6969),
+        Place("Albacete", "Castilla-La Mancha, España", 38.9943, -1.8585),
+        Place("Santander", "Cantabria, España", 43.4623, -3.8100),
+        Place("Castellón de la Plana", "Comunidad Valenciana, España", 39.9864, -0.0513),
+        Place("Logroño", "La Rioja, España", 42.4627, -2.4450),
+        Place("Badajoz", "Extremadura, España", 38.8794, -6.9707),
+        Place("Salamanca", "Castilla y León, España", 40.9701, -5.6635),
+        Place("Huelva", "Andalucía, España", 37.2614, -6.9447),
+        Place("Lleida", "Cataluña, España", 41.6176, 0.6200),
+        Place("Tarragona", "Cataluña, España", 41.1189, 1.2445),
+        Place("León", "Castilla y León, España", 42.5987, -5.5671),
+        Place("Cádiz", "Andalucía, España", 36.5271, -6.2886),
+        Place("Jaén", "Andalucía, España", 37.7796, -3.7849),
+        Place("Ourense", "Galicia, España", 42.3358, -7.8639),
+        Place("Lugo", "Galicia, España", 43.0097, -7.5568),
+        Place("Girona", "Cataluña, España", 41.9794, 2.8214),
+        Place("Santiago de Compostela", "A Coruña, Galicia, España", 42.8782, -8.5448),
+        Place("Cáceres", "Extremadura, España", 39.4753, -6.3724),
+        Place("Melilla", "España", 35.2923, -2.9381),
+        Place("Ceuta", "España", 35.8894, -5.3213),
+        Place("Guadalajara", "Castilla-La Mancha, España", 40.6337, -3.1674),
+        Place("Toledo", "Castilla-La Mancha, España", 39.8628, -4.0273),
+        Place("Pontevedra", "Galicia, España", 42.4310, -8.6444),
+        Place("Palencia", "Castilla y León, España", 42.0096, -4.5288),
+        Place("Ciudad Real", "Castilla-La Mancha, España", 38.9848, -3.9274),
+        Place("Zamora", "Castilla y León, España", 41.5035, -5.7468),
+        Place("Ávila", "Castilla y León, España", 40.6567, -4.6812),
+        Place("Cuenca", "Castilla-La Mancha, España", 40.0704, -2.1374),
+        Place("Huesca", "Aragón, España", 42.1401, -0.4089),
+        Place("Segovia", "Castilla y León, España", 40.9429, -4.1088),
+        Place("Soria", "Castilla y León, España", 41.7666, -2.4790),
+        Place("Teruel", "Aragón, España", 40.3456, -1.1065),
+        Place("Benidorm", "Alicante, España", 38.5411, -0.1225),
+        Place("Marbella", "Málaga, Andalucía, España", 36.5101, -4.8824),
+        Place("Mérida", "Badajoz, Extremadura, España", 38.9161, -6.3437),
+        Place("Aeropuerto Adolfo Suárez Madrid-Barajas (T4)", "Madrid, España", 40.4918, -3.5936),
+        Place("Aeropuerto Josep Tarradellas Barcelona-El Prat", "Barcelona, España", 41.2974, 2.0833),
+        Place("Estación Madrid Puerta de Atocha", "Madrid, España", 40.4065, -3.6896),
+        Place("Estación Madrid Chamartín-Clara Campoamor", "Madrid, España", 40.4720, -3.6826),
+        Place("Lisboa", "Portugal", 38.7223, -9.1393),
+        Place("Oporto / Porto", "Portugal", 41.1579, -8.6291),
+        Place("Andorra la Vella", "Andorra", 42.5063, 1.5218),
+    )
 
-        // 1. Photon (Komoot, basado en OpenStreetMap, rápido y tolerante)
-        runCatching {
-            val bias = if (!nearLat.isNaN() && !nearLon.isNaN()) {
-                String.format(Locale.US, "&lat=%.4f&lon=%.4f", nearLat, nearLon)
-            } else {
-                ""
-            }
-            val url = "https://photon.komoot.io/api/?limit=$limit&lang=es$bias&q=${Uri.encode(q)}"
-            val json = JSONObject(httpGet(url, 8_000))
-            val features = json.optJSONArray("features") ?: JSONArray()
-            for (i in 0 until features.length()) {
-                val f = features.getJSONObject(i)
-                val geom = f.optJSONObject("geometry")?.optJSONArray("coordinates") ?: continue
-                val lon = geom.optDouble(0, Double.NaN)
-                val lat = geom.optDouble(1, Double.NaN)
-                if (lat.isNaN() || lon.isNaN()) continue
-                val props = f.optJSONObject("properties") ?: JSONObject()
-                val name = props.optString("name").ifBlank {
-                    props.optString("street").ifBlank { props.optString("city").ifBlank { q } }
-                }
-                val city = props.optString("city").ifBlank { props.optString("town").ifBlank { props.optString("village") } }
-                val state = props.optString("state")
-                val country = props.optString("country")
-                val detailParts = listOfNotNull(
-                    props.optString("street").takeIf { it.isNotBlank() && it != name },
-                    city.takeIf { it.isNotBlank() && it != name },
-                    state.takeIf { it.isNotBlank() && it != city },
-                    country.takeIf { it.isNotBlank() },
-                )
-                results.add(Place(name = name, detail = detailParts.joinToString(", "), lat = lat, lon = lon))
+    fun searchInstantLocalPlaces(query: String, limit: Int = 5): List<Place> {
+        val qNorm = norm(query)
+        if (qNorm.length < 2) return emptyList()
+        val starts = mutableListOf<Place>()
+        val contains = mutableListOf<Place>()
+        for (p in INSTANT_SPAIN_PLACES) {
+            val nName = norm(p.name)
+            val nDet = norm(p.detail)
+            if (nName.startsWith(qNorm)) {
+                starts.add(p)
+            } else if (nName.contains(qNorm) || nDet.startsWith(qNorm)) {
+                contains.add(p)
             }
         }
-        if (results.isNotEmpty()) return deduplicatePlaces(results, limit)
+        return (starts + contains).take(limit)
+    }
 
-        // 2. Reserva con Nominatim (OpenStreetMap)
+    fun searchPlaces(
+        query: String,
+        nearLat: Double = Double.NaN,
+        nearLon: Double = Double.NaN,
+        limit: Int = 6,
+        context: Context? = null,
+    ): List<Place> {
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        val localMatches = searchInstantLocalPlaces(q, limit = 3)
+        val geocoderList = Collections.synchronizedList(mutableListOf<Place>())
+        val photonList = Collections.synchronizedList(mutableListOf<Place>())
+
+        val latch = java.util.concurrent.CountDownLatch(if (context != null) 2 else 1)
+
+        // 1. Android Geocoder en paralelo (igual que PlaceSearch.java de Qonecta+)
+        if (context != null) {
+            Thread({
+                try {
+                    if (android.location.Geocoder.isPresent()) {
+                        val geo = android.location.Geocoder(context, Locale("es", "ES"))
+                        @Suppress("DEPRECATION")
+                        val addrs = geo.getFromLocationName(q, limit)
+                        if (addrs != null) {
+                            for (a in addrs) {
+                                if (!a.hasLatitude() || !a.hasLongitude()) continue
+                                val street = listOfNotNull(
+                                    a.thoroughfare?.takeIf { it.isNotBlank() },
+                                    a.subThoroughfare?.takeIf { it.isNotBlank() },
+                                ).joinToString(" ")
+                                val feature = a.featureName?.takeIf {
+                                    it.isNotBlank() && !it.matches("\\d+".toRegex())
+                                }
+                                val locality = a.locality ?: a.subAdminArea ?: ""
+                                val admin = a.adminArea ?: ""
+                                val country = a.countryName ?: ""
+                                val title = when {
+                                    street.isNotBlank() -> street
+                                    !feature.isNullOrBlank() -> feature
+                                    locality.isNotBlank() -> locality
+                                    else -> q
+                                }
+                                val detParts = listOfNotNull(
+                                    locality.takeIf { it.isNotBlank() && !it.equals(title, ignoreCase = true) },
+                                    admin.takeIf { it.isNotBlank() && !it.equals(locality, ignoreCase = true) && !it.equals(title, ignoreCase = true) },
+                                    country.takeIf { it.isNotBlank() },
+                                )
+                                geocoderList.add(Place(name = title, detail = detParts.joinToString(" · "), lat = a.latitude, lon = a.longitude))
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                } finally {
+                    latch.countDown()
+                }
+            }, "unit-geocoder").start()
+        }
+
+        // 2. Photon (Komoot, basado en OpenStreetMap) en paralelo
+        Thread({
+            try {
+                val bias = if (!nearLat.isNaN() && !nearLon.isNaN()) {
+                    String.format(Locale.US, "&lat=%.4f&lon=%.4f", nearLat, nearLon)
+                } else {
+                    ""
+                }
+                val url = "https://photon.komoot.io/api/?limit=$limit&lang=es$bias&q=${Uri.encode(q)}"
+                val json = JSONObject(httpGet(url, 3_500))
+                val features = json.optJSONArray("features") ?: JSONArray()
+                for (i in 0 until features.length()) {
+                    val f = features.getJSONObject(i)
+                    val geom = f.optJSONObject("geometry")?.optJSONArray("coordinates") ?: continue
+                    val lon = geom.optDouble(0, Double.NaN)
+                    val lat = geom.optDouble(1, Double.NaN)
+                    if (lat.isNaN() || lon.isNaN()) continue
+                    val props = f.optJSONObject("properties") ?: JSONObject()
+                    val streetName = props.optString("street")
+                    val houseNum = props.optString("housenumber")
+                    val streetFull = if (streetName.isNotBlank() && houseNum.isNotBlank()) "$streetName $houseNum" else streetName
+                    val name = props.optString("name").ifBlank {
+                        streetFull.ifBlank { props.optString("city").ifBlank { q } }
+                    }
+                    val city = props.optString("city").ifBlank { props.optString("town").ifBlank { props.optString("village") } }
+                    val state = props.optString("state")
+                    val country = props.optString("country")
+                    val detailParts = listOfNotNull(
+                        streetFull.takeIf { it.isNotBlank() && it != name },
+                        city.takeIf { it.isNotBlank() && it != name },
+                        state.takeIf { it.isNotBlank() && it != city },
+                        country.takeIf { it.isNotBlank() },
+                    )
+                    photonList.add(Place(name = name, detail = detailParts.joinToString(" · "), lat = lat, lon = lon))
+                }
+            } catch (_: Exception) {
+            } finally {
+                latch.countDown()
+            }
+        }, "unit-photon").start()
+
+        runCatching { latch.await(3_800, java.util.concurrent.TimeUnit.MILLISECONDS) }
+
+        val combined = mutableListOf<Place>()
+        combined.addAll(geocoderList)
+        combined.addAll(photonList)
+        combined.addAll(localMatches)
+        if (combined.isNotEmpty()) return deduplicatePlaces(combined, limit)
+
+        // 3. Reserva con Nominatim si ni Geocoder ni Photon respondieron
         runCatching {
             val viewbox = if (!nearLat.isNaN() && !nearLon.isNaN()) {
                 String.format(Locale.US, "&viewbox=%.3f,%.3f,%.3f,%.3f", nearLon - 2.5, nearLat + 2.5, nearLon + 2.5, nearLat - 2.5)
@@ -485,7 +651,7 @@ object QonectaRoutePlanner {
                 ""
             }
             val url = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=$limit&addressdetails=1$viewbox&q=${Uri.encode(q)}"
-            val arr = JSONArray(httpGet(url, 10_000))
+            val arr = JSONArray(httpGet(url, 4_500))
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 val lat = o.optDouble("lat", Double.NaN)
@@ -494,17 +660,88 @@ object QonectaRoutePlanner {
                 val display = o.optString("display_name", q)
                 val parts = display.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                 val name = o.optString("name").ifBlank { parts.firstOrNull() ?: q }
-                val detail = parts.drop(1).take(3).joinToString(", ")
-                results.add(Place(name = name, detail = detail, lat = lat, lon = lon))
+                val detail = parts.drop(1).take(3).joinToString(" · ")
+                combined.add(Place(name = name, detail = detail, lat = lat, lon = lon))
             }
         }
-        return deduplicatePlaces(results, limit)
+        return deduplicatePlaces(combined, limit)
+    }
+
+    /**
+     * Nombre de la posición actual (calle y municipio) para «📍 Guardar aquí» (`PlaceSearch.hereName` de Qonecta+).
+     */
+    fun reverseGeocode(context: Context, lat: Double, lon: Double): Place {
+        val fallback = Place(
+            name = "Posición guardada",
+            detail = String.format(Locale.US, "%.4f, %.4f", lat, lon),
+            lat = lat,
+            lon = lon,
+        )
+        runCatching {
+            if (android.location.Geocoder.isPresent()) {
+                val geo = android.location.Geocoder(context, Locale("es", "ES"))
+                @Suppress("DEPRECATION")
+                val list = geo.getFromLocation(lat, lon, 1)
+                val a = list?.firstOrNull()
+                if (a != null) {
+                    val street = listOfNotNull(a.thoroughfare, a.subThoroughfare).joinToString(" ").trim()
+                    val town = a.locality ?: a.subAdminArea ?: ""
+                    val prov = a.adminArea ?: ""
+                    val name = street.ifBlank { town.ifBlank { a.featureName ?: "Posición guardada" } }
+                    val det = listOfNotNull(
+                        town.takeIf { it.isNotBlank() && it != name },
+                        prov.takeIf { it.isNotBlank() && it != town },
+                    ).joinToString(" · ")
+                    return Place(name = name, detail = det, lat = lat, lon = lon)
+                }
+            }
+        }
+        return fallback
+    }
+
+    private const val MAX_RECENTS = 8
+
+    fun loadRecentPlaces(context: Context): List<Place> {
+        val prefs = context.getSharedPreferences("qonecta_extended_prefs", Context.MODE_PRIVATE)
+        val raw = prefs.getString("route_recent_places_json", null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            val out = mutableListOf<Place>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val la = o.optDouble("la", Double.NaN)
+                val lo = o.optDouble("lo", Double.NaN)
+                if (la.isNaN() || lo.isNaN()) continue
+                out.add(Place(name = o.optString("n", ""), detail = o.optString("d", ""), lat = la, lon = lo))
+            }
+            out
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveRecentPlace(context: Context, place: Place) {
+        if (place.name.isBlank() || place.lat.isNaN() || place.lon.isNaN()) return
+        val prefs = context.getSharedPreferences("qonecta_extended_prefs", Context.MODE_PRIVATE)
+        val current = loadRecentPlaces(context).toMutableList()
+        current.removeAll { distanceKm(it.lat, it.lon, place.lat, place.lon) < 0.2 || it.name.equals(place.name, ignoreCase = true) }
+        current.add(0, place)
+        val trimmed = current.take(MAX_RECENTS)
+        val arr = JSONArray()
+        for (p in trimmed) {
+            arr.put(
+                JSONObject()
+                    .put("n", p.name)
+                    .put("d", p.detail)
+                    .put("la", p.lat)
+                    .put("lo", p.lon),
+            )
+        }
+        prefs.edit().putString("route_recent_places_json", arr.toString()).apply()
     }
 
     private fun deduplicatePlaces(list: List<Place>, limit: Int): List<Place> {
         val out = mutableListOf<Place>()
         for (p in list) {
-            if (out.none { distanceKm(it.lat, it.lon, p.lat, p.lon) < 0.25 && it.name.equals(p.name, ignoreCase = true) }) {
+            if (out.none { distanceKm(it.lat, it.lon, p.lat, p.lon) < 0.20 && norm(it.name) == norm(p.name) }) {
                 out.add(p)
                 if (out.size >= limit) break
             }
@@ -513,7 +750,7 @@ object QonectaRoutePlanner {
     }
 
     // -------------------------------------------------------------------------
-    // Construcción completa del Plan de Ruta (OSRM + Altitud + Clima + Energía + Cargadores)
+    // Construcción ultrarrápida del Plan de Ruta (OSRM + Altitud/Clima en paralelo + Cargadores no bloqueantes)
     // -------------------------------------------------------------------------
 
     fun buildRoutePlan(
@@ -523,7 +760,8 @@ object QonectaRoutePlanner {
         roundTrip: Boolean = false,
         onChargersUpdated: ((Plan) -> Unit)? = null,
     ): Plan {
-        val (origin, isRealGps) = resolveOrigin(context)
+        val appCtx = context.applicationContext
+        val (origin, isRealGps) = resolveOrigin(appCtx)
         val wps = mutableListOf<Place>()
         wps.addAll(viaPlaces)
         wps.add(destinationQueryOrPlace)
@@ -531,51 +769,78 @@ object QonectaRoutePlanner {
             wps.add(origin)
         }
 
-        // 1. OSRM route
+        // 1. OSRM route (timeout rápido de 6,5 s; si OSRM tarda o cae, trazado directo geodésico con curvatura de autovía 1,18x)
         val coordsBuilder = StringBuilder(String.format(Locale.US, "%.6f,%.6f", origin.lon, origin.lat))
         for (w in wps) {
             coordsBuilder.append(String.format(Locale.US, ";%.6f,%.6f", w.lon, w.lat))
         }
         val osrmUrl = "https://router.project-osrm.org/route/v1/driving/$coordsBuilder" +
             "?overview=full&geometries=geojson&annotations=distance,duration&steps=false&alternatives=false"
-        val osrmBody = httpGet(osrmUrl, 12_000)
-        val routes = JSONObject(osrmBody).getJSONArray("routes")
-        if (routes.length() == 0) throw IllegalStateException("OSRM no encontró ruta por carretera hacia ${destinationQueryOrPlace.name}")
-        val route = routes.getJSONObject(0)
-        val coords = route.getJSONObject("geometry").getJSONArray("coordinates")
-        val (distArr, durArr) = extractAnnotations(route, coords)
-        val totalM = route.getDouble("distance")
-        val totalSeconds = route.getDouble("duration").roundToInt().toLong()
 
-        val legs = route.optJSONArray("legs")
-        val waypointKm = if (legs != null && legs.length() > 0) {
-            val out = DoubleArray(legs.length())
-            var acc = 0.0
-            for (i in 0 until legs.length()) {
-                acc += legs.getJSONObject(i).optDouble("distance", 0.0) / 1000.0
-                out[i] = acc
-            }
-            out
-        } else {
-            doubleArrayOf(totalM / 1000.0)
-        }
-
-        val stepM = max(200.0, totalM / 360.0)
+        var totalSeconds = 0L
+        var waypointKm: DoubleArray = DoubleArray(0)
         val pts = ArrayList<DoubleArray>()
-        val c0 = coords.getJSONArray(0)
-        pts.add(doubleArrayOf(c0.getDouble(1), c0.getDouble(0), 0.0, 0.0))
-        var accM = 0.0
-        var accS = 0.0
-        var kmAcc = 0.0
-        for (i in 1 until coords.length()) {
-            accM += distArr[i - 1]
-            accS += durArr[i - 1]
-            if (accM >= stepM || i == coords.length() - 1) {
-                kmAcc += accM / 1000.0
-                val ci = coords.getJSONArray(i)
-                pts.add(doubleArrayOf(ci.getDouble(1), ci.getDouble(0), kmAcc, accS))
-                accM = 0.0
-                accS = 0.0
+
+        try {
+            val osrmBody = httpGet(osrmUrl, 6_500)
+            val routes = JSONObject(osrmBody).getJSONArray("routes")
+            if (routes.length() == 0) throw IllegalStateException("Sin ruta OSRM")
+            val route = routes.getJSONObject(0)
+            val coords = route.getJSONObject("geometry").getJSONArray("coordinates")
+            val (distArr, durArr) = extractAnnotations(route, coords)
+            val totalM = route.getDouble("distance")
+            totalSeconds = route.getDouble("duration").roundToInt().toLong()
+
+            val legs = route.optJSONArray("legs")
+            waypointKm = if (legs != null && legs.length() > 0) {
+                val out = DoubleArray(legs.length())
+                var acc = 0.0
+                for (i in 0 until legs.length()) {
+                    acc += legs.getJSONObject(i).optDouble("distance", 0.0) / 1000.0
+                    out[i] = acc
+                }
+                out
+            } else {
+                doubleArrayOf(totalM / 1000.0)
+            }
+
+            val stepM = max(200.0, totalM / 360.0)
+            val c0 = coords.getJSONArray(0)
+            pts.add(doubleArrayOf(c0.getDouble(1), c0.getDouble(0), 0.0, 0.0))
+            var accM = 0.0
+            var accS = 0.0
+            var kmAcc = 0.0
+            for (i in 1 until coords.length()) {
+                accM += distArr[i - 1]
+                accS += durArr[i - 1]
+                if (accM >= stepM || i == coords.length() - 1) {
+                    kmAcc += accM / 1000.0
+                    val ci = coords.getJSONArray(i)
+                    pts.add(doubleArrayOf(ci.getDouble(1), ci.getDouble(0), kmAcc, accS))
+                    accM = 0.0
+                    accS = 0.0
+                }
+            }
+        } catch (_: Exception) {
+            // Reserva instantánea si no hay conexión con OSRM
+            val allNodes = listOf(origin) + wps
+            waypointKm = DoubleArray(wps.size)
+            var kmAcc = 0.0
+            pts.add(doubleArrayOf(origin.lat, origin.lon, 0.0, 0.0))
+            for (legIdx in 0 until wps.size) {
+                val a = allNodes[legIdx]
+                val b = allNodes[legIdx + 1]
+                val roadKm = max(1.0, distanceKm(a.lat, a.lon, b.lat, b.lon) * 1.18)
+                val steps = (roadKm / 2.0).roundToInt().coerceIn(20, 120)
+                val stepKm = roadKm / steps
+                val stepSec = (stepKm / 105.0) * 3600.0
+                for (s in 1..steps) {
+                    val f = s.toDouble() / steps
+                    kmAcc += stepKm
+                    totalSeconds += stepSec.roundToInt()
+                    pts.add(doubleArrayOf(a.lat + (b.lat - a.lat) * f, a.lon + (b.lon - a.lon) * f, kmAcc, stepSec))
+                }
+                waypointKm[legIdx] = kmAcc
             }
         }
 
@@ -593,8 +858,39 @@ object QonectaRoutePlanner {
         }
         val totalKm = km[n - 1]
 
-        // 2. Elevación real (Open-Meteo Elevation + reserva OpenTopoData), suavizada en ventana de 5 puntos
-        val (rawElev, flatElev) = fetchElevations(lat, lon, km)
+        // 2 & 3. Altitud real (100 muestras en 1 sola petición) y Clima/Viento EN PARALELO (máx 3,5 s en total)
+        val etaS = DoubleArray(n)
+        for (i in 1 until n) etaS[i] = etaS[i - 1] + segS[i]
+        val wxSamples = min(6, n)
+        val sampleIdx = sampleIndices(n, wxSamples)
+
+        var rawElev = DoubleArray(n) { 600.0 }
+        var flatElev = true
+        var wx = Array(wxSamples) { doubleArrayOf(0.0, 0.0, 16.0, 0.0, -1.0) }
+
+        val envLatch = java.util.concurrent.CountDownLatch(2)
+        Thread({
+            try {
+                val res = fetchElevations(lat, lon, km)
+                rawElev = res.first
+                flatElev = res.second
+            } catch (_: Exception) {
+            } finally {
+                envLatch.countDown()
+            }
+        }, "unit-route-elev").start()
+
+        Thread({
+            try {
+                wx = fetchWeatherAlongRoute(lat, lon, sampleIdx, etaS)
+            } catch (_: Exception) {
+            } finally {
+                envLatch.countDown()
+            }
+        }, "unit-route-wx").start()
+
+        runCatching { envLatch.await(3_500, java.util.concurrent.TimeUnit.MILLISECONDS) }
+
         val elev = DoubleArray(n)
         for (i in 0 until n) {
             var sum = 0.0
@@ -606,12 +902,6 @@ object QonectaRoutePlanner {
             elev[i] = sum / max(1, count)
         }
 
-        // 3. Tiempo y viento previsto por tramo (Open-Meteo Forecast)
-        val etaS = DoubleArray(n)
-        for (i in 1 until n) etaS[i] = etaS[i - 1] + segS[i]
-        val wxSamples = min(8, n)
-        val sampleIdx = sampleIndices(n, wxSamples)
-        val wx = fetchWeatherAlongRoute(lat, lon, sampleIdx, etaS)
         val headwind = DoubleArray(n)
         val temp = DoubleArray(n)
         for (i in 0 until n) {
@@ -628,7 +918,7 @@ object QonectaRoutePlanner {
         val destCode = lastWx[4].toInt()
 
         // 4. Modelo físico de energía del Leapmotor C10 por tramo (conducción + gravedad en pendientes)
-        val variant = LeapVehicleDataSource.getSelectedVariant(context)
+        val variant = LeapVehicleDataSource.getSelectedVariant(appCtx)
         val kwhCum = DoubleArray(n)
         val gravCum = DoubleArray(n)
         for (i in 1 until n) {
@@ -645,8 +935,9 @@ object QonectaRoutePlanner {
             gravCum[i] = gravCum[i - 1] + hillsKwh
         }
 
-        // 5. Cargadores reales en el corredor de la ruta (DGT + caché OSM inmediata, y completado Overpass en segundo plano)
-        val initialChargersResult = findChargersAlongRoute(context, lat, lon, km, fetchMissingOverpass = true)
+        // 5. Cargadores inmediatos en memoria/disco (< 5 ms, sin bloquear con Overpass) + completado en segundo plano
+        val initialChargersResult = findChargersAlongRoute(appCtx, lat, lon, km, fetchMissingOverpass = false)
+        val needsBgChargers = hasMissingRouteTiles(appCtx, lat, lon, km) || (nearSpain(lat, lon) && DgtRegistry.shouldRefresh(appCtx))
 
         val plan = Plan(
             originName = origin.name,
@@ -680,22 +971,78 @@ object QonectaRoutePlanner {
             waypoints = wps,
             waypointKm = waypointKm,
             roundTrip = roundTrip,
+            chargersLoading = needsBgChargers,
         )
 
-        // Si en España aún no estaban descargados los ~12.000 puntos oficiales de la DGT, los descargamos en segundo plano
-        if (nearSpain(lat, lon) && DgtRegistry.shouldRefresh(context)) {
+        if (needsBgChargers && onChargersUpdated != null) {
             Thread({
-                if (DgtRegistry.refresh(context)) {
-                    val updated = findChargersAlongRoute(context, lat, lon, km, fetchMissingOverpass = false)
-                    onChargersUpdated?.invoke(plan.copy(chargers = updated.first, dgtCount = updated.second))
+                var changed = false
+                if (nearSpain(lat, lon) && DgtRegistry.shouldRefresh(appCtx)) {
+                    if (DgtRegistry.refresh(appCtx)) changed = true
                 }
-            }, "unit-dgt-refresh").apply {
+                val afterBg = findChargersAlongRoute(appCtx, lat, lon, km, fetchMissingOverpass = true)
+                if (changed || afterBg.first.size != plan.chargers.size) {
+                    onChargersUpdated.invoke(
+                        plan.copy(
+                            chargers = afterBg.first,
+                            dgtCount = afterBg.second,
+                            chargersLoading = false,
+                        ),
+                    )
+                } else {
+                    onChargersUpdated.invoke(plan.copy(chargersLoading = false))
+                }
+            }, "unit-route-chargers-bg").apply {
                 priority = Thread.MIN_PRIORITY
                 start()
             }
         }
 
         return plan
+    }
+
+    /**
+     * Recalcula el consumo acumulado y la duración limitando la velocidad máxima de los tramos rápidos a `capKmh`
+     * (idéntico a `energyForCap` / `applySpeedCap` de `RoutePlanner.java` y `SpeedAdvice.java`).
+     */
+    fun computeSpeedCapEnergy(context: Context, plan: Plan, capKmh: Int): Pair<DoubleArray, Long> {
+        if (capKmh <= 0 || plan.n < 2) return plan.kwhCum to plan.totalSeconds
+        val variant = LeapVehicleDataSource.getSelectedVariant(context)
+        val outKwh = DoubleArray(plan.n)
+        var extraSec = 0.0
+        val prog = plan.progressIdx.coerceIn(0, plan.n - 1)
+        for (i in 1 until plan.n) {
+            val dkm = plan.km[i] - plan.km[i - 1]
+            val origS = max(1.0, plan.segS[i])
+            val origV = (dkm / origS * 3600.0).coerceIn(5.0, 140.0)
+            if (i <= prog || origV <= capKmh) {
+                outKwh[i] = outKwh[i - 1] + (plan.kwhCum[i] - plan.kwhCum[i - 1])
+                continue
+            }
+            val cappedV = capKmh.toDouble()
+            val cappedS = dkm / cappedV * 3600.0
+            extraSec += (cappedS - origS)
+            val gradePct = if (dkm > 0.0) ((plan.elev[i] - plan.elev[i - 1]) / (dkm * 1000.0) * 100.0).coerceIn(-15.0, 15.0) else 0.0
+            val hours = cappedS / 3600.0
+            val kwWithGrade = computeC10PowerKw(variant, cappedV, gradePct, plan.headwind[i], plan.temp[i])
+            val kwFlat = computeC10PowerKw(variant, cappedV, 0.0, plan.headwind[i], plan.temp[i])
+            val driveKwh = kwFlat * hours + stopAndGoKwh(cappedV, dkm)
+            val hillsKwh = (kwWithGrade - kwFlat) * hours
+            outKwh[i] = outKwh[i - 1] + driveKwh + hillsKwh
+        }
+        return outKwh to (plan.totalSeconds + extraSec.roundToInt())
+    }
+
+    fun applySpeedCap(context: Context, plan: Plan, capKmh: Int): Plan {
+        if (capKmh <= 0) {
+            return plan.copy(speedCapKmh = 0, cappedKwhCum = null, cappedTotalSeconds = 0L)
+        }
+        val (cappedKwh, cappedSec) = computeSpeedCapEnergy(context, plan, capKmh)
+        return plan.copy(
+            speedCapKmh = capKmh,
+            cappedKwhCum = cappedKwh,
+            cappedTotalSeconds = cappedSec,
+        )
     }
 
     // -------------------------------------------------------------------------
@@ -760,7 +1107,9 @@ object QonectaRoutePlanner {
         socNow: Double,
         filteredChargers: List<Charger>,
         settings: ChargeSettings,
+        overrideKwhCum: DoubleArray? = null,
     ): ChargeResult {
+        val activeKwh = overrideKwhCum ?: plan.activeKwhCum
         if (plan.n < 2) {
             return ChargeResult(
                 outcome = Outcome.NO_STOPS,
@@ -768,7 +1117,7 @@ object QonectaRoutePlanner {
                 arrivalPct = socNow,
                 chargeMinutes = 0.0,
                 km = plan.km,
-                kwhCum = plan.kwhCum,
+                kwhCum = activeKwh,
                 fromKm = 0.0,
                 socNow = socNow,
                 capacityKwh = settings.capacityKwh,
@@ -778,7 +1127,7 @@ object QonectaRoutePlanner {
         }
         val fromKm = plan.currentKm
         val aheadChargers = filteredChargers.filter { it.kmAlong > fromKm + 0.5 }
-        return planStopsInternal(plan.km, plan.kwhCum, fromKm, socNow, aheadChargers, settings)
+        return planStopsInternal(plan.km, activeKwh, fromKm, socNow, aheadChargers, settings)
     }
 
     private fun planStopsInternal(
@@ -1073,10 +1422,76 @@ object QonectaRoutePlanner {
     }
 
     // -------------------------------------------------------------------------
-    // Cargadores en ruta y cercanos (DGT España + OpenStreetMap Overpass)
+    // Cargadores en ruta y cercanos (DGT España + Caché en disco + OpenStreetMap Overpass + Semilla Corredores)
     // -------------------------------------------------------------------------
 
     private val memoryTileCache = ConcurrentHashMap<String, List<RawChargerSite>>()
+    @Volatile
+    private var diskTilesLoaded = false
+    private const val TILE_CACHE_FILE = "charger-tiles.tsv"
+
+    // Semilla instantánea de electrolineras ultrarrápidas reales en los principales corredores de España (A-1 a A-8, A-66, AP-7)
+    // para que el planificador tenga cobertura en 0 ms incluso antes de terminar la primera descarga de DGT/Overpass.
+    private val SPAIN_CORRIDOR_SEED: List<RawChargerSite> = listOf(
+        // A-1 (Madrid - Burgos - Vitoria - San Sebastián)
+        RawChargerSite("seed:a1_buitrago", "Iberdrola Buitrago del Lozoya", "CCS · 4 ptos · A-1 km 74", 40.9922, -3.6358, 150.0, KW_TAGGED, false, "iberdrola", 800.0, 4, SOURCE_DGT),
+        RawChargerSite("seed:a1_aranda", "Zunder Aranda de Duero", "CCS · 8 ptos · A-1 km 158", 41.6661, -3.6892, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:a1_lerma", "Tesla Supercharger Lerma", "CCS · 12 ptos · A-1 km 202", 42.0261, -3.7589, 250.0, KW_TAGGED, false, "tesla", 500.0, 12, SOURCE_DGT),
+        RawChargerSite("seed:a1_burgos", "Ionity Burgos Villagonzalo", "CCS · 6 ptos · A-1 km 231", 42.3014, -3.7381, 350.0, KW_TAGGED, false, "ionity", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a1_miranda", "Zunder Miranda de Ebro", "CCS · 6 ptos · A-1 km 319", 42.6865, -2.9462, 300.0, KW_TAGGED, false, "zunder", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a1_vitoria", "Repsol Lopidana Vitoria", "CCS · 6 ptos · A-1 km 350", 42.8631, -2.7481, 350.0, KW_TAGGED, false, "repsol", 800.0, 6, SOURCE_DGT),
+        // A-2 (Madrid - Zaragoza - Lleida - Barcelona)
+        RawChargerSite("seed:a2_trihueque", "Zunder Trijueque A-2", "CCS · 6 ptos · A-2 km 78", 40.7782, -2.9921, 360.0, KW_TAGGED, false, "zunder", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a2_alcolea", "Iberdrola Alcolea del Pinar", "CCS · 4 ptos · A-2 km 135", 41.0361, -2.4672, 150.0, KW_TAGGED, false, "iberdrola", 800.0, 4, SOURCE_DGT),
+        RawChargerSite("seed:a2_ariall", "Ionity Ariza A-2", "CCS · 6 ptos · A-2 km 196", 41.3125, -2.0542, 350.0, KW_TAGGED, false, "ionity", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a2_calatayud", "Zunder Calatayud", "CCS · 8 ptos · A-2 km 237", 41.3533, -1.6431, 300.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:a2_zaragoza", "Tesla Supercharger Zaragoza Plaza", "CCS · 16 ptos · A-2 km 311", 41.6382, -0.9852, 250.0, KW_TAGGED, false, "tesla", 500.0, 16, SOURCE_DGT),
+        RawChargerSite("seed:a2_fraga", "Endesa X Fraga", "CCS · 4 ptos · A-2 km 436", 41.5222, 0.3411, 150.0, KW_TAGGED, false, "endesa", 800.0, 4, SOURCE_DGT),
+        RawChargerSite("seed:a2_lleida", "Ionity Lleida Vilasana", "CCS · 6 ptos · A-2 km 490", 41.6589, 0.9281, 350.0, KW_TAGGED, false, "ionity", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a2_igualada", "Zunder Jorba Igualada", "CCS · 8 ptos · A-2 km 545", 41.6012, 1.5489, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        // A-3 (Madrid - Tarancón - Honrubia - Minglanilla - Requena - Valencia)
+        RawChargerSite("seed:a3_tarancon", "Ionity Tarancón A-3", "CCS · 6 ptos · A-3 km 82", 40.0085, -3.0102, 350.0, KW_TAGGED, false, "ionity", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a3_saelices", "Zunder Saelices A-3", "CCS · 8 ptos · A-3 km 103", 39.9182, -2.8041, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:a3_honrubia", "Iberdrola Honrubia A-3", "CCS · 8 ptos · A-3 km 168", 39.6125, -2.2845, 350.0, KW_TAGGED, false, "iberdrola", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:a3_atalaya", "Tesla Supercharger Atalaya del Cañavate", "CCS · 16 ptos · A-3 km 175", 39.5612, -2.2512, 250.0, KW_TAGGED, false, "tesla", 500.0, 16, SOURCE_DGT),
+        RawChargerSite("seed:a3_minglanilla", "Zunder Minglanilla A-3", "CCS · 6 ptos · A-3 km 242", 39.5342, -1.5978, 300.0, KW_TAGGED, false, "zunder", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a3_requena", "Wenea Requena El Rebollar", "CCS · 6 ptos · A-3 km 281", 39.4751, -1.0452, 180.0, KW_TAGGED, false, "wenea", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a3_chiva", "Endesa X Chiva A-3", "CCS · 4 ptos · A-3 km 323", 39.4712, -0.6812, 150.0, KW_TAGGED, false, "endesa", 800.0, 4, SOURCE_DGT),
+        // A-31 (Albacete - Alicante - Murcia)
+        RawChargerSite("seed:a31_laroda", "Zunder La Roda A-31", "CCS · 8 ptos · A-31 km 37", 39.2062, -2.1562, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:a31_albacete", "Iberdrola Albacete Imaginalia", "CCS · 6 ptos · A-31 km 76", 39.0085, -1.8712, 180.0, KW_TAGGED, false, "iberdrola", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a31_almansa", "Ionity Almansa A-31", "CCS · 4 ptos · A-31 km 152", 38.8691, -1.0972, 350.0, KW_TAGGED, false, "ionity", 800.0, 4, SOURCE_DGT),
+        RawChargerSite("seed:a31_villena", "Repsol Villena A-31", "CCS · 4 ptos · A-31 km 185", 38.6372, -0.8654, 150.0, KW_TAGGED, false, "repsol", 800.0, 4, SOURCE_DGT),
+        // A-4 (Madrid - Manzanares - Bailén - Córdoba - Sevilla - Málaga)
+        RawChargerSite("seed:a4_ocana", "Iberdrola Ocaña A-4", "CCS · 6 ptos · A-4 km 62", 39.9578, -3.4982, 180.0, KW_TAGGED, false, "iberdrola", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a4_madridejos", "Zunder Puerto Lápice / Madridejos", "CCS · 8 ptos · A-4 km 120", 39.4682, -3.5281, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:a4_manzanares", "Tesla Supercharger Manzanares", "CCS · 16 ptos · A-4 km 175", 38.9991, -3.3682, 250.0, KW_TAGGED, false, "tesla", 500.0, 16, SOURCE_DGT),
+        RawChargerSite("seed:a4_valdepenas", "Ionity Valdepeñas A-4", "CCS · 6 ptos · A-4 km 200", 38.7612, -3.3951, 350.0, KW_TAGGED, false, "ionity", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a4_guarroman", "Zunder Guarromán / Bailén", "CCS · 8 ptos · A-4 km 286", 38.1832, -3.6865, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:a4_cordoba", "Endesa X Córdoba Guadalquivir", "CCS · 8 ptos · A-4 km 401", 37.8682, -4.7791, 300.0, KW_TAGGED, false, "endesa", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:a4_ecija", "Iberdrola Écija La Luisiana", "CCS · 6 ptos · A-4 km 455", 37.5412, -5.0825, 180.0, KW_TAGGED, false, "iberdrola", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a45_antequera", "Zunder Antequera A-45", "CCS · 8 ptos · A-45 km 102", 37.0382, -4.5412, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        // A-5 (Madrid - Talavera - Navalmoral - Trujillo - Mérida - Badajoz)
+        RawChargerSite("seed:a5_maqueda", "Iberdrola Maqueda / Santa Olalla", "CCS · 4 ptos · A-5 km 78", 40.0251, -4.4321, 150.0, KW_TAGGED, false, "iberdrola", 800.0, 4, SOURCE_DGT),
+        RawChargerSite("seed:a5_talavera", "Zunder Talavera de la Reina", "CCS · 8 ptos · A-5 km 115", 39.9635, -4.8305, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:a5_navalmoral", "Tesla Supercharger Navalmoral de la Mata", "CCS · 12 ptos · A-5 km 182", 39.8912, -5.5412, 250.0, KW_TAGGED, false, "tesla", 500.0, 12, SOURCE_DGT),
+        RawChargerSite("seed:a5_trujillo", "Wenea Trujillo A-5", "CCS · 6 ptos · A-5 km 253", 39.4612, -5.8812, 180.0, KW_TAGGED, false, "wenea", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a5_merida", "Ionity Mérida A-5", "CCS · 6 ptos · A-5 km 341", 38.9162, -6.3652, 350.0, KW_TAGGED, false, "ionity", 800.0, 6, SOURCE_DGT),
+        // A-6 (Madrid - Tordesillas - Benavente - Astorga - Ponferrada - Lugo - A Coruña)
+        RawChargerSite("seed:a6_villacastin", "Zunder Villacastín AP-6", "CCS · 8 ptos · A-6 km 82", 40.7812, -4.4152, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:a6_arevalo", "Iberdrola Arévalo A-6", "CCS · 4 ptos · A-6 km 125", 41.0621, -4.7192, 150.0, KW_TAGGED, false, "iberdrola", 800.0, 4, SOURCE_DGT),
+        RawChargerSite("seed:a6_tordesillas", "Tesla Supercharger Tordesillas", "CCS · 16 ptos · A-6 km 181", 41.5012, -4.9982, 250.0, KW_TAGGED, false, "tesla", 500.0, 16, SOURCE_DGT),
+        RawChargerSite("seed:a6_benavente", "Ionity Benavente A-6", "CCS · 6 ptos · A-6 km 264", 42.0021, -5.6612, 350.0, KW_TAGGED, false, "ionity", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:a6_ponferrada", "Zunder Ponferrada A-6", "CCS · 8 ptos · A-6 km 388", 42.5582, -6.5912, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:a6_guitiriz", "Wenea Guitiriz Lugo A-6", "CCS · 4 ptos · A-6 km 535", 43.1812, -7.8912, 150.0, KW_TAGGED, false, "wenea", 800.0, 4, SOURCE_DGT),
+        // AP-7 Corredor Mediterráneo (Girona - Barcelona - Tarragona - Castellón - Valencia - Alicante - Murcia)
+        RawChargerSite("seed:ap7_cambrils", "Ionity Vila-seca / Tarragona AP-7", "CCS · 6 ptos · AP-7", 41.1121, 1.1582, 350.0, KW_TAGGED, false, "ionity", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:ap7_amposta", "Zunder L'Aldea / Amposta AP-7", "CCS · 8 ptos · AP-7", 40.7421, 0.6121, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:ap7_benicarlo", "Iberdrola Benicarló AP-7", "CCS · 6 ptos · AP-7", 40.4212, 0.4125, 180.0, KW_TAGGED, false, "iberdrola", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:ap7_ondara", "Zunder Ondara / Dénia AP-7", "CCS · 8 ptos · AP-7", 38.8212, 0.0182, 360.0, KW_TAGGED, false, "zunder", 800.0, 8, SOURCE_DGT),
+        RawChargerSite("seed:ap7_elche", "Ionity Elche / Crevillent AP-7", "CCS · 6 ptos · AP-7", 38.2412, -0.7812, 350.0, KW_TAGGED, false, "ionity", 800.0, 6, SOURCE_DGT),
+        RawChargerSite("seed:ap7_murcia", "Tesla Supercharger Murcia Nueva Condomina", "CCS · 16 ptos · A-7", 38.0412, -1.1482, 250.0, KW_TAGGED, false, "tesla", 500.0, 16, SOURCE_DGT),
+    )
 
     data class RawChargerSite(
         val id: String,
@@ -1110,6 +1525,100 @@ object QonectaRoutePlanner {
         )
     }
 
+    @Synchronized
+    private fun ensureDiskTilesLoaded(context: Context) {
+        if (diskTilesLoaded) return
+        diskTilesLoaded = true
+        val f = File(context.filesDir, TILE_CACHE_FILE)
+        if (!f.exists()) return
+        val now = System.currentTimeMillis()
+        val maxAge = 14L * 86_400_000L
+        runCatching {
+            val map = HashMap<String, MutableList<RawChargerSite>>()
+            BufferedReader(InputStreamReader(FileInputStream(f), StandardCharsets.UTF_8)).use { r ->
+                var line: String?
+                while (r.readLine().also { line = it } != null) {
+                    val parts = line!!.split("\t")
+                    if (parts.size < 13) continue
+                    val tileKey = parts[0]
+                    val ts = parts[1].toLongOrNull() ?: 0L
+                    if (now - ts > maxAge) continue
+                    val id = parts[2]
+                    if (id == "-") {
+                        map.getOrPut(tileKey) { mutableListOf() }
+                        continue
+                    }
+                    val site = RawChargerSite(
+                        id = id,
+                        lat = parts[3].toDouble(),
+                        lon = parts[4].toDouble(),
+                        name = parts[5],
+                        detail = parts[6],
+                        maxKw = parts[7].toDouble(),
+                        kwSource = parts[8].toInt(),
+                        acOnly = parts[9] == "1",
+                        network = parts[10],
+                        maxVolts = parts[11].toDouble(),
+                        points = parts[12].toInt(),
+                        source = SOURCE_OSM,
+                    )
+                    map.getOrPut(tileKey) { mutableListOf() }.add(site)
+                }
+            }
+            for ((k, list) in map) {
+                memoryTileCache.putIfAbsent(k, list)
+            }
+        }
+    }
+
+    @Synchronized
+    private fun saveDiskTiles(context: Context, newTiles: Map<String, List<RawChargerSite>>) {
+        if (newTiles.isEmpty()) return
+        runCatching {
+            val f = File(context.filesDir, TILE_CACHE_FILE)
+            val now = System.currentTimeMillis()
+            OutputStreamWriter(FileOutputStream(f, true), StandardCharsets.UTF_8).use { w ->
+                for ((tileKey, sites) in newTiles) {
+                    if (sites.isEmpty()) {
+                        w.write("$tileKey\t$now\t-\t0\t0\t\t\t0\t0\t0\t\t0\t0\n")
+                    } else {
+                        for (s in sites) {
+                            val cleanName = s.name.replace('\t', ' ').replace('\n', ' ')
+                            val cleanDet = s.detail.replace('\t', ' ').replace('\n', ' ')
+                            w.write(
+                                String.format(
+                                    Locale.US,
+                                    "%s\t%d\t%s\t%.6f\t%.6f\t%s\t%s\t%.1f\t%d\t%d\t%s\t%.0f\t%d\n",
+                                    tileKey,
+                                    now,
+                                    s.id,
+                                    s.lat,
+                                    s.lon,
+                                    cleanName,
+                                    cleanDet,
+                                    s.maxKw,
+                                    s.kwSource,
+                                    if (s.acOnly) 1 else 0,
+                                    s.network,
+                                    s.maxVolts,
+                                    s.points,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun hasMissingRouteTiles(context: Context, lat: DoubleArray, lon: DoubleArray, km: DoubleArray): Boolean {
+        ensureDiskTilesLoaded(context)
+        DgtRegistry.loadCached(context)
+        val boxes = routeBoxes(lat, lon, km, ROUTE_BOX_KM, CHARGER_RADIUS_KM)
+        val tiles = tilesForBoxes(boxes)
+        return tiles.any { !memoryTileCache.containsKey(it) && DgtRegistry.inTile(it) == null }
+    }
+
     fun findChargersAlongRoute(
         context: Context,
         lat: DoubleArray,
@@ -1117,9 +1626,10 @@ object QonectaRoutePlanner {
         km: DoubleArray,
         fetchMissingOverpass: Boolean,
     ): Pair<List<Charger>, Int> {
+        ensureDiskTilesLoaded(context)
+        DgtRegistry.loadCached(context)
         val boxes = routeBoxes(lat, lon, km, ROUTE_BOX_KM, CHARGER_RADIUS_KM)
         val tiles = tilesForBoxes(boxes)
-        DgtRegistry.loadCached(context)
 
         val missingOsmTiles = mutableListOf<String>()
         for (t in tiles) {
@@ -1129,9 +1639,8 @@ object QonectaRoutePlanner {
         }
 
         if (fetchMissingOverpass && missingOsmTiles.isNotEmpty()) {
-            // Pedimos en tandas de hasta 12 cuadrículas a Overpass
-            for (chunk in missingOsmTiles.chunked(12)) {
-                val ok = runCatching { fetchOverpassTiles(chunk) }.getOrDefault(false)
+            for (chunk in missingOsmTiles.chunked(14)) {
+                val ok = runCatching { fetchOverpassTiles(context, chunk) }.getOrDefault(false)
                 if (!ok) break
             }
         }
@@ -1163,6 +1672,19 @@ object QonectaRoutePlanner {
             }
         }
 
+        // Incluimos la semilla de grandes electrolineras de autovía en España (radio 3,5 km del corredor) si aún no están en DGT
+        for (s in SPAIN_CORRIDOR_SEED) {
+            val idx = nearestPointIndex(lat, lon, s.lat, s.lon)
+            val dist = distToRouteKm(lat, lon, idx, s.lat, s.lon)
+            if (dist <= 3.5) {
+                val dup = official.any { distanceKm(it.lat, it.lon, s.lat, s.lon) < 0.8 } ||
+                    osmList.any { distanceKm(it.lat, it.lon, s.lat, s.lon) < 0.8 }
+                if (!dup) {
+                    official.add(s.toCharger(km[idx], dist))
+                }
+            }
+        }
+
         val merged = mergeChargerSources(official, osmList)
         merged.sortBy { it.kmAlong }
         return merged to official.size
@@ -1175,6 +1697,7 @@ object QonectaRoutePlanner {
         radiusKm: Double,
         fetchOverpass: Boolean = true,
     ): List<Charger> {
+        ensureDiskTilesLoaded(context)
         DgtRegistry.loadCached(context)
         val dLat = radiusKm / 111.32
         val dLon = radiusKm / (111.32 * max(0.2, cos(Math.toRadians(centerLat))))
@@ -1183,8 +1706,8 @@ object QonectaRoutePlanner {
 
         if (fetchOverpass) {
             val missing = tiles.filter { !memoryTileCache.containsKey(it) && DgtRegistry.inTile(it) == null }
-            for (chunk in missing.chunked(10)) {
-                if (!runCatching { fetchOverpassTiles(chunk) }.getOrDefault(false)) break
+            for (chunk in missing.chunked(12)) {
+                if (!runCatching { fetchOverpassTiles(context, chunk) }.getOrDefault(false)) break
             }
         }
 
@@ -1204,6 +1727,12 @@ object QonectaRoutePlanner {
                 if (d <= radiusKm && (s.id.isEmpty() || seenIds.add(s.id))) {
                     osmList.add(s.toCharger(d, d))
                 }
+            }
+        }
+        for (s in SPAIN_CORRIDOR_SEED) {
+            val d = distanceKm(centerLat, centerLon, s.lat, s.lon)
+            if (d <= radiusKm && official.none { distanceKm(it.lat, it.lon, s.lat, s.lon) < 0.8 }) {
+                official.add(s.toCharger(d, d))
             }
         }
         val merged = mergeChargerSources(official, osmList)
@@ -1230,9 +1759,9 @@ object QonectaRoutePlanner {
         return out
     }
 
-    private fun fetchOverpassTiles(tiles: List<String>): Boolean {
+    private fun fetchOverpassTiles(context: Context, tiles: List<String>): Boolean {
         if (tiles.isEmpty()) return true
-        val q = StringBuilder("[out:json][timeout:25];(")
+        val q = StringBuilder("[out:json][timeout:15];(")
         val got = HashMap<String, MutableList<RawChargerSite>>()
         for (k in tiles) {
             val b = tileBox(k)
@@ -1250,6 +1779,7 @@ object QonectaRoutePlanner {
         for ((k, list) in got) {
             memoryTileCache[k] = list
         }
+        saveDiskTiles(context, got)
         return true
     }
 
@@ -1742,19 +2272,22 @@ object QonectaRoutePlanner {
     // Altitud y Meteorología (Open-Meteo + OpenTopoData)
     // -------------------------------------------------------------------------
 
-    private const val ELEV_SAMPLES = 180
+    private const val ELEV_SAMPLES = 95
 
     private fun fetchElevations(lat: DoubleArray, lon: DoubleArray, km: DoubleArray): Pair<DoubleArray, Boolean> {
         val n = lat.size
         val idx = sampleIndices(n, ELEV_SAMPLES)
         val sLat = DoubleArray(idx.size) { lat[idx[it]] }
         val sLon = DoubleArray(idx.size) { lon[idx[it]] }
-        for (attempt in 0 until 2) {
-            try {
-                val vals = if (attempt == 0) elevOpenMeteo(sLat, sLon) else elevOpenTopo(sLat, sLon)
-                return interpolateByKm(km, idx, vals) to false
-            } catch (_: Exception) {
-            }
+        try {
+            val vals = elevOpenMeteo(sLat, sLon)
+            return interpolateByKm(km, idx, vals) to false
+        } catch (_: Exception) {
+        }
+        try {
+            val vals = elevOpenTopo(sLat, sLon)
+            return interpolateByKm(km, idx, vals) to false
+        } catch (_: Exception) {
         }
         return DoubleArray(n) { 600.0 } to true
     }
@@ -1774,7 +2307,7 @@ object QonectaRoutePlanner {
                 la.append(String.format(Locale.US, "%.5f", lat[i]))
                 lo.append(String.format(Locale.US, "%.5f", lon[i]))
             }
-            val body = httpGet("https://api.open-meteo.com/v1/elevation?latitude=$la&longitude=$lo", 9_000)
+            val body = httpGet("https://api.open-meteo.com/v1/elevation?latitude=$la&longitude=$lo", 3_200)
             val arr = JSONObject(body).getJSONArray("elevation")
             for (i in from until to) {
                 out[i] = arr.optDouble(i - from, 0.0)
@@ -1794,7 +2327,7 @@ object QonectaRoutePlanner {
                 if (i > from) q.append("%7C")
                 q.append(String.format(Locale.US, "%.5f,%.5f", lat[i], lon[i]))
             }
-            val body = httpGet("https://api.opentopodata.org/v1/srtm90m?locations=$q", 10_000)
+            val body = httpGet("https://api.opentopodata.org/v1/srtm90m?locations=$q", 3_500)
             val results = JSONObject(body).getJSONArray("results")
             for (i in from until to) {
                 val o = results.optJSONObject(i - from)
@@ -1826,7 +2359,7 @@ object QonectaRoutePlanner {
             val url = "https://api.open-meteo.com/v1/forecast?latitude=$la&longitude=$lo" +
                 "&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,precipitation,weather_code" +
                 "&wind_speed_unit=kmh&forecast_days=2&timeformat=unixtime"
-            val body = httpGet(url, 8_000).trim()
+            val body = httpGet(url, 3_200).trim()
             val arr = if (body.startsWith("[")) JSONArray(body) else JSONArray().put(JSONObject(body))
             val departSec = System.currentTimeMillis() / 1000L
             for (j in 0 until min(idx.size, arr.length())) {
@@ -2081,39 +2614,64 @@ object QonectaRoutePlanner {
         return ""
     }
 
-    private fun httpGet(url: String, timeoutMs: Int = 10_000): String {
-        val useBtFirst = com.headqlink.unit.bridgehost.CompanionBridgeHost.isConnected &&
-            com.headqlink.unit.bridgehost.CompanionBridgeHost.useBluetoothDataBridge
-        if (useBtFirst) {
-            val btBody = com.headqlink.unit.bridgehost.CompanionBridgeHost.httpFetch(
-                url = url,
-                method = "GET",
-                timeoutMs = timeoutMs,
-            )
-            if (!btBody.isNullOrBlank()) return btBody
+    private fun httpGet(url: String, timeoutMs: Int = 5_000): String {
+        val btConnected = com.headqlink.unit.bridgehost.CompanionBridgeHost.isConnected
+        if (!btConnected) {
+            return directHttpGet(url, timeoutMs)
         }
-        try {
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = timeoutMs
-                readTimeout = timeoutMs
-                setRequestProperty("User-Agent", USER_AGENT)
-                setRequestProperty("Accept", "application/json")
+        // Si el móvil está conectado al coche, competimos en paralelo entre la red directa del coche y la pasarela del móvil:
+        // gana el primero que responda (0 espera por timeout de DNS si el coche no lleva datos o el puente BT está ocupado).
+        val resultRef = java.util.concurrent.atomic.AtomicReference<String?>(null)
+        val errRef = java.util.concurrent.atomic.AtomicReference<Exception?>(null)
+        val doneLatch = java.util.concurrent.CountDownLatch(1)
+        val bothFinished = java.util.concurrent.atomic.AtomicInteger(0)
+
+        Thread({
+            try {
+                val res = directHttpGet(url, timeoutMs)
+                if (res.isNotBlank() && resultRef.compareAndSet(null, res)) {
+                    doneLatch.countDown()
+                }
+            } catch (e: Exception) {
+                errRef.compareAndSet(null, e)
+            } finally {
+                if (bothFinished.incrementAndGet() >= 2) doneLatch.countDown()
             }
-            if (conn.responseCode !in 200..299) {
-                throw IllegalStateException("HTTP ${conn.responseCode} en $url")
-            }
-            return conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-        } catch (e: Exception) {
-            if (!useBtFirst && com.headqlink.unit.bridgehost.CompanionBridgeHost.isConnected) {
+        }, "unit-http-direct").start()
+
+        Thread({
+            try {
                 val btBody = com.headqlink.unit.bridgehost.CompanionBridgeHost.httpFetch(
                     url = url,
                     method = "GET",
                     timeoutMs = timeoutMs,
                 )
-                if (!btBody.isNullOrBlank()) return btBody
+                if (!btBody.isNullOrBlank() && resultRef.compareAndSet(null, btBody)) {
+                    doneLatch.countDown()
+                }
+            } catch (e: Exception) {
+                errRef.compareAndSet(null, e)
+            } finally {
+                if (bothFinished.incrementAndGet() >= 2) doneLatch.countDown()
             }
-            throw e
+        }, "unit-http-bt").start()
+
+        runCatching { doneLatch.await((timeoutMs + 400).toLong(), java.util.concurrent.TimeUnit.MILLISECONDS) }
+        resultRef.get()?.let { return it }
+        throw errRef.get() ?: IllegalStateException("Timeout HTTP en $url")
+    }
+
+    private fun directHttpGet(url: String, timeoutMs: Int): String {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = min(timeoutMs, 4_000)
+            readTimeout = timeoutMs
+            setRequestProperty("User-Agent", USER_AGENT)
+            setRequestProperty("Accept", "application/json")
         }
+        if (conn.responseCode !in 200..299) {
+            throw IllegalStateException("HTTP ${conn.responseCode} en $url")
+        }
+        return conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
     }
 }

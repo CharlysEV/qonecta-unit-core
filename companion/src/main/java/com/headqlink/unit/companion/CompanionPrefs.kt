@@ -35,6 +35,26 @@ class CompanionPrefs(context: Context) {
         get() = p.getString("github_repo", "CharlysEV/qonecta-unit")?.takeIf { it.isNotBlank() } ?: "CharlysEV/qonecta-unit"
         set(v) = p.edit().putString("github_repo", v.trim().ifBlank { "CharlysEV/qonecta-unit" }).apply()
 
+    var githubCompanionRepo: String
+        get() = p.getString("github_companion_repo", "CharlysEV/qonecta-unit-companion")?.takeIf { it.isNotBlank() } ?: "CharlysEV/qonecta-unit-companion"
+        set(v) = p.edit().putString("github_companion_repo", v.trim().ifBlank { "CharlysEV/qonecta-unit-companion" }).apply()
+
+    var githubToken: String
+        get() = p.getString("github_token", "") ?: ""
+        set(v) = p.edit().putString("github_token", v.trim()).apply()
+
+    var customDnsHost: String
+        get() = p.getString("custom_dns_host", "") ?: ""
+        set(v) = p.edit().putString("custom_dns_host", v.trim()).apply()
+
+    var expertMode: Boolean
+        get() = p.getBoolean("expert_mode", false)
+        set(v) = p.edit().putBoolean("expert_mode", v).apply()
+
+    var coldInstallExpanded: Boolean
+        get() = p.getBoolean("cold_install_expanded", false)
+        set(v) = p.edit().putBoolean("cold_install_expanded", v).apply()
+
     val isPaired: Boolean
         get() = !token.isNullOrBlank()
 

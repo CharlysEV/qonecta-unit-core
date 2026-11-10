@@ -44,6 +44,13 @@ class CarKeyBroadcastReceiver : BroadcastReceiver(), CarKeyReceiver {
             "com.tencent.qqmusiccar.action.MEDIA_BUTTON_INNER_ONKEY",
             "cn.kuwo.kwmusicauto.action.MEDIA_BUTTON"
         )
+
+        private fun isSystemVolumeKey(keyCode: Int): Boolean {
+            return keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
+                keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
+                keyCode == KeyEvent.KEYCODE_VOLUME_MUTE ||
+                keyCode == KeyEvent.KEYCODE_MUTE
+        }
     }
 
     private var context: Context? = null
@@ -74,7 +81,7 @@ class CarKeyBroadcastReceiver : BroadcastReceiver(), CarKeyReceiver {
 
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
-        AppLog.i("CarKeyReceiver: Handling intent action: $action")
+        val commManager = App.provide(context).commManager
 
         // Broadcast for KeymapFragment debugger (raw intent data)
         context.sendBroadcast(Intent("com.andrerinas.openheadunit.DEBUG_KEY").apply {
@@ -83,7 +90,25 @@ class CarKeyBroadcastReceiver : BroadcastReceiver(), CarKeyReceiver {
             intent.extras?.let { putExtras(it) }
         })
 
-        // Try to abort broadcast to prevent other apps (like built-in radio) from reacting
+        // Never intercept or abort system media/volume buttons when Android Auto is not actively connected.
+        if (!commManager.isConnected) {
+            return
+        }
+
+        val keyEvent = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+        val rawKeyCode = keyEvent?.keyCode
+            ?: intent.getIntExtra("keycode", -1).takeIf { it > 0 }
+            ?: intent.getIntExtra("key_code", -1).takeIf { it > 0 }
+            ?: intent.getIntExtra("keyCode", -1).takeIf { it > 0 }
+
+        // Never abort or hijack hardware volume keys (let com.leapmotor.volumecontrol / CarAudioService handle them).
+        if (rawKeyCode != null && isSystemVolumeKey(rawKeyCode)) {
+            return
+        }
+
+        AppLog.i("CarKeyReceiver: Handling intent action: $action")
+
+        // Try to abort broadcast to prevent other apps (like built-in radio) from reacting to media transport keys
         if (isOrderedBroadcast) {
             abortBroadcast()
         }
@@ -92,12 +117,11 @@ class CarKeyBroadcastReceiver : BroadcastReceiver(), CarKeyReceiver {
         if (action.endsWith("MEDIA_BUTTON") || action.endsWith("KEY_EVENT")
             || action == "com.tencent.qqmusiccar.action.MEDIA_BUTTON_INNER_ONKEY"
             || action == "cn.kuwo.kwmusicauto.action.MEDIA_BUTTON") {
-            val event = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
-            if (event != null) {
-                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                    handleKey(context, event.keyCode, true)
-                } else if (event.action == KeyEvent.ACTION_UP) {
-                    handleKey(context, event.keyCode, false)
+            if (keyEvent != null) {
+                if (keyEvent.action == KeyEvent.ACTION_DOWN && keyEvent.repeatCount == 0) {
+                    handleKey(context, keyEvent.keyCode, true)
+                } else if (keyEvent.action == KeyEvent.ACTION_UP) {
+                    handleKey(context, keyEvent.keyCode, false)
                 }
             } else {
                 val cmd = intent.getStringExtra("command") ?: intent.getStringExtra("cmd")
@@ -112,7 +136,7 @@ class CarKeyBroadcastReceiver : BroadcastReceiver(), CarKeyReceiver {
                         "pause" -> handleClick(context, KeyEvent.KEYCODE_MEDIA_PAUSE)
                         "togglepause", "playpause" -> handleClick(context, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
                     }
-                } else if (key != null) {
+                } else if (key != null && !isSystemVolumeKey(key)) {
                     handleClick(context, key)
                 }
             }
@@ -124,12 +148,12 @@ class CarKeyBroadcastReceiver : BroadcastReceiver(), CarKeyReceiver {
             // --- Protocols with proper DOWN/UP separation ---
             "com.microntek.irkeyDown", "com.microntek.irkeyUp" -> {
                 val keyCode = intent.getIntExtra("keyCode", -1)
-                if (keyCode != -1) handleKey(context, keyCode, action.endsWith("keyDown"))
+                if (keyCode != -1 && !isSystemVolumeKey(keyCode)) handleKey(context, keyCode, action.endsWith("keyDown"))
             }
             "android.intent.action.C3_HARDKEY" -> {
                 val keyCode = intent.getIntExtra("android.intent.extra.c3_hardkey_keycode", -1)
                 val c3Action = intent.getIntExtra("android.intent.extra.c3_hardkey_action", -1)
-                if (keyCode != -1 && c3Action != -1) handleKey(context, keyCode, c3Action == 0)
+                if (keyCode != -1 && c3Action != -1 && !isSystemVolumeKey(keyCode)) handleKey(context, keyCode, c3Action == 0)
             }
 
             // --- Protocols that fire once (no DOWN/UP) → use virtual IDs for mapping ---

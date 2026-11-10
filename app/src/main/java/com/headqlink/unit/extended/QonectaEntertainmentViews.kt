@@ -3175,6 +3175,36 @@ object QonectaEntertainmentViews {
         }
         styleCard.addView(carColorRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(6) })
 
+        // 4. Selector directo de Pantalla del Cuadro de Instrumentos (10,25" tras el volante)
+        //    Permite alternar al instante entre Mapa, Música, Extendido y el Cuadro Original C10 (consumo/viaje nativo)
+        val clusterPageRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        clusterPageRow.addView(TextView(context).apply {
+            text = "🖥️ Cuadro C10:"
+            setTextSp(13.5f)
+            setTextColor(QonectaTheme.text)
+            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
+        }, LinearLayout.LayoutParams(dp(115), WRAP))
+        val clusterPages = listOf(
+            ClusterMapController.ClusterPage.MAP to "🗺️ 1. Mapa",
+            ClusterMapController.ClusterPage.MUSIC to "🎵 2. Música",
+            ClusterMapController.ClusterPage.EXTENDED to "⚡ 3. Extendido",
+            ClusterMapController.ClusterPage.NATIVE_C10 to "🚗 4. Original C10",
+        )
+        val curClusterPage = ClusterMapController.currentPage
+        clusterPages.forEachIndexed { idx, (page, label) ->
+            val b = pillButton(context, label, curClusterPage == page, textSp = 12.5f, padHdp = 8) {
+                ClusterMapController.setPage(page, context)
+                onThemeChanged()
+            }
+            clusterPageRow.addView(b, LinearLayout.LayoutParams(0, dp(36), 1f).apply {
+                if (idx < clusterPages.lastIndex) rightMargin = dp(5)
+            })
+        }
+        styleCard.addView(clusterPageRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(6) })
+
         leftThemeCol.addView(styleCard, LinearLayout.LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(8) })
         leftScroll.addView(leftThemeCol, ViewGroup.LayoutParams(MATCH, MATCH))
 

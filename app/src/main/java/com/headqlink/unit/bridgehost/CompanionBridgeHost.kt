@@ -63,6 +63,7 @@ object CompanionBridgeHost {
     private val main = Handler(Looper.getMainLooper())
     private val sessions = CopyOnWriteArrayList<BridgeServerSession>()
     private val listeners = CopyOnWriteArrayList<(Status) -> Unit>()
+    private val syncListeners = CopyOnWriteArrayList<() -> Unit>()
     private val sendExecutor = Executors.newSingleThreadExecutor()
     private val pingExecutor = Executors.newSingleThreadScheduledExecutor()
 
@@ -78,10 +79,13 @@ object CompanionBridgeHost {
         if (started) return
         started = true
         appContext = context.applicationContext
+        runCatching { com.headqlink.unit.extended.LeapVehicleDataSource.start(appContext) }
         registry = PairingRegistry(PrefsTokenStore(appContext))
         thread(name = "companion-tcp", isDaemon = true) { tcpLoop() }
         thread(name = "companion-rfcomm", isDaemon = true) { bluetoothLoop() }
         pingExecutor.scheduleWithFixedDelay({ pingAll() }, BridgeConstants.PING_INTERVAL_MS, BridgeConstants.PING_INTERVAL_MS, TimeUnit.MILLISECONDS)
+        // Con el móvil conectado, Qonecta Unit manda: el estado en vivo del coche al Companion cada 5 s.
+        pingExecutor.scheduleWithFixedDelay({ runCatching { pushTelemetry() } }, 5_000L, 5_000L, TimeUnit.MILLISECONDS)
         AppLog.i("[Companion] Puente arrancado (TCP ${BridgeConstants.TCP_PORT} + Bluetooth RFCOMM)")
     }
 
@@ -156,6 +160,18 @@ object CompanionBridgeHost {
 
     fun removeListener(l: (Status) -> Unit) {
         listeners.remove(l)
+    }
+
+    fun addSyncListener(l: () -> Unit) {
+        syncListeners.add(l)
+    }
+
+    fun removeSyncListener(l: () -> Unit) {
+        syncListeners.remove(l)
+    }
+
+    fun pushImmediateSync() {
+        pingExecutor.execute { runCatching { pushTelemetry(forceIncludePrefsAndTrips = true) } }
     }
 
     private fun notifyListeners() {
@@ -271,7 +287,17 @@ object CompanionBridgeHost {
     }
 
     private fun serve(channel: LineChannel, transport: String, afterHandshake: () -> Unit) {
-        val session = BridgeServerSession(channel, transport, registry, CAR_NAME)
+        val session = BridgeServerSession(
+            channel = channel,
+            transport = transport,
+            auth = registry,
+            carName = CAR_NAME,
+            carAppVersion = com.andrerinas.openheadunit.BuildConfig.VERSION_NAME,
+            carVersionCode = com.andrerinas.openheadunit.BuildConfig.VERSION_CODE,
+            logsProvider = { maxLines -> collectUnitLogs(maxLines) },
+            telemetryHandler = { msg -> onCompanionSyncReceived(msg.payloadJson) },
+            apkPushHandler = { offer, sendReply -> handleApkPush(offer, sendReply) },
+        )
         val ok = runCatching { session.handshake() }.getOrDefault(false)
         if (!ok) {
             channel.close()
@@ -284,10 +310,166 @@ object CompanionBridgeHost {
         sessions.add(session)
         AppLog.i("[Companion] Móvil conectado: ${session.deviceName} por $transport")
         notifyListeners()
+        pingExecutor.execute { runCatching { pushTelemetry() } }
         session.runLoop()
         sessions.remove(session)
         AppLog.i("[Companion] Móvil desconectado: ${session.deviceName} ($transport)")
         notifyListeners()
+    }
+
+    private fun collectUnitLogs(maxLines: Int): Pair<String, String> {
+        val fmt = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+        val now = java.util.Date()
+        val fileName = "qonecta-unit-logs-${fmt.format(now)}.txt"
+        val sb = StringBuilder()
+        sb.appendLine("============================================================")
+        sb.appendLine("QONECTA UNIT · REGISTRO REMOTO DE DIAGNÓSTICO (SIN PENDRIVE)")
+        sb.appendLine("Fecha: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(now)}")
+        sb.appendLine("Paquete: ${appContext.packageName}")
+        sb.appendLine("Dispositivo: ${Build.MANUFACTURER} ${Build.MODEL} (SDK ${Build.VERSION.SDK_INT})")
+        sb.appendLine("============================================================")
+        sb.appendLine()
+
+        // 1. Archivo de registro persistente de AppLog (ohu.log)
+        runCatching {
+            val logFile = AppLog.currentLogFile ?: AppLog.lastLogFile
+            if (logFile != null && logFile.isFile && logFile.canRead()) {
+                sb.appendLine("--- ARCHIVO DE REGISTRO QONECTA UNIT (${logFile.name}, ${logFile.length()} bytes) ---")
+                val lines = logFile.readLines()
+                val tail: List<String> = if (lines.size > maxLines) lines.takeLast(maxLines) else lines
+                for (line in tail) {
+                    sb.appendLine(line)
+                }
+                sb.appendLine()
+            }
+        }
+
+        // 2. Logcat reciente del proceso
+        runCatching {
+            val logcatLines = maxLines.coerceIn(150, 1000)
+            val proc = ProcessBuilder("logcat", "-d", "-v", "time", "-t", logcatLines.toString())
+                .redirectErrorStream(true)
+                .start()
+            sb.appendLine("--- LOGCAT RECIENTE ($logcatLines líneas) ---")
+            proc.inputStream.bufferedReader().use { reader ->
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    sb.appendLine(line)
+                }
+            }
+            proc.waitFor(3, TimeUnit.SECONDS)
+        }.onFailure { e ->
+            sb.appendLine("[Logcat adicional no disponible: ${e.message}]")
+        }
+
+        // 3. Inventario ligero Anti-OTA y Sonda de Cámaras (sin volcar archivos XML enteros ni DEX por Bluetooth)
+        runCatching {
+            sb.appendLine()
+            sb.appendLine(com.headqlink.unit.extended.OtaSelfUpdater.buildDiagnosticAntiOtaSection(appContext))
+        }
+
+        return fileName to sb.toString()
+    }
+
+    private fun onCompanionSyncReceived(payloadJson: String) {
+        if (!::appContext.isInitialized) return
+        runCatching {
+            val json = JSONObject(payloadJson)
+            val changed = com.headqlink.unit.extended.LeapVehicleDataSource.applyCompanionSync(appContext, json)
+            if (changed) {
+                AppLog.i("[Companion] Sincronización recibida desde el móvil (tarifas / viajes ocultos o eliminados)")
+                main.post { syncListeners.forEach { runCatching { it() } } }
+                pushImmediateSync()
+            }
+        }
+    }
+
+    /**
+     * Estado en vivo del coche para Companion + sincronización bidireccional de viajes, privacidad y tarifas:
+     * batería, autonomía, velocidad, potencia, clima, viajes (incluyendo ocultos/eliminados) y precios de energía/combustible.
+     */
+    private fun pushTelemetry(forceIncludePrefsAndTrips: Boolean = false) {
+        if (sessions.isEmpty()) return
+        val snap = com.headqlink.unit.extended.LeapVehicleDataSource.snapshot()
+        val hasRealCarTelemetry = snap.connected && !snap.isDemo
+        if (!hasRealCarTelemetry && !forceIncludePrefsAndTrips) {
+            // Aun sin CAN en vivo (por ejemplo en casa o recién arrancado), sincronizamos viajes y tarifas con Companion
+        }
+        fun num(v: Double): Any = if (v.isNaN() || v.isInfinite()) org.json.JSONObject.NULL else v
+        val tripsArr = org.json.JSONArray()
+        val deletedArr = org.json.JSONArray()
+        val hiddenArr = org.json.JSONArray()
+        var pricingObj = org.json.JSONObject()
+        var variantId = "promax_design_299_my26"
+        var isReev = snap.isReev
+        if (::appContext.isInitialized) {
+            runCatching {
+                val variant = com.headqlink.unit.extended.LeapVehicleDataSource.getSelectedVariant(appContext)
+                variantId = variant.id
+                isReev = variant.isReev || snap.isReev
+                val pricing = com.headqlink.unit.extended.LeapVehicleDataSource.getEnergyPricing(appContext)
+                pricingObj = org.json.JSONObject()
+                    .put("homeElecEurKwh", pricing.homeElecEurKwh)
+                    .put("dcFastElecEurKwh", pricing.dcFastElecEurKwh)
+                    .put("gasolineEurLiter", pricing.gasolineEurLiter)
+                    .put("dieselEurLiter", pricing.dieselEurLiter)
+                    .put("tariffMode", pricing.tariffMode)
+                    .put("isReevMode", isReev)
+                    .put("updatedAtMs", pricing.updatedAtMs)
+                com.headqlink.unit.extended.LeapVehicleDataSource.getDeletedTripIds(appContext).forEach { deletedArr.put(it) }
+                com.headqlink.unit.extended.LeapVehicleDataSource.getHiddenTripIds(appContext).forEach { hiddenArr.put(it) }
+                val recent = com.headqlink.unit.extended.LeapVehicleDataSource.loadRecentTrips(appContext, includeHidden = true).take(25)
+                for (t in recent) {
+                    tripsArr.put(
+                        org.json.JSONObject()
+                            .put("startTimeMs", t.startTimeMs)
+                            .put("durationMin", t.durationMin)
+                            .put("distanceKm", num(t.distanceKm))
+                            .put("energyKwh", num(t.energyKwh))
+                            .put("avgKwh100", num(t.avgKwh100))
+                            .put("startSoc", num(t.startSoc))
+                            .put("endSoc", num(t.endSoc))
+                            .put("avgSpeedKmh", num(t.avgSpeedKmh))
+                            .put("maxSpeedKmh", num(t.maxSpeedKmh))
+                            .put("originName", t.originName)
+                            .put("destinationName", t.destinationName)
+                            .put("costEur", num(t.costEur))
+                            .put("hidden", t.hidden)
+                            .put("fuelLitersUsed", num(t.fuelLitersUsed)),
+                    )
+                }
+            }
+        }
+        val o = org.json.JSONObject()
+            .put("ts", System.currentTimeMillis())
+            .put("variantId", variantId)
+            .put("isReev", isReev)
+            .put("pricing", pricingObj)
+            .put("deletedTripIds", deletedArr)
+            .put("hiddenTripIds", hiddenArr)
+            .put("trips", tripsArr)
+        if (hasRealCarTelemetry) {
+            o.put("soc", num(snap.socPct))
+                .put("rangeKm", num(snap.effectiveRangeKm))
+                .put("fuelPct", num(snap.fuelPct))
+                .put("fuelRangeKm", num(snap.fuelRangeKm))
+                .put("speedKmh", num(snap.effectiveSpeedKmh))
+                .put("powerKw", num(snap.powerKw))
+                .put("hvacKw", num(snap.hvacPowerKw))
+                .put("auxKw", num(snap.auxPowerKw))
+                .put("acOn", snap.acOn)
+                .put("cabinC", num(snap.tempLeftC))
+                .put("extC", num(snap.tempExteriorC))
+                .put("charging", snap.chargingStatus in 1..2)
+                .put("gear", snap.gearLabel())
+                .put("tripKm", snap.tripDistanceKm)
+                .put("tripKwh", snap.tripEnergyKwh)
+                .put("avgKwh100", num(snap.avgConsumptionKwh100))
+                .put("tripDurationSec", snap.tripDurationSec)
+                .put("maxSpeedKmh", num(snap.maxSpeedKmh))
+        }
+        val json = o.toString()
+        sessions.forEach { s -> if (!s.sendTelemetry(json)) s.channel.close() }
     }
 
     private fun pingAll() {
@@ -297,6 +479,316 @@ object CompanionBridgeHost {
                 s.channel.close()
             }
         }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Actualización Push OTA en 1 toque desde Qonecta Companion (TCP Wi-Fi / HTTP / Bluetooth)
+    // ------------------------------------------------------------------------------------------
+
+    @SuppressLint("MissingPermission")
+    private fun handleApkPush(
+        offer: BridgeMessage.ApkPushStart,
+        sendReply: (BridgeMessage) -> Unit,
+    ) {
+        if (!::appContext.isInitialized || offer.sizeBytes <= 100_000L || offer.sizeBytes > 120L * 1024L * 1024L) {
+            sendReply(
+                BridgeMessage.ApkPushStatus(
+                    id = offer.id,
+                    stage = "error",
+                    progressPct = 0,
+                    message = "Tamaño de APK inválido (${offer.sizeBytes} bytes).",
+                    done = true,
+                    ok = false,
+                )
+            )
+            return
+        }
+
+        val outDir = java.io.File(appContext.cacheDir, "ota_apks").apply { mkdirs() }
+        val safeName = offer.fileName.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifBlank { "QonectaUnit_update.apk" }
+        val finalFile = java.io.File(outDir, safeName)
+
+        // 0. Si el coche YA tiene exactamente este mismo APK (mismo tamaño y SHA-256), abrir instalador en 0 s
+        if (finalFile.isFile && finalFile.length() == offer.sizeBytes && offer.sha256.isNotBlank()) {
+            val existingHash = runCatching { sha256Hex(finalFile) }.getOrNull()
+            if (existingHash != null && existingHash.equals(offer.sha256, ignoreCase = true)) {
+                sendReply(BridgeMessage.ApkPushReady(offer.id, tcpPort = 0, rfcommAvailable = false, alreadyCached = true))
+                val (ok, msg) = com.headqlink.unit.extended.OtaSelfUpdater.launchReceivedOtaApk(appContext, finalFile)
+                sendReply(BridgeMessage.ApkPushStatus(offer.id, if (ok) "installer" else "permission", 100, msg, done = true, ok = ok))
+                return
+            }
+        }
+
+        var tcpServer: ServerSocket? = null
+        try {
+            tcpServer = ServerSocket().apply {
+                reuseAddress = true
+                bind(InetSocketAddress(BridgeConstants.APK_PUSH_TCP_PORT))
+                soTimeout = 30_000
+            }
+        } catch (_: Exception) {
+            runCatching {
+                tcpServer = ServerSocket(0).apply { soTimeout = 30_000 }
+            }
+        }
+
+        var btServer: BluetoothServerSocket? = null
+        runCatching {
+            val hasBtPerm = Build.VERSION.SDK_INT < 31 ||
+                appContext.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
+            if (hasBtPerm && adapter?.isEnabled == true) {
+                btServer = adapter.listenUsingRfcommWithServiceRecord(
+                    BridgeConstants.APK_PUSH_RFCOMM_NAME,
+                    BridgeConstants.APK_PUSH_RFCOMM_UUID,
+                )
+            }
+        }
+
+        val boundTcpPort = tcpServer?.localPort ?: 0
+        sendReply(
+            BridgeMessage.ApkPushReady(
+                id = offer.id,
+                tcpPort = boundTcpPort,
+                rfcommAvailable = btServer != null,
+                alreadyCached = false,
+            )
+        )
+
+        val claimed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val doneLatch = java.util.concurrent.CountDownLatch(1)
+
+        fun finishWithStream(sourceLabel: String, rawInput: java.io.InputStream) {
+            val tmpFile = java.io.File(outDir, "receiving_${offer.id}.apk.part")
+            try {
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                var received = 0L
+                var lastPctSent = -1
+                var lastUiMs = 0L
+                java.io.FileOutputStream(tmpFile).use { fos ->
+                    val buf = ByteArray(64 * 1024)
+                    while (received < offer.sizeBytes) {
+                        val toRead = minOf(buf.size.toLong(), offer.sizeBytes - received).toInt()
+                        val r = rawInput.read(buf, 0, toRead)
+                        if (r <= 0) break
+                        fos.write(buf, 0, r)
+                        md.update(buf, 0, r)
+                        received += r
+                        val pct = ((received * 100L) / offer.sizeBytes).toInt().coerceIn(0, 99)
+                        val now = System.currentTimeMillis()
+                        if (pct >= lastPctSent + 8 && now - lastUiMs >= 250L) {
+                            lastPctSent = pct
+                            lastUiMs = now
+                            val mbDone = String.format(java.util.Locale.US, "%.1f", received / (1024.0 * 1024.0))
+                            val mbTotal = String.format(java.util.Locale.US, "%.1f", offer.sizeBytes / (1024.0 * 1024.0))
+                            sendReply(
+                                BridgeMessage.ApkPushStatus(
+                                    id = offer.id,
+                                    stage = "receiving",
+                                    progressPct = pct,
+                                    message = "🚀 Recibiendo en el coche por $sourceLabel: $pct% ($mbDone / $mbTotal MB)…",
+                                    done = false,
+                                    ok = false,
+                                )
+                            )
+                        }
+                    }
+                    fos.flush()
+                }
+                if (received != offer.sizeBytes) {
+                    tmpFile.delete()
+                    sendReply(
+                        BridgeMessage.ApkPushStatus(
+                            id = offer.id,
+                            stage = "error",
+                            progressPct = 0,
+                            message = "Transferencia incompleta ($received / ${offer.sizeBytes} bytes). Vuelve a intentarlo.",
+                            done = true,
+                            ok = false,
+                        )
+                    )
+                    return
+                }
+                val digestHex = md.digest().joinToString("") { "%02x".format(it) }
+                if (offer.sha256.isNotBlank() && !digestHex.equals(offer.sha256, ignoreCase = true)) {
+                    tmpFile.delete()
+                    sendReply(
+                        BridgeMessage.ApkPushStatus(
+                            id = offer.id,
+                            stage = "error",
+                            progressPct = 0,
+                            message = "Verificación SHA-256 fallida en el coche. Vuelve a pulsar Actualizar.",
+                            done = true,
+                            ok = false,
+                        )
+                    )
+                    return
+                }
+                if (finalFile.exists()) finalFile.delete()
+                if (!tmpFile.renameTo(finalFile)) {
+                    tmpFile.copyTo(finalFile, overwrite = true)
+                    tmpFile.delete()
+                }
+                AppLog.i("[Companion] APK recibido al 100% por $sourceLabel (${finalFile.name}, $received bytes)")
+                val (ok, msg) = com.headqlink.unit.extended.OtaSelfUpdater.launchReceivedOtaApk(appContext, finalFile)
+                sendReply(
+                    BridgeMessage.ApkPushStatus(
+                        id = offer.id,
+                        stage = if (ok) "installer" else "permission",
+                        progressPct = 100,
+                        message = msg,
+                        done = true,
+                        ok = ok,
+                    )
+                )
+            } catch (e: Exception) {
+                runCatching { tmpFile.delete() }
+                sendReply(
+                    BridgeMessage.ApkPushStatus(
+                        id = offer.id,
+                        stage = "error",
+                        progressPct = 0,
+                        message = "Error al recibir APK en el coche: ${e.message}",
+                        done = true,
+                        ok = false,
+                    )
+                )
+            } finally {
+                runCatching { tcpServer?.close() }
+                runCatching { btServer?.close() }
+                doneLatch.countDown()
+            }
+        }
+
+        // Vía 1: TCP directo entrante desde el móvil (Wi-Fi Direct / Hotspot, ~35 MB/s)
+        if (tcpServer != null) {
+            thread(name = "ota-tcp-accept-${offer.id}", isDaemon = true) {
+                runCatching {
+                    val sock = tcpServer!!.accept()
+                    sock.soTimeout = 45_000
+                    sock.use { s ->
+                        val inp = s.getInputStream()
+                        val header = readHeaderLineAscii(inp)
+                        if (header == offer.id && claimed.compareAndSet(false, true)) {
+                            runCatching { btServer?.close() }
+                            finishWithStream("Wi-Fi directo", inp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Vía 2: Si tras 1.8 s no entró TCP directo y hay URLs HTTP del móvil (Hotspot), el coche descarga por HTTP
+        if (offer.httpUrls.isNotEmpty()) {
+            thread(name = "ota-http-pull-${offer.id}", isDaemon = true) {
+                runCatching {
+                    Thread.sleep(1_800L)
+                    if (claimed.get()) return@thread
+                    for (urlStr in offer.httpUrls) {
+                        if (claimed.get()) return@thread
+                        val conn = openWifiOrDefaultHttp(urlStr) ?: continue
+                        try {
+                            if (conn.responseCode in 200..299 && claimed.compareAndSet(false, true)) {
+                                runCatching { tcpServer?.close() }
+                                runCatching { btServer?.close() }
+                                conn.inputStream.use { inp ->
+                                    finishWithStream("Wi-Fi Hotspot", inp)
+                                }
+                                return@thread
+                            }
+                        } finally {
+                            runCatching { conn.disconnect() }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Vía 3: Respaldo por Bluetooth RFCOMM (si no hay Wi-Fi entre móvil y coche)
+        if (btServer != null) {
+            thread(name = "ota-bt-accept-${offer.id}", isDaemon = true) {
+                runCatching {
+                    val sock = btServer!!.accept()
+                    sock.use { s ->
+                        val inp = s.inputStream
+                        val header = readHeaderLineAscii(inp)
+                        if (header == offer.id && claimed.compareAndSet(false, true)) {
+                            runCatching { tcpServer?.close() }
+                            finishWithStream("Bluetooth", inp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Tiempo máximo total (por Bluetooth puede tardar ~3 min para 42 MB)
+        val finished = doneLatch.await(240, TimeUnit.SECONDS)
+        runCatching { tcpServer?.close() }
+        runCatching { btServer?.close() }
+        if (!finished && claimed.compareAndSet(false, true)) {
+            sendReply(
+                BridgeMessage.ApkPushStatus(
+                    id = offer.id,
+                    stage = "timeout",
+                    progressPct = 0,
+                    message = "Tiempo agotado esperando la conexión de datos con el coche.",
+                    done = true,
+                    ok = false,
+                )
+            )
+        }
+    }
+
+    private fun openWifiOrDefaultHttp(urlStr: String): java.net.HttpURLConnection? {
+        val url = runCatching { java.net.URL(urlStr) }.getOrNull() ?: return null
+        val cm = appContext.getSystemService(android.net.ConnectivityManager::class.java)
+        if (cm != null) {
+            for (net in cm.allNetworks) {
+                val caps = cm.getNetworkCapabilities(net) ?: continue
+                if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) {
+                    val conn = runCatching {
+                        (net.openConnection(url) as java.net.HttpURLConnection).apply {
+                            connectTimeout = 2_500
+                            readTimeout = 45_000
+                            instanceFollowRedirects = true
+                        }
+                    }.getOrNull() ?: continue
+                    if (runCatching { conn.responseCode in 200..299 }.getOrDefault(false)) {
+                        return conn
+                    }
+                    runCatching { conn.disconnect() }
+                }
+            }
+        }
+        return runCatching {
+            (url.openConnection() as java.net.HttpURLConnection).apply {
+                connectTimeout = 2_500
+                readTimeout = 45_000
+                instanceFollowRedirects = true
+            }
+        }.getOrNull()
+    }
+
+    private fun readHeaderLineAscii(inp: java.io.InputStream): String {
+        val sb = StringBuilder()
+        while (sb.length < 64) {
+            val b = inp.read()
+            if (b < 0 || b == '\n'.code) break
+            if (b != '\r'.code) sb.append(b.toChar())
+        }
+        return sb.toString().trim()
+    }
+
+    private fun sha256Hex(file: java.io.File): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        java.io.FileInputStream(file).use { fis ->
+            val buf = ByteArray(64 * 1024)
+            var r: Int
+            while (fis.read(buf).also { r = it } != -1) {
+                md.update(buf, 0, r)
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
     }
 
     private class PrefsTokenStore(ctx: Context) : TokenStore {

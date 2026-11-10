@@ -32,7 +32,13 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileInputStream
+import android.app.Activity
+import android.content.ContentValues
+import android.provider.MediaStore
+import java.io.BufferedOutputStream
 import java.io.FileOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -66,9 +72,37 @@ object OtaSelfUpdater {
         val appLabel: String,
         val packageName: String,
         val versionName: String,
+        val versionCode: Long = 0L,
         val sizeMb: Double,
         val sourceTag: String,
     )
+
+    /**
+     * Escanea los pendrives USB conectados y devuelve el paquete de Qonecta Unit (`com.tencent.qqmusiccar`)
+     * más reciente encontrado en el USB para poder instalarlo o actualizarlo con un solo toque desde Inicio.
+     */
+    fun findBestUsbUpdateCandidate(context: Context): DetectedApk? {
+        val all = scanForApks(context)
+        return all.firstOrNull { it.sourceTag.startsWith("🔌") && it.packageName == context.packageName }
+            ?: all.firstOrNull { it.sourceTag.startsWith("🔌") && it.file.name.contains("QonectaUnit", ignoreCase = true) }
+            ?: all.firstOrNull { it.sourceTag.startsWith("🔌") }
+    }
+
+    fun cleanupCarInternalDumpStorageAsync(context: Context) {
+        ioExecutor.execute {
+            val (deletedFiles, freedBytes) = cleanCarInternalDumpStorage(context)
+            if (deletedFiles > 0 && freedBytes > 512 * 1024L) {
+                val mb = freedBytes / (1024.0 * 1024.0)
+                uiHandler.post {
+                    Toast.makeText(
+                        context,
+                        String.format(Locale.getDefault(), "🧹 Liberados %.1f MB de volcados temporales en memoria del coche", mb),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+        }
+    }
 
     fun showDialog(
         context: Context,
@@ -76,18 +110,7 @@ object OtaSelfUpdater {
         onPickSystemFile: (() -> Unit)? = null,
     ): Dialog {
         QonectaTheme.ensureLoaded(context)
-        ioExecutor.execute {
-            val rescued = syncInternalDumpToUsbIfPresent(context)
-            if (rescued > 0) {
-                uiHandler.post {
-                    Toast.makeText(
-                        context,
-                        "✓ $rescued archivos Anti-OTA sincronizados automáticamente al Pendrive USB",
-                        Toast.LENGTH_LONG,
-                    ).show()
-                }
-            }
-        }
+        cleanupCarInternalDumpStorageAsync(context)
         val density = context.resources.displayMetrics.density
         fun dp(v: Int): Int = (v * density).toInt()
 
@@ -208,6 +231,26 @@ object OtaSelfUpdater {
         ) {
             openInstallPermissionSettings(context)
         }
+        val cleanStorageTopBtn = pillButton(
+            context,
+            "🧹 Liberar Memoria Coche",
+            QonectaTheme.surface,
+            QonectaTheme.amber,
+            QonectaTheme.amber,
+        ) {
+            ioExecutor.execute {
+                val (files, bytes) = cleanCarInternalDumpStorage(context)
+                val mb = bytes / (1024.0 * 1024.0)
+                uiHandler.post {
+                    Toast.makeText(
+                        context,
+                        String.format(Locale.getDefault(), "🧹 Memoria del coche liberada: %d archivos borrados (%.1f MB)", files, mb),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    renderCurrentTab()
+                }
+            }
+        }
         val usbPermBtn = pillButton(
             context,
             "🔌 Permiso Archivos/USB",
@@ -217,6 +260,7 @@ object OtaSelfUpdater {
         ) {
             openAllFilesPermissionSettings(context)
         }
+        subBar.addView(cleanStorageTopBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)).apply { rightMargin = dp(8) })
         subBar.addView(usbPermBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)).apply { rightMargin = dp(8) })
         subBar.addView(permBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)))
 
@@ -326,7 +370,7 @@ object OtaSelfUpdater {
                     if (found.isEmpty()) {
                         usbSubTv.text = "No se detectaron archivos .apk directos. Conecta un pendrive USB con el .apk en la raíz o pulsa «Explorar Pendrive USB»."
                         val emptyHint = TextView(context).apply {
-                            text = "💡 Consejo Anti-OTA:\nCopia «com.tencent.qqmusiccar_0.1.5-unit.apk» en la raíz de tu pendrive USB y conéctalo al puerto USB del C10. Qonecta Unit lo detectará aquí sin abrir Vivaldi."
+                            text = "💡 Consejo Anti-OTA:\nCopia «QonectaUnit_${com.andrerinas.openheadunit.BuildConfig.VERSION_NAME}.apk» en la raíz de tu pendrive USB y conéctalo al puerto USB del C10. Qonecta Unit lo detectará aquí sin abrir Vivaldi."
                             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                             setTextColor(QonectaTheme.dim)
                             setPadding(dp(12), dp(12), dp(12), dp(12))
@@ -491,6 +535,67 @@ object OtaSelfUpdater {
             ghBox,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(10)
+            },
+        )
+
+        // Bloque 4: Preparar / Probar Entrada SIN Vivaldi (Portal Cautivo + Ajustes Wi-Fi Nativos)
+        val captiveBox = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = roundedBox(QonectaTheme.bg, dp(14), dp(1), QonectaTheme.outline)
+        }
+        captiveBox.addView(TextView(context).apply {
+            text = "🚪 4. PREPARAR ENTRADA SIN VIVALDI (PORTAL CAUTIVO WI-FI + ARCHIVOS)"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+            setTextColor(QonectaTheme.accent)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        })
+        captiveBox.addView(TextView(context).apply {
+            text = "1️⃣ Abre los Ajustes Wi-Fi nativos de Android para guardar el Proxy Manual (IP de tu móvil · Puerto 8788) en la red Hotspot de tu móvil. Android lo recordará aunque desinstales Qonecta Unit.\n" +
+                "2️⃣ Al conectarse el coche al Hotspot del móvil, saltará sola la ventana «Iniciar sesión en la red Wi-Fi» (CaptivePortalLogin) sin abrir Vivaldi."
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setTextColor(QonectaTheme.dim)
+            setPadding(0, dp(4), 0, dp(8))
+        })
+        val captiveBtnsRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val wifiNativeBtn = pillButton(
+            context,
+            "📶 1. Ajustes Wi-Fi Nativos (Proxy)",
+            QonectaTheme.accent,
+            QonectaTheme.accent,
+            QonectaTheme.onAccent,
+        ) {
+            openNativeWifiProxySettings(context, netStatusTv)
+        }
+        val testCaptiveBtn = pillButton(
+            context,
+            "🚪 2. Probar Portal Cautivo",
+            QonectaTheme.surfaceTop,
+            QonectaTheme.accent,
+            QonectaTheme.accent,
+        ) {
+            triggerCaptivePortalSignIn(context, netStatusTv)
+        }
+        val openDocsUiBtn = pillButton(
+            context,
+            "📂 3. Abrir Archivos C10",
+            QonectaTheme.surfaceTop,
+            QonectaTheme.outline,
+            QonectaTheme.text,
+        ) {
+            openNativeFilesApp(context, netStatusTv)
+        }
+        captiveBtnsRow.addView(wifiNativeBtn, LinearLayout.LayoutParams(0, dp(40), 1.15f).apply { rightMargin = dp(6) })
+        captiveBtnsRow.addView(testCaptiveBtn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { rightMargin = dp(6) })
+        captiveBtnsRow.addView(openDocsUiBtn, LinearLayout.LayoutParams(0, dp(40), 0.9f))
+        captiveBox.addView(captiveBtnsRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        netCard.addView(
+            captiveBox,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(8)
             },
         )
 
@@ -743,8 +848,46 @@ object OtaSelfUpdater {
                 bottomMargin = dp(6)
             },
         )
-        leftCard.addView(
+        val pathBannerRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        pathBannerRow.addView(
             pathBannerTv,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = dp(6)
+            },
+        )
+        val copyWholeFolderBtn = pillButton(
+            context,
+            "📥 Copiar TODA esta carpeta al USB",
+            QonectaTheme.accent,
+            QonectaTheme.accent,
+            QonectaTheme.onAccent,
+        ) {
+            copyFileOrDirToUsbDump(context, currentDir, rightLogTv)
+        }
+        pathBannerRow.addView(
+            copyWholeFolderBtn,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)).apply {
+                rightMargin = dp(6)
+            },
+        )
+        val zipWholeFolderBtn = pillButton(
+            context,
+            "📦 ZIP carpeta → USB",
+            QonectaTheme.surfaceTop,
+            QonectaTheme.accent,
+            QonectaTheme.accent,
+        ) {
+            zipAndSaveFolderToUsb(context, currentDir, rightLogTv)
+        }
+        pathBannerRow.addView(
+            zipWholeFolderBtn,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)),
+        )
+        leftCard.addView(
+            pathBannerRow,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 bottomMargin = dp(6)
             },
@@ -764,24 +907,86 @@ object OtaSelfUpdater {
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         })
 
-        val targetDumpDir = resolveBestDumpDirectory(context)
-        rightCard.addView(TextView(context).apply {
-            text = "Carpeta de destino actual: ${targetDumpDir.absolutePath}"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        val usbDirsNow = resolveAllWritableUsbDirs(context)
+        val destStatusTv = TextView(context).apply {
+            text = if (usbDirsNow.isNotEmpty()) {
+                "Destino USB directo: ${usbDirsNow.first().absolutePath} (sin ocupar memoria del coche)"
+            } else {
+                "Modo directo a Pendrive USB (selector del sistema · 0 MB en memoria interna del coche)"
+            }
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             setTextColor(QonectaTheme.dim)
-            setPadding(0, dp(4), 0, dp(8))
-        })
+            setPadding(0, dp(3), 0, dp(6))
+        }
+        rightCard.addView(destStatusTv)
+
+        val cleanMemBtn = pillButton(
+            context,
+            "🧹 Liberar Memoria del Coche (Borrar volcados en /Download/Qonecta_C10_Dump)",
+            QonectaTheme.surface,
+            QonectaTheme.amber,
+            QonectaTheme.amber,
+        ) {
+            rightLogTv.text = "⏳ Limpiando volcados antiguos en la memoria interna del coche..."
+            ioExecutor.execute {
+                val (files, bytes) = cleanCarInternalDumpStorage(context)
+                val mb = bytes / (1024.0 * 1024.0)
+                uiHandler.post {
+                    val msg = String.format(
+                        Locale.getDefault(),
+                        "✓ Memoria interna del coche liberada:\n• Archivos temporales eliminados: %d\n• Espacio recuperado: %.2f MB\n• Carpetas limpiadas: /storage/emulated/10/Download/Qonecta_C10_Dump y cachés internas.",
+                        files,
+                        mb,
+                    )
+                    rightLogTv.text = msg
+                    Toast.makeText(context, String.format(Locale.getDefault(), "🧹 Liberados %.1f MB (%d archivos)", mb, files), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        rightCard.addView(cleanMemBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)).apply { bottomMargin = dp(6) })
 
         val dumpAllBtn = pillButton(
             context,
-            "⚡ Volcar Kit Anti-OTA al USB (Tienda C10, PackageInstaller, Whitelists XML y Paquetes)",
+            "⚡ 1. Extraer Kit Anti-OTA Ligero directo al Pendrive USB (Sin llenar memoria del coche)",
             QonectaTheme.accent,
             QonectaTheme.accent,
             QonectaTheme.onAccent,
         ) {
-            exportAntiOtaKitToUsb(context, rightLogTv)
+            exportAntiOtaKitToUsb(context, rightLogTv, promptUsbSavePicker = true)
         }
-        rightCard.addView(dumpAllBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
+        rightCard.addView(dumpAllBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)))
+
+        val saveZipUsbBtn = pillButton(
+            context,
+            "💾 2. Guardar solo Inventario + Whitelists XML en ZIP al USB (< 2 MB)",
+            QonectaTheme.surfaceTop,
+            QonectaTheme.accent,
+            QonectaTheme.accent,
+        ) {
+            exportAntiOtaKitToUsb(context, rightLogTv, promptUsbSavePicker = true, includeApks = false)
+        }
+        rightCard.addView(
+            saveZipUsbBtn,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)).apply {
+                topMargin = dp(6)
+            },
+        )
+
+        val wakeAutoKitBtn = pillButton(
+            context,
+            "🚀 3. Despertar / Abrir AutoKit oculto del C10 (cn.manstep.phonemirrorBox)",
+            0xFF2B1C3F.toInt(),
+            0xFFC084FC.toInt(),
+            0xFFE9D5FF.toInt(),
+        ) {
+            wakeAndInspectAutoKit(context, rightLogTv)
+        }
+        rightCard.addView(
+            wakeAutoKitBtn,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)).apply {
+                topMargin = dp(6)
+            },
+        )
 
         val logScroll = ScrollView(context).apply {
             isFillViewport = true
@@ -847,9 +1052,20 @@ object OtaSelfUpdater {
             .show()
     }
 
-    private fun resolveBestDumpDirectory(context: Context): File {
-        // 1. Si el usuario concedió MANAGE_EXTERNAL_STORAGE y la raíz del USB (/storage/XXXX-XXXX) es escribible directamente:
-        val usbRoots = ArrayList<File>()
+    private fun isDirectoryActuallyWritable(dir: File): Boolean {
+        return try {
+            if (!dir.exists() && !dir.mkdirs()) return false
+            val probe = File(dir, ".qonecta_probe_${System.nanoTime()}")
+            FileOutputStream(probe).use { it.write(1) }
+            probe.delete()
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun resolveAllWritableUsbDirs(context: Context): List<File> {
+        val candidates = LinkedHashSet<File>()
         try {
             val sm = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
             sm?.storageVolumes?.forEach { vol ->
@@ -859,200 +1075,354 @@ object OtaSelfUpdater {
                     } else {
                         runCatching { vol.javaClass.getMethod("getPathFile").invoke(vol) as? File }.getOrNull()
                     }
-                    if (dir != null && dir.exists() && dir.canWrite()) {
-                        usbRoots.add(dir)
+                    if (dir != null) {
+                        candidates.add(File(dir, "Qonecta_C10_Dump"))
+                        candidates.add(File(dir, "Android/data/${context.packageName}/files/Qonecta_C10_Dump"))
                     }
                 }
             }
         } catch (_: Throwable) {
         }
 
-        File("/storage").listFiles()?.forEach { child ->
-            if (child.isDirectory && child.name != "self" && child.name != "emulated" && child.canWrite()) {
-                usbRoots.add(child)
+        runCatching {
+            File("/storage").listFiles()?.forEach { child ->
+                if (child.isDirectory && child.name != "self" && child.name != "emulated") {
+                    candidates.add(File(child, "Qonecta_C10_Dump"))
+                    candidates.add(File(child, "Android/data/${context.packageName}/files/Qonecta_C10_Dump"))
+                }
             }
         }
 
-        if (usbRoots.isNotEmpty()) {
-            return File(usbRoots.first(), "Qonecta_C10_Dump").apply { mkdirs() }
-        }
-
-        // 2. Clave en Android 11 (API 30, Scoped Storage en Leapmotor C10):
-        // La raíz /storage/XXXX-XXXX tiene canWrite()==false para java.io.File sin SAF,
-        // PERO context.getExternalFilesDirs(null) devuelve /storage/XXXX-XXXX/Android/data/com.tencent.qqmusiccar/files
-        // en el pendrive USB, donde Android 11 SIEMPRE permite escritura directa de carpetas y APKs sin bloqueo.
-        try {
-            val extDirs = context.getExternalFilesDirs(null)
-            if (extDirs != null) {
-                for (dir in extDirs) {
-                    if (dir == null) continue
+        runCatching {
+            context.getExternalFilesDirs(null)?.forEach { dir ->
+                if (dir != null) {
                     val path = dir.absolutePath
                     val isRemovable = runCatching { Environment.isExternalStorageRemovable(dir) }.getOrDefault(false) ||
                         (!path.contains("/emulated/") && !path.startsWith("/sdcard"))
-                    if (isRemovable && (dir.exists() || dir.mkdirs()) && dir.canWrite()) {
-                        return File(dir, "Qonecta_C10_Dump").apply { mkdirs() }
+                    if (isRemovable) {
+                        candidates.add(File(dir, "Qonecta_C10_Dump"))
                     }
                 }
             }
-        } catch (_: Throwable) {
         }
 
-        // 3. Fallback a la carpeta Download interna del coche si no hay pendrive USB conectado
-        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            ?: context.getExternalFilesDir(null)
-            ?: context.filesDir
-        return File(base, "Qonecta_C10_Dump").apply { mkdirs() }
+        return candidates.filter { isDirectoryActuallyWritable(it) }
     }
 
     /**
-     * Si en una sesión anterior se volcó el Kit Anti-OTA a la memoria interna del coche
-     * (/storage/emulated/0/Download/Qonecta_C10_Dump) porque Android 11 bloqueó la raíz del USB,
-     * este método lo copia automáticamente al pendrive USB en cuanto está conectado.
+     * Limpia todos los volcados antiguos en la memoria interna del coche (/storage/emulated/10/Download/Qonecta_C10_Dump,
+     * externalFilesDir, filesDir y cacheDir) para recuperar gigabytes de almacenamiento interno y evitar bloqueos EACCES.
      */
+    fun cleanCarInternalDumpStorage(context: Context): Pair<Int, Long> {
+        var deletedFiles = 0
+        var freedBytes = 0L
+
+        fun deleteTree(node: File?) {
+            if (node == null || !node.exists()) return
+            if (node.isDirectory) {
+                node.listFiles()?.forEach { child -> deleteTree(child) }
+                runCatching { node.delete() }
+            } else {
+                val len = runCatching { node.length() }.getOrDefault(0L)
+                if (runCatching { node.delete() }.getOrDefault(false)) {
+                    deletedFiles++
+                    freedBytes += len
+                }
+            }
+        }
+
+        val internalDumpDirs = linkedSetOf<File>()
+        runCatching {
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.let {
+                internalDumpDirs.add(File(it, "Qonecta_C10_Dump"))
+            }
+        }
+        internalDumpDirs.add(File("/storage/emulated/10/Download/Qonecta_C10_Dump"))
+        internalDumpDirs.add(File("/storage/emulated/0/Download/Qonecta_C10_Dump"))
+        runCatching { context.getExternalFilesDir(null)?.let { internalDumpDirs.add(File(it, "Qonecta_C10_Dump")) } }
+        internalDumpDirs.add(File(context.filesDir, "Qonecta_C10_Dump"))
+        internalDumpDirs.add(File(context.cacheDir, "qonecta_usb_stage"))
+
+        internalDumpDirs.forEach { dir -> deleteTree(dir) }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            runCatching {
+                context.contentResolver.delete(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    "${MediaStore.Downloads.RELATIVE_PATH} LIKE ?",
+                    arrayOf("%Qonecta_C10_Dump%"),
+                )
+            }
+        }
+
+        return deletedFiles to freedBytes
+    }
+
+    private fun resolveBestDumpDirectory(context: Context): File {
+        // 1. Si hay un Pendrive USB con escritura directa por File, usarlo directamente.
+        val usbWritable = resolveAllWritableUsbDirs(context)
+        if (usbWritable.isNotEmpty()) {
+            return usbWritable.first()
+        }
+        // 2. NUNCA usar /storage/emulated/10/Download/Qonecta_C10_Dump como carpeta de trabajo persistente:
+        //    llena la memoria interna del coche y provoca EACCES al sobrescribir archivos de una instalación previa.
+        //    Usar siempre una carpeta temporal limpia en cacheDir que se autodestruye tras enviar el ZIP al USB.
+        return File(context.cacheDir, "qonecta_usb_stage").apply { mkdirs() }
+    }
+
     fun syncInternalDumpToUsbIfPresent(context: Context): Int {
-        return try {
-            val internalDump = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "Qonecta_C10_Dump",
-            )
-            if (!internalDump.exists() || !internalDump.isDirectory) return 0
-            val bestTarget = resolveBestDumpDirectory(context)
-            if (bestTarget.absolutePath == internalDump.absolutePath) return 0
-            var copied = 0
-            fun copyTree(src: File, dst: File) {
-                if (src.isDirectory) {
-                    dst.mkdirs()
-                    src.listFiles()?.forEach { child ->
-                        copyTree(child, File(dst, child.name))
+        return 0
+    }
+
+    private fun zipDirectory(sourceDir: File, outZipFile: File): Int {
+        var entries = 0
+        if (outZipFile.exists()) runCatching { outZipFile.delete() }
+        ZipOutputStream(BufferedOutputStream(FileOutputStream(outZipFile))).use { zos ->
+            fun addRecursive(node: File, relPath: String) {
+                if (node.absolutePath == outZipFile.absolutePath) return
+                if (node.isDirectory) {
+                    node.listFiles()?.forEach { child ->
+                        val childRel = if (relPath.isEmpty()) child.name else "$relPath/${child.name}"
+                        addRecursive(child, childRel)
                     }
-                } else if (src.isFile && src.canRead()) {
-                    dst.parentFile?.mkdirs()
-                    if (!dst.exists() || dst.length() != src.length()) {
-                        src.copyTo(dst, overwrite = true)
-                        copied++
+                } else if (node.isFile && node.canRead()) {
+                    val entry = ZipEntry(relPath)
+                    entry.time = node.lastModified()
+                    zos.putNextEntry(entry)
+                    FileInputStream(node).use { input -> input.copyTo(zos) }
+                    zos.closeEntry()
+                    entries++
+                }
+            }
+            addRecursive(sourceDir, "")
+        }
+        return entries
+    }
+
+    @Suppress("DEPRECATION")
+    class UsbZipSaveFragment : android.app.Fragment() {
+        var sourceFileToSave: File? = null
+        var deleteSourceAfterSave: Boolean = true
+        var statusCallback: ((Boolean, String) -> Unit)? = null
+
+        fun launchSavePicker(fileName: String, mimeType: String) {
+            try {
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = mimeType
+                    putExtra(Intent.EXTRA_TITLE, fileName)
+                }
+                startActivityForResult(intent, 9401)
+            } catch (e: Throwable) {
+                statusCallback?.invoke(false, "El selector de archivos del coche no está disponible: ${e.message}")
+            }
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+            super.onActivityResult(requestCode, resultCode, data)
+            if (requestCode != 9401) return
+            val src = sourceFileToSave
+            val uri = data?.data
+            if (resultCode != Activity.RESULT_OK || uri == null || src == null || !src.exists()) {
+                return
+            }
+            val act = activity ?: return
+            ioExecutor.execute {
+                try {
+                    act.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                        FileInputStream(src).use { input ->
+                            input.copyTo(out)
+                        }
+                    } ?: throw IllegalStateException("No se pudo abrir el destino seleccionado")
+                    val mb = src.length() / (1024.0 * 1024.0)
+                    if (deleteSourceAfterSave && src.absolutePath.contains("/cache/")) {
+                        runCatching { src.delete() }
+                    }
+                    uiHandler.post {
+                        statusCallback?.invoke(
+                            true,
+                            "✓ Guardado directamente en tu Pendrive USB (${String.format(Locale.US, "%.2f MB", mb)}) y caché temporal del coche liberada.",
+                        )
+                    }
+                } catch (e: Throwable) {
+                    uiHandler.post {
+                        statusCallback?.invoke(false, "⚠️ Error escribiendo en el USB seleccionado: ${e.message}")
                     }
                 }
             }
-            copyTree(internalDump, bestTarget)
-            copied
-        } catch (_: Throwable) {
-            0
+        }
+    }
+
+    private fun promptSaveFileToUsbViaSystemPicker(
+        context: Context,
+        sourceFile: File,
+        mimeType: String,
+        logTv: TextView,
+        deleteAfterSave: Boolean = true,
+    ) {
+        val act = context as? Activity
+        if (act == null) {
+            Toast.makeText(context, "Archivo listo: ${sourceFile.name}", Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            val fm = act.fragmentManager
+            val tag = "qonecta_usb_zip_save_frag"
+            var frag = fm.findFragmentByTag(tag) as? UsbZipSaveFragment
+            if (frag == null) {
+                frag = UsbZipSaveFragment()
+                fm.beginTransaction().add(frag, tag).commitAllowingStateLoss()
+                fm.executePendingTransactions()
+            }
+            frag.sourceFileToSave = sourceFile
+            frag.deleteSourceAfterSave = deleteAfterSave
+            frag.statusCallback = { _, msg ->
+                logTv.text = "${logTv.text}\n\n$msg"
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            }
+            frag.launchSavePicker(sourceFile.name, mimeType)
+        } catch (e: Throwable) {
+            logTv.text = "${logTv.text}\n\n⚠️ No se pudo abrir el selector del sistema: ${e.message}"
+        }
+    }
+
+    private fun zipAndSaveFolderToUsb(context: Context, sourceDir: File, logTv: TextView) {
+        val stageDir = File(context.cacheDir, "qonecta_usb_stage").apply { mkdirs() }
+        val safeName = sourceDir.absolutePath.trim('/').replace('/', '_').ifBlank { "root" }
+        val outZip = File(stageDir, "C10_${safeName}.zip")
+        logTv.text = "⏳ Empaquetando carpeta «${sourceDir.absolutePath}» para guardar en el Pendrive USB..."
+        ioExecutor.execute {
+            try {
+                if (outZip.exists()) outZip.delete()
+                val count = zipDirectory(sourceDir, outZip)
+                val mb = outZip.length() / (1024.0 * 1024.0)
+                uiHandler.post {
+                    logTv.text = "✓ Carpeta empaquetada en ZIP temporal (${String.format(Locale.US, "%.2f MB", mb)}, $count archivos).\n" +
+                        "Elige tu Pendrive USB en la ventana del sistema para guardarlo sin ocupar memoria del coche."
+                    promptSaveFileToUsbViaSystemPicker(context, outZip, "application/zip", logTv, deleteAfterSave = true)
+                }
+            } catch (e: Exception) {
+                uiHandler.post {
+                    logTv.text = "⚠️ Error empaquetando ${sourceDir.absolutePath}: ${e.message}"
+                }
+            }
         }
     }
 
     private fun copyFileOrDirToUsbDump(context: Context, source: File, logTv: TextView) {
-        val destRoot = resolveBestDumpDirectory(context)
-        logTv.text = "⏳ Copiando «${source.name}» a ${destRoot.absolutePath}..."
-        ioExecutor.execute {
-            try {
-                var copiedCount = 0
-                var copiedBytes = 0L
-                fun copyRecursive(src: File, dst: File) {
-                    if (src.isDirectory) {
-                        dst.mkdirs()
-                        src.listFiles()?.forEach { child ->
-                            copyRecursive(child, File(dst, child.name))
-                        }
-                    } else if (src.isFile && src.canRead()) {
-                        dst.parentFile?.mkdirs()
-                        FileInputStream(src).use { input ->
-                            FileOutputStream(dst).use { output ->
-                                copiedBytes += input.copyTo(output)
-                            }
-                        }
-                        copiedCount++
+        if (source.isDirectory) {
+            zipAndSaveFolderToUsb(context, source, logTv)
+            return
+        }
+        val usbWritable = resolveAllWritableUsbDirs(context)
+        if (usbWritable.isNotEmpty()) {
+            val target = File(usbWritable.first(), source.name)
+            ioExecutor.execute {
+                try {
+                    source.copyTo(target, overwrite = true)
+                    uiHandler.post {
+                        logTv.text = "✓ Copiado directo al Pendrive USB: ${target.absolutePath}"
+                        Toast.makeText(context, "✓ Copiado al USB: ${target.name}", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    uiHandler.post {
+                        promptSaveFileToUsbViaSystemPicker(context, source, "application/octet-stream", logTv, deleteAfterSave = false)
                     }
                 }
-                val target = File(destRoot, source.name)
-                copyRecursive(source, target)
-                val mb = copiedBytes / (1024.0 * 1024.0)
-                uiHandler.post {
-                    logTv.text = "✓ Copiado completado:\n" +
-                        "• Origen: ${source.absolutePath}\n" +
-                        "• Destino: ${target.absolutePath}\n" +
-                        "• Archivos copiados: $copiedCount (${String.format(Locale.getDefault(), "%.2f MB", mb)})"
-                    Toast.makeText(context, "Copiado a ${target.absolutePath}", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                uiHandler.post {
-                    logTv.text = "⚠️ Error al copiar ${source.name}: ${e.message}"
-                }
             }
+        } else {
+            promptSaveFileToUsbViaSystemPicker(context, source, "application/octet-stream", logTv, deleteAfterSave = false)
         }
     }
 
-    private fun exportAntiOtaKitToUsb(context: Context, logTv: TextView) {
-        val destRoot = resolveBestDumpDirectory(context)
-        logTv.text = "⏳ Extrayendo Kit Anti-OTA y MITM del Leapmotor C10 en:\n${destRoot.absolutePath} ..."
+    private fun exportAntiOtaKitToUsb(
+        context: Context,
+        logTv: TextView,
+        promptUsbSavePicker: Boolean = true,
+        includeApks: Boolean = true,
+    ) {
+        logTv.text = "⏳ 1/2 Limpiando volcados antiguos en memoria del coche y preparando Kit Anti-OTA ligero para el Pendrive USB..."
         ioExecutor.execute {
             val sb = StringBuilder()
             val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+            val (cleanedFiles, freedBytes) = cleanCarInternalDumpStorage(context)
+            val stageRoot = File(context.cacheDir, "qonecta_usb_stage").apply {
+                deleteRecursively()
+                mkdirs()
+            }
+
             sb.appendLine("=== VOLCADO KIT ANTI-OTA Y MITM · QONECTA UNIT ($stamp) ===")
-            sb.appendLine("Carpeta destino: ${destRoot.absolutePath}")
-            sb.appendLine()
+            if (cleanedFiles > 0) {
+                sb.appendLine(
+                    String.format(
+                        Locale.US,
+                        "🧹 Memoria interna del coche liberada automáticamente: %d archivos antiguos eliminados (%.1f MB recuperados)",
+                        cleanedFiles,
+                        freedBytes / (1024.0 * 1024.0),
+                    ),
+                )
+            }
 
             try {
-                // 1. Volcar build.prop y archivos XML de configuración / permisos / sysconfig
-                val sysCfgOut = File(destRoot, "1_system_configs").apply { mkdirs() }
+                // 1. Volcar únicamente archivos ligeros de permisos / whitelists XML y build.prop (< 256 KB)
+                val sysCfgOut = File(stageRoot, "1_system_configs").apply { mkdirs() }
                 var xmlCount = 0
                 listOf(
-                    File("/system/build.prop"),
-                    File("/vendor/build.prop"),
-                    File("/system/etc/hosts"),
-                ).forEach { f ->
+                    File("/system/build.prop") to "system_build.prop",
+                    File("/vendor/build.prop") to "vendor_build.prop",
+                    File("/system/etc/hosts") to "system_hosts",
+                ).forEach { (f, outName) ->
                     if (f.exists() && f.canRead()) {
                         runCatching {
-                            f.copyTo(File(sysCfgOut, f.name), overwrite = true)
+                            f.copyTo(File(sysCfgOut, outName), overwrite = true)
                             xmlCount++
                         }
                     }
                 }
-                listOf(
-                    File("/system/etc/permissions"),
-                    File("/system/etc/sysconfig"),
-                    File("/vendor/etc/permissions"),
-                    File("/product/etc/permissions"),
-                ).forEach { dir ->
-                    if (dir.exists() && dir.canRead()) {
-                        val subOut = File(sysCfgOut, "${dir.parentFile?.name}_${dir.name}").apply { mkdirs() }
-                        dir.listFiles()?.forEach { xf ->
-                            if (xf.isFile && xf.canRead()) {
+                fun copyXmlAndConfOnly(srcDir: File, dstDir: File) {
+                    if (!srcDir.exists() || !srcDir.canRead()) return
+                    dstDir.mkdirs()
+                    srcDir.listFiles()?.forEach { child ->
+                        if (child.isDirectory && child.canRead()) {
+                            copyXmlAndConfOnly(child, File(dstDir, child.name))
+                        } else if (child.isFile && child.canRead() && child.length() <= 256 * 1024L) {
+                            val nameLc = child.name.lowercase(Locale.ROOT)
+                            if (nameLc.endsWith(".xml") || nameLc.endsWith(".prop") || nameLc.endsWith(".conf") || nameLc.endsWith(".json")) {
                                 runCatching {
-                                    xf.copyTo(File(subOut, xf.name), overwrite = true)
+                                    child.copyTo(File(dstDir, child.name), overwrite = true)
                                     xmlCount++
                                 }
                             }
                         }
                     }
                 }
-                sb.appendLine("✓ [1/3] Archivos XML de permisos/whitelists y build.prop extraídos: $xmlCount")
+                listOf(
+                    File("/system/etc/permissions") to "system_permissions",
+                    File("/system/etc/sysconfig") to "system_sysconfig",
+                    File("/vendor/etc/permissions") to "vendor_permissions",
+                    File("/product/etc/permissions") to "product_permissions",
+                ).forEach { (dir, label) ->
+                    copyXmlAndConfOnly(dir, File(sysCfgOut, label))
+                }
+                sb.appendLine("✓ [1/3] Whitelists XML y permisos extraídos: $xmlCount archivos ligeros (< 1 MB)")
 
-                // 2. Volcar APKs clave del sistema (Tienda Leapmotor, PackageInstaller, CarControl, AutoSdkServer, Vivaldi, etc.)
-                val apksOut = File(destRoot, "2_c10_key_apks").apply { mkdirs() }
+                // 2. Inventario completo de paquetes + solo los APKs esenciales de Tienda/Instalador (< 45 MB por APK)
                 val pm = context.packageManager
                 @Suppress("DEPRECATION")
                 val installed = pm.getInstalledPackages(PackageManager.GET_PERMISSIONS)
                 var dumpedApks = 0
-                val keywords = listOf(
-                    "leapmotor",
-                    "leapmoto",
-                    "faa",
-                    "appstore",
-                    "appcenter",
-                    "market",
-                    "packageinstaller",
-                    "documentsui",
-                    "vivaldi",
-                    "autosdk",
-                    "carcontrol",
-                    "forvia",
-                    "manstep",
-                    "neusoft",
-                    "ota",
-                    "update",
-                    "iflytek",
-                    "qqmusiccar",
+                val essentialApkPackages = setOf(
+                    "com.faa.leapmoto.appstore",
+                    "com.leapmotor.appcenter",
+                    "com.android.packageinstaller",
+                    "com.leapmotor.systemupdate",
+                    "com.android.documentsui",
+                    "com.leapmotor.autosdk.server",
+                    "cn.manstep.phonemirrorBox",
                 )
+                val apksOut = File(stageRoot, "2_c10_key_apks")
+                if (includeApks) apksOut.mkdirs()
 
                 val reportTxt = StringBuilder()
                 reportTxt.appendLine("=== INVENTARIO DE PAQUETES DEL COCHE C10 (PARA WHITELIST Y MITM) ===")
@@ -1078,14 +1448,12 @@ object OtaSelfUpdater {
                         ),
                     )
 
-                    val matchesKeyword = keywords.any { kw ->
-                        pName.contains(kw, ignoreCase = true) || srcPath.contains(kw, ignoreCase = true)
-                    }
-                    if ((matchesKeyword || canInstallPkgs) && srcPath.isNotBlank() && pName != context.packageName) {
+                    if (includeApks && pName in essentialApkPackages && srcPath.isNotBlank()) {
                         val srcFile = File(srcPath)
-                        if (srcFile.exists() && srcFile.canRead()) {
+                        if (srcFile.exists() && srcFile.canRead() && srcFile.length() <= 45L * 1024L * 1024L) {
                             runCatching {
                                 val outApk = File(apksOut, "${pName}.apk")
+                                if (outApk.exists()) outApk.delete()
                                 srcFile.copyTo(outApk, overwrite = true)
                                 dumpedApks++
                             }
@@ -1093,16 +1461,37 @@ object OtaSelfUpdater {
                     }
                 }
 
-                val reportFile = File(destRoot, "3_INVENTARIO_PAQUETES_Y_MITM_C10.txt")
+                val reportFile = File(stageRoot, "3_INVENTARIO_PAQUETES_Y_MITM_C10.txt")
+                if (reportFile.exists()) reportFile.delete()
                 reportFile.writeText(reportTxt.toString(), Charsets.UTF_8)
+                sb.appendLine("✓ [2/3] Inventario completo (${installed.size} paquetes) + $dumpedApks APKs esenciales de Tienda/Instalador listos")
 
-                // Si antes había archivos en Download/Qonecta_C10_Dump, sincronizarlos también
-                syncInternalDumpToUsbIfPresent(context)
+                // 3. Empaquetar en un único archivo ZIP y borrar de inmediato las carpetas descomprimidas
+                val zipFile = File(context.cacheDir, "Qonecta_C10_AntiOTA_Kit.zip")
+                if (zipFile.exists()) zipFile.delete()
+                val zippedCount = runCatching { zipDirectory(stageRoot, zipFile) }.getOrDefault(0)
+                // Borrar la carpeta temporal descomprimida inmediatamente para no ocupar espacio
+                runCatching { stageRoot.deleteRecursively() }
 
-                sb.appendLine("✓ [2/3] APKs estratégicos extraídos (Tienda/Instalador/Leapmotor/Apps con permiso instalar): $dumpedApks")
-                sb.appendLine("✓ [3/3] Informe completo guardado en: ${reportFile.name} (${installed.size} paquetes analizados)")
+                val zipMb = zipFile.length() / (1024.0 * 1024.0)
+                sb.appendLine("✓ [3/3] ZIP compacto listo: ${zipFile.name} ($zippedCount archivos, ${String.format(Locale.US, "%.2f MB", zipMb)})")
+
+                val usbDirs = resolveAllWritableUsbDirs(context)
+                var copiedDirectToUsb = false
+                if (usbDirs.isNotEmpty()) {
+                    runCatching {
+                        val targetZip = File(usbDirs.first(), zipFile.name)
+                        zipFile.copyTo(targetZip, overwrite = true)
+                        copiedDirectToUsb = true
+                        sb.appendLine("✓ Guardado directamente en el Pendrive USB: ${targetZip.absolutePath}")
+                    }
+                }
+                if (copiedDirectToUsb && !promptUsbSavePicker) {
+                    runCatching { zipFile.delete() }
+                }
+
                 sb.appendLine()
-                sb.appendLine(" Paquetes en este sistema con permiso REQUEST_INSTALL_PACKAGES (capaces de instalar APKs):")
+                sb.appendLine("📦 Paquetes del C10 con permiso REQUEST_INSTALL_PACKAGES (capaces de instalar APKs):")
                 installed.filter { pkg ->
                     pkg.requestedPermissions?.any { it == "android.permission.REQUEST_INSTALL_PACKAGES" } == true
                 }.forEach { pkg ->
@@ -1111,28 +1500,27 @@ object OtaSelfUpdater {
 
                 uiHandler.post {
                     logTv.text = sb.toString()
-                    Toast.makeText(context, "Kit Anti-OTA volcado en ${destRoot.absolutePath}", Toast.LENGTH_LONG).show()
+                    if (promptUsbSavePicker && zipFile.exists()) {
+                        promptSaveFileToUsbViaSystemPicker(context, zipFile, "application/zip", logTv, deleteAfterSave = true)
+                    } else {
+                        Toast.makeText(context, "✓ Kit Anti-OTA listo (${String.format(Locale.US, "%.1f MB", zipMb)})", Toast.LENGTH_LONG).show()
+                    }
                 }
             } catch (e: Exception) {
+                runCatching { stageRoot.deleteRecursively() }
                 uiHandler.post {
                     logTv.text = "⚠️ Error durante el volcado: ${e.message}\n\n$sb"
                 }
             }
         }
     }
-
-    /**
-     * Genera la sección completa Anti-OTA / MITM para incluir directamente dentro de DiAuto-report-*.txt
-     * (que se guarda en la raíz del pendrive USB mediante Storage Access Framework) y además sincroniza
-     * cualquier volcado previo al directorio escribible del pendrive USB.
-     */
     fun buildDiagnosticAntiOtaSection(context: Context): String {
         val sb = StringBuilder()
         try {
-            val synced = syncInternalDumpToUsbIfPresent(context)
+            val (cleanedFiles, freedBytes) = cleanCarInternalDumpStorage(context)
             val bestDir = resolveBestDumpDirectory(context)
             sb.appendLine("=== QONECTA UNIT · INVENTARIO ANTI-OTA, WHITELISTS Y PAQUETES C10 ===")
-            sb.appendLine("Directorio USB activo para volcados APK/XML: ${bestDir.absolutePath} (sincronizados desde memoria interna=$synced)")
+            sb.appendLine("Directorio temporal/USB: ${bestDir.absolutePath} (archivos temporales limpiados=$cleanedFiles, liberados=${freedBytes / 1024} KB)")
 
             val pm = context.packageManager
             @Suppress("DEPRECATION")
@@ -1174,10 +1562,182 @@ object OtaSelfUpdater {
                     sb.appendLine("  [${dir.absolutePath}] (${files.size} archivos): ${files.joinToString(", ")}")
                 }
             }
+
+             sb.appendLine()
+            sb.appendLine("=== INSPECCIÓN DE COMPONENTES DE SISTEMA Y CÁMARAS C10 ===")
+            listOf(
+                "cn.manstep.phonemirrorBox",
+                "com.faa.leapmoto.appstore",
+                "com.android.packageinstaller",
+                "com.leapmotor.cameraaround",
+                "com.leapmotor.driverecord",
+                "com.leapmotor.facevideo",
+                "com.android.camera2",
+            ).forEach { targetPkg ->
+                sb.appendLine(inspectPackageAndDexStrings(context, targetPkg, parseDexBytes = false))
+            }
+            sb.appendLine()
+            sb.appendLine("=== SONDAS DE CÁMARAS CAMERA2, V4L2 Y SERVICIOS AVM/DVR/DMS ===")
+            runCatching {
+                sb.appendLine(com.headqlink.unit.probe.CarProbe.describeCameras(context))
+            }.onFailure {
+                sb.appendLine("Error en sonda de cámaras: ${it.message}")
+            }
         } catch (e: Throwable) {
             sb.appendLine("Error generando sección Anti-OTA: ${e.message}")
         }
         return sb.toString()
+    }
+
+    fun wakeAndInspectAutoKit(context: Context, logTv: TextView) {
+        logTv.text = "⏳ Analizando y despertando AutoKit oculto del C10 (cn.manstep.phonemirrorBox)..."
+        ioExecutor.execute {
+            val report = StringBuilder()
+            report.appendLine("=== DESPERTADOR E INSPECTOR AUTOKIT (cn.manstep.phonemirrorBox) ===")
+            val pm = context.packageManager
+            val targetPkg = "cn.manstep.phonemirrorBox"
+            var launchedSomething = false
+            try {
+                @Suppress("DEPRECATION")
+                val pkgInfo = pm.getPackageInfo(
+                    targetPkg,
+                    PackageManager.GET_ACTIVITIES or PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS or PackageManager.GET_PERMISSIONS,
+                )
+                report.appendLine("✓ Paquete encontrado en el C10: ${pkgInfo.packageName} (v${pkgInfo.versionName})")
+                report.appendLine("✓ Ruta APK en firmware: ${pkgInfo.applicationInfo?.sourceDir}")
+
+                val activities = pkgInfo.activities?.mapNotNull { it.name }.orEmpty()
+                val services = pkgInfo.services?.mapNotNull { it.name }.orEmpty()
+                val receivers = pkgInfo.receivers?.mapNotNull { it.name }.orEmpty()
+                report.appendLine("• Activities (${activities.size}): ${activities.joinToString(", ")}")
+                report.appendLine("• Services (${services.size}): ${services.joinToString(", ")}")
+                report.appendLine("• Receivers (${receivers.size}): ${receivers.joinToString(", ")}")
+
+                uiHandler.post {
+                    // 1. Intent estándar de lanzamiento
+                    val launchIntent = pm.getLaunchIntentForPackage(targetPkg)
+                    if (launchIntent != null) {
+                        runCatching {
+                            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(launchIntent)
+                            launchedSomething = true
+                            report.appendLine("🚀 Lanzado getLaunchIntentForPackage($targetPkg)")
+                        }
+                    }
+                    // 2. Probar cada Activity declarada en AutoKit.apk
+                    if (!launchedSomething) {
+                        for (actName in activities) {
+                            val ok = runCatching {
+                                val explicit = Intent().apply {
+                                    setClassName(targetPkg, actName)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(explicit)
+                                true
+                            }.getOrDefault(false)
+                            if (ok) {
+                                launchedSomething = true
+                                report.appendLine("🚀 Activity despertada directamente: $actName")
+                                break
+                            }
+                        }
+                    }
+                    // 3. Arrancar servicios y enviar broadcasts de despertar a sus Receivers
+                    for (srvName in services) {
+                        runCatching {
+                            val srvIntent = Intent().setClassName(targetPkg, srvName)
+                            context.startService(srvIntent)
+                            report.appendLine("⚡ Servicio iniciado: $srvName")
+                        }
+                    }
+                    for (rcvName in receivers) {
+                        runCatching {
+                            val bIntent = Intent("cn.manstep.phonemirrorBox.AUTO_BOX_WAKE").setClassName(targetPkg, rcvName)
+                            context.sendBroadcast(bIntent)
+                        }
+                    }
+                }
+                report.appendLine()
+                report.appendLine(inspectPackageAndDexStrings(context, targetPkg))
+            } catch (e: Throwable) {
+                report.appendLine("⚠️ No se pudo abrir $targetPkg: ${e.message}")
+            }
+            uiHandler.post {
+                logTv.text = report.toString()
+                Toast.makeText(
+                    context,
+                    if (launchedSomething) "🚀 AutoKit despertado en pantalla" else "ℹ️ Informe de AutoKit generado en pantalla y enviado al móvil",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
+    private fun inspectPackageAndDexStrings(context: Context, packageName: String, parseDexBytes: Boolean = true): String {
+        val sb = StringBuilder()
+        try {
+            val pm = context.packageManager
+            @Suppress("DEPRECATION")
+            val pkgInfo = pm.getPackageInfo(
+                packageName,
+                PackageManager.GET_ACTIVITIES or PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS or PackageManager.GET_PROVIDERS or PackageManager.GET_PERMISSIONS or PackageManager.GET_META_DATA,
+            ) ?: return "[$packageName no instalado]"
+            val srcDir = pkgInfo.applicationInfo?.sourceDir.orEmpty()
+            sb.appendLine("--- PAQUETE: $packageName (v${pkgInfo.versionName ?: "?"}) | path=$srcDir ---")
+            pkgInfo.activities?.forEach { sb.appendLine("  [Activity] ${it.name} (exported=${it.exported}, perm=${it.permission})") }
+            pkgInfo.services?.forEach { sb.appendLine("  [Service]  ${it.name} (exported=${it.exported}, perm=${it.permission})") }
+            pkgInfo.receivers?.forEach { sb.appendLine("  [Receiver] ${it.name} (exported=${it.exported}, perm=${it.permission})") }
+            pkgInfo.providers?.forEach { sb.appendLine("  [Provider] ${it.name} (auth=${it.authority}, exported=${it.exported})") }
+
+            val apkFile = File(srcDir)
+            if (parseDexBytes && apkFile.exists() && apkFile.canRead()) {
+                val matchedStrings = LinkedHashSet<String>()
+                java.util.zip.ZipFile(apkFile).use { zip ->
+                    val entries = zip.entries()
+                    while (entries.hasMoreElements()) {
+                        val entry = entries.nextElement()
+                        if (entry.name.endsWith(".dex")) {
+                            zip.getInputStream(entry).use { input ->
+                                val bytes = input.readBytes()
+                                extractInterestingAsciiStrings(bytes, matchedStrings)
+                            }
+                        }
+                    }
+                }
+                sb.appendLine("  [Cadenas DEX clave en $packageName (${matchedStrings.size})]:")
+                matchedStrings.take(180).forEach { s ->
+                    sb.appendLine("    • $s")
+                }
+            }
+        } catch (e: Throwable) {
+            sb.appendLine("  [No disponible $packageName: ${e.message}]")
+        }
+        return sb.toString()
+    }
+
+    private fun extractInterestingAsciiStrings(bytes: ByteArray, out: MutableSet<String>) {
+        val keywords = listOf(
+            "http://", "https://", "vivaldi", "leapmoto", "appstore", "whitelist",
+            "install", "pm install", "packageinstaller", "autokit", "manstep",
+            "192.168.", "127.0.0.1", "adb", "5555", "socket", "mirror", "ota",
+        )
+        val cur = StringBuilder()
+        for (b in bytes) {
+            val c = b.toInt() and 0xFF
+            if (c in 32..126) {
+                if (cur.length < 220) cur.append(c.toChar())
+            } else {
+                if (cur.length in 7..200) {
+                    val s = cur.toString()
+                    val low = s.lowercase(Locale.US)
+                    if (keywords.any { low.contains(it) } && !low.startsWith("android.support.") && !low.startsWith("androidx.")) {
+                        out.add(s)
+                        if (out.size >= 220) return
+                    }
+                }
+                cur.setLength(0)
+            }
+        }
     }
 
     fun installFromContentUri(context: Context, uri: Uri) {
@@ -1199,6 +1759,85 @@ object OtaSelfUpdater {
                     Toast.makeText(context, "Error al abrir el APK: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
+        }
+    }
+
+    /**
+     * Lanza en la pantalla del coche el instalador del sistema para un APK recibido en 1 toque
+     * desde Qonecta Unit Companion, usando la Activity visible o el trampolín de superposición
+     * para evitar bloqueos de Android 11 en segundo plano.
+     */
+    fun launchReceivedOtaApk(context: Context, apkFile: File): Pair<Boolean, String> {
+        val appCtx = context.applicationContext
+        if (!canRequestInstall(appCtx)) {
+            uiHandler.post {
+                Toast.makeText(
+                    appCtx,
+                    "📲 Actualización recibida desde tu móvil. Activa «Permitir desde esta fuente» y vuelve a pulsar en Companion.",
+                    Toast.LENGTH_LONG,
+                ).show()
+                startActivityFromAnyContext(
+                    appCtx,
+                    Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:${appCtx.packageName}"),
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+            return false to "APK ya guardado en el coche ✓. Activa en la pantalla del coche «Permitir desde esta fuente» y vuelve a tocar Actualizar en tu móvil."
+        }
+
+        uiHandler.post {
+            Toast.makeText(
+                appCtx,
+                "📲 Actualización recibida desde Qonecta Companion. Pulsa «Instalar / Actualizar».",
+                Toast.LENGTH_LONG,
+            ).show()
+            val targetCtx: Context = com.andrerinas.openheadunit.App.topActivity ?: appCtx
+            installApkFile(targetCtx, apkFile)
+        }
+        return true to "✅ Instalador abierto en la pantalla del coche. Toca «Actualizar / Instalar» en el Leapmotor C10."
+    }
+
+    private fun startActivityFromAnyContext(context: Context, intent: Intent) {
+        val visibleAct = com.andrerinas.openheadunit.App.topActivity
+        if (visibleAct != null) {
+            runCatching {
+                visibleAct.startActivity(intent)
+                return
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(context)) {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
+            if (wm != null) {
+                val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                }
+                val params = android.view.WindowManager.LayoutParams(
+                    0, 0, overlayType,
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                    android.graphics.PixelFormat.TRANSLUCENT,
+                )
+                val dummy = View(context)
+                try {
+                    wm.addView(dummy, params)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                    return
+                } catch (_: Throwable) {
+                } finally {
+                    runCatching { wm.removeView(dummy) }
+                }
+            }
+        }
+        runCatching {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
         }
     }
 
@@ -1234,12 +1873,32 @@ object OtaSelfUpdater {
                     stagedFile,
                 )
                 uiHandler.post {
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                    @Suppress("DEPRECATION")
+                    val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
                         setDataAndType(apkUri, "application/vnd.android.package-archive")
+                        putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                        putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                        putExtra(Intent.EXTRA_INSTALLER_PACKAGE_NAME, "com.vivaldi.browser")
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        if (context !is Activity) {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
                     }
-                    context.startActivity(intent)
+                    try {
+                        if (context is Activity) {
+                            context.startActivityForResult(intent, 9101)
+                        } else {
+                            startActivityFromAnyContext(context, intent)
+                        }
+                    } catch (_: Exception) {
+                        val fallback = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(apkUri, "application/vnd.android.package-archive")
+                            putExtra(Intent.EXTRA_INSTALLER_PACKAGE_NAME, "com.vivaldi.browser")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivityFromAnyContext(context, fallback)
+                    }
                 }
             } catch (e: Exception) {
                 uiHandler.post {
@@ -1487,12 +2146,19 @@ object OtaSelfUpdater {
                 var appLabel = f.nameWithoutExtension
                 var pkgName = "APK"
                 var verName = "?"
+                var verCode = 0L
                 try {
                     @Suppress("DEPRECATION")
                     val info = pm.getPackageArchiveInfo(f.absolutePath, PackageManager.GET_META_DATA)
                     if (info != null) {
                         if (!info.packageName.isNullOrBlank()) pkgName = info.packageName
                         if (!info.versionName.isNullOrBlank()) verName = info.versionName!!
+                        verCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            info.longVersionCode
+                        } else {
+                            @Suppress("DEPRECATION")
+                            info.versionCode.toLong()
+                        }
                         info.applicationInfo?.apply {
                             sourceDir = f.absolutePath
                             publicSourceDir = f.absolutePath
@@ -1511,6 +2177,7 @@ object OtaSelfUpdater {
                         appLabel = appLabel,
                         packageName = pkgName,
                         versionName = verName,
+                        versionCode = verCode,
                         sizeMb = f.length() / (1024.0 * 1024.0),
                         sourceTag = sourceTag,
                     ),
@@ -1607,5 +2274,72 @@ object OtaSelfUpdater {
             isFocusable = true
             setOnClickListener { onClick() }
         }
+    }
+
+    private fun openNativeWifiProxySettings(context: Context, statusTv: TextView) {
+        val candidates = listOf(
+            Intent(Settings.ACTION_WIFI_SETTINGS).setPackage("com.android.car.settings"),
+            Intent(Settings.ACTION_WIFI_SETTINGS),
+            Intent(Settings.ACTION_WIRELESS_SETTINGS).setPackage("com.android.car.settings"),
+            Intent(Settings.ACTION_SETTINGS).setPackage("com.android.car.settings"),
+        )
+        for (intent in candidates) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+                statusTv.text = "✓ Abiertos Ajustes Wi-Fi nativos de Android (com.android.car.settings). Entra en los detalles de tu Wi-Fi y pon Proxy: Manual → Host: IP del móvil, Puerto: 8788."
+                statusTv.setTextColor(QonectaTheme.green)
+                return
+            } catch (_: Throwable) {
+            }
+        }
+        statusTv.text = "⚠️ No se pudo abrir Ajustes Wi-Fi nativos directamente."
+        statusTv.setTextColor(QonectaTheme.amber)
+    }
+
+    private fun triggerCaptivePortalSignIn(context: Context, statusTv: TextView) {
+        try {
+            val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
+            val activeNet = cm?.activeNetwork
+            if (cm != null && activeNet != null) {
+                runCatching { cm.reportNetworkConnectivity(activeNet, false) }
+            }
+            val cpIntent = Intent(android.net.ConnectivityManager.ACTION_CAPTIVE_PORTAL_SIGN_IN).apply {
+                setPackage("com.android.captiveportallogin")
+                if (activeNet != null) {
+                    putExtra(android.net.ConnectivityManager.EXTRA_NETWORK, activeNet)
+                }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(cpIntent)
+            statusTv.text = "✓ Solicitada apertura de CaptivePortalLogin y re-evaluación de red."
+            statusTv.setTextColor(QonectaTheme.green)
+        } catch (e: Throwable) {
+            statusTv.text = "ℹ️ Se solicitó a Android re-evaluar el Portal Cautivo de la red Wi-Fi actual (${e.javaClass.simpleName})."
+            statusTv.setTextColor(QonectaTheme.accent)
+        }
+    }
+
+    private fun openNativeFilesApp(context: Context, statusTv: TextView) {
+        val candidates = listOf(
+            Intent(Intent.ACTION_MAIN).setClassName("com.android.documentsui", "com.android.documentsui.files.FilesActivity"),
+            Intent(Intent.ACTION_MAIN).setClassName("com.android.documentsui", "com.android.documentsui.LauncherActivity"),
+            Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("content://com.android.externalstorage.documents/root/primary")
+                setPackage("com.android.documentsui")
+            },
+        )
+        for (intent in candidates) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+                statusTv.text = "✓ Abierta la app nativa «Archivos» (com.android.documentsui) del coche."
+                statusTv.setTextColor(QonectaTheme.green)
+                return
+            } catch (_: Throwable) {
+            }
+        }
+        statusTv.text = "⚠️ No se pudo abrir com.android.documentsui."
+        statusTv.setTextColor(QonectaTheme.amber)
     }
 }

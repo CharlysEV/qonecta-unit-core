@@ -20,6 +20,7 @@ import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.text.InputType
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -27,6 +28,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.inputmethod.EditorInfo
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
@@ -195,6 +198,26 @@ class ExtendedHubView(
     private var tripsLivePeakGTv: TextView? = null
     private var tripsLive0to100Tv: TextView? = null
     private var tripsLiveEnergyTv: TextView? = null
+    private var showHiddenTripsInUnit: Boolean = false
+
+    // Referencias en vivo de la pestaña Estado (evita recrear el WebView del modelo 3D y que parpadeen las presiones)
+    private var statusRingViewRef: BatteryRingView? = null
+    private var statusPowerStatusTvRef: TextView? = null
+    private var statusEnergyCurrentTvRef: TextView? = null
+    private var statusBatBarViewRef: BatteryCapacityBarCanvasView? = null
+    private var statusReevTextTvRef: TextView? = null
+    private var statusReevBarViewRef: BatteryCapacityBarCanvasView? = null
+    private var statusGearChipTvRef: TextView? = null
+    private var statusModesChipTvRef: TextView? = null
+    private var statusClimaChipTvRef: TextView? = null
+    private var statusExtSteerChipTvRef: TextView? = null
+    private var statusLastCar3dSig: String = ""
+
+    private val companionSyncListener: () -> Unit = {
+        if (attached && activeTab in setOf(Tab.TRIPS, Tab.EFFICIENCY, Tab.STATUS)) {
+            renderActiveTab(resetScroll = false)
+        }
+    }
 
     // Estado del filtro y selección de cargadores (estilo ChargerFilter de Qonecta+)
     private var chargerMinKw: Int = prefs.getInt(KEY_CHARGER_MIN_KW, 0)
@@ -419,12 +442,14 @@ class ExtendedHubView(
         super.onAttachedToWindow()
         attached = true
         LeapVehicleDataSource.start(context.applicationContext)
+        com.headqlink.unit.bridgehost.CompanionBridgeHost.addSyncListener(companionSyncListener)
         uiHandler.removeCallbacks(tickRunnable)
         uiHandler.post(tickRunnable)
     }
 
     override fun onDetachedFromWindow() {
         attached = false
+        com.headqlink.unit.bridgehost.CompanionBridgeHost.removeSyncListener(companionSyncListener)
         uiHandler.removeCallbacks(tickRunnable)
         super.onDetachedFromWindow()
     }
@@ -529,31 +554,119 @@ class ExtendedHubView(
             }
             return
         }
-        if (activeTab in setOf(Tab.DRIVE, Tab.INSTRUMENTS, Tab.EFFICIENCY, Tab.STATUS)) {
+        if (activeTab == Tab.STATUS) {
+            updateStatusLiveViews(snap)
+            return
+        }
+        if (activeTab in setOf(Tab.DRIVE, Tab.INSTRUMENTS, Tab.EFFICIENCY)) {
             renderActiveTab()
+        }
+    }
+
+    private fun updateStatusLiveViews(snap: LeapVehicleDataSource.TelemetrySnapshot) {
+        val variant = LeapVehicleDataSource.getSelectedVariant(context)
+        val paintColor = LeapVehicleDataSource.getSelectedPaintColor(context)
+        val soc = if (!snap.socPct.isNaN()) snap.socPct else 78.0
+        val grossKwh = variant.batteryGrossKwh
+        val currentKwh = (soc / 100.0) * grossKwh
+        val evRangeKm = if (!snap.evRangeKm.isNaN() && snap.evRangeKm > 0) {
+            snap.evRangeKm
+        } else {
+            (soc / 100.0) * variant.wltpEvRangeKm
+        }
+        val isReevActive = variant.isReev || snap.isReev
+        val fuelPct = if (!snap.fuelPct.isNaN() && snap.fuelPct > 0) snap.fuelPct else 72.0
+        val fuelLiters = (fuelPct / 100.0) * 50.0
+        val fuelRangeKm = if (!snap.fuelRangeKm.isNaN() && snap.fuelRangeKm > 0) snap.fuelRangeKm else (fuelPct / 100.0) * 829.0
+
+        statusRingViewRef?.setData(
+            soc = soc,
+            rangeKm = evRangeKm,
+            rangeLabel = if (isReevActive || isSplitScreen) "Autonomía EV" else "Autonomía eléctrica",
+            ageText = snap.chargingLabel(),
+            ageColor = if (snap.chargingStatus in 1..2) QonectaTheme.green else QonectaTheme.accent,
+        )
+        val pKw = if (!snap.powerKw.isNaN()) snap.powerKw else 0.8
+        val powerStatusText = when {
+            snap.chargingStatus == 2 -> String.format(Locale.getDefault(), "⚡ Carga rápida CC activa · %.1f kW (Pico %d kW)", kotlin.math.abs(pKw), variant.peakDcChargeKw)
+            snap.chargingStatus == 1 -> String.format(Locale.getDefault(), "⚡ Carga alterna CA activa · %.1f kW (Máx %.1f kW)", kotlin.math.abs(pKw), variant.acChargeKw)
+            snap.effectiveSpeedKmh > 1.5 && pKw < -0.2 -> String.format(Locale.getDefault(), "⚡ Regenerando · %.1f kW", pKw)
+            snap.effectiveSpeedKmh > 1.5 -> String.format(Locale.getDefault(), "⚡ Potencia %+.1f kW", pKw)
+            else -> String.format(Locale.getDefault(), "⚡ %s · %+.1f kW", snap.chargingLabel(), pKw)
+        }
+        statusPowerStatusTvRef?.apply {
+            text = powerStatusText
+            setTextColor(if (pKw < 0 || snap.chargingStatus in 1..2) QonectaTheme.green else QonectaTheme.text)
+        }
+        statusEnergyCurrentTvRef?.text = String.format(Locale.getDefault(), "%.1f / %.1f kWh", currentKwh, grossKwh)
+        statusBatBarViewRef?.updateFraction((soc / 100.0).toFloat())
+        statusReevTextTvRef?.text = String.format(
+            Locale.getDefault(),
+            "%.0f%% · %.1f / 50 L (+%.0f km gasolina)",
+            fuelPct,
+            fuelLiters,
+            fuelRangeKm,
+        )
+        statusReevBarViewRef?.updateFraction((fuelPct / 100.0).toFloat())
+
+        val moving = snap.effectiveSpeedKmh > 1.5
+        statusGearChipTvRef?.apply {
+            text = if (moving) "Marcha ${snap.gearLabel()} · ${snap.effectiveSpeedKmh.roundToInt()} km/h" else "Estacionado · Marcha ${snap.gearLabel()}"
+            setTextColor(if (moving) QonectaTheme.accent else QonectaTheme.text)
+        }
+        statusModesChipTvRef?.text = "${snap.driveModeLabel()} · Regen ${snap.regenModeLabel()}"
+        val tL = if (!snap.tempLeftC.isNaN()) snap.tempLeftC else 25.0
+        val tR = if (!snap.tempRightC.isNaN()) snap.tempRightC else 25.0
+        val tOut = if (!snap.tempExteriorC.isNaN()) snap.tempExteriorC else 8.0
+        statusClimaChipTvRef?.text = String.format(Locale.getDefault(), "%.1f °C / %.1f °C", tL, tR)
+        statusExtSteerChipTvRef?.text = String.format(Locale.getDefault(), "%.1f °C · Dir. %s", tOut, snap.steeringModeLabel())
+
+        // Solo enviar actualización al WebView 3D si cambió algún neumático, puerta, maletero o color
+        val sig = buildString {
+            append(paintColor.hex3d).append('|')
+            append(snap.bootOpen).append('|')
+            snap.doorsOpen.forEach { append(it).append(',') }
+            snap.tyreBars.forEach { append(String.format(Locale.US, "%.2f", it)).append(',') }
+            snap.tyreTempsC.forEach { append(it).append(',') }
+        }
+        if (sig != statusLastCar3dSig) {
+            statusLastCar3dSig = sig
+            pushCar3dState(snap, paintColor)
         }
     }
 
     private fun updateTripsLiveCard(snap: LeapVehicleDataSource.TelemetrySnapshot) {
         val durMin = (snap.tripDurationSec / 60L).toInt()
         val durSec = (snap.tripDurationSec % 60L).toInt()
-        val liveDist = if (snap.tripDistanceKm > 0.05) snap.tripDistanceKm else 16.1
-        val liveAvgKmh = if (snap.tripDurationSec > 60) (liveDist / (snap.tripDurationSec / 3600.0)) else 68.0
-        val avgCons = if (!snap.avgConsumptionKwh100.isNaN() && snap.avgConsumptionKwh100 > 0) snap.avgConsumptionKwh100 else 15.6
-        val liveMaxSpd = if (snap.maxSpeedKmh > 5.0) snap.maxSpeedKmh else max(96.0, snap.effectiveSpeedKmh)
-        val livePeakG = if (snap.peakG > 0.05f) snap.peakG else 0.34f
-        val live0to100 = if (!snap.zeroToHundredSec.isNaN()) String.format(Locale.getDefault(), "%.1f s", snap.zeroToHundredSec) else "7,3 s"
+        val liveDist = snap.tripDistanceKm.coerceAtLeast(0.0)
+        val liveAvgKmh = if (snap.tripDurationSec > 10 && liveDist >= 0.05) {
+            (liveDist / (snap.tripDurationSec / 3600.0)).coerceIn(0.0, 220.0)
+        } else {
+            0.0
+        }
+        val avgCons = if (!snap.avgConsumptionKwh100.isNaN() && snap.avgConsumptionKwh100 > 0 && liveDist >= 0.05) {
+            snap.avgConsumptionKwh100
+        } else {
+            0.0
+        }
+        val liveMaxSpd = max(snap.maxSpeedKmh.coerceAtLeast(0.0), snap.effectiveSpeedKmh.coerceAtLeast(0.0))
+        val livePeakG = if (snap.peakG > 0.01f && liveDist >= 0.01) snap.peakG else 0f
+        val live0to100 = if (!snap.zeroToHundredSec.isNaN()) {
+            String.format(Locale.getDefault(), "%.1f s", snap.zeroToHundredSec)
+        } else {
+            "-- s"
+        }
 
         tripsLiveDistTv?.text = String.format(Locale.getDefault(), "%.1f km", liveDist)
         tripsLiveTimeAvgTv?.text = String.format(Locale.getDefault(), "   %02d:%02d min · media %.0f km/h", durMin, durSec, liveAvgKmh)
         tripsLiveConsTv?.apply {
-            text = String.format(Locale.getDefault(), "🍃 %.1f kWh/100", avgCons)
-            setTextColor(tripConsumptionColor(avgCons))
+            text = if (avgCons > 0.1) String.format(Locale.getDefault(), "🍃 %.1f kWh/100", avgCons) else "🍃 -- kWh/100"
+            setTextColor(if (avgCons > 0.1) tripConsumptionColor(avgCons) else PanelFormat.DIM)
         }
         tripsLiveMaxSpdTv?.text = "${liveMaxSpd.roundToInt()} km/h"
         tripsLivePeakGTv?.text = String.format(Locale.getDefault(), "%.2f G", livePeakG)
         tripsLive0to100Tv?.text = live0to100
-        tripsLiveEnergyTv?.text = String.format(Locale.getDefault(), "%.2f kWh", snap.tripEnergyKwh.takeIf { it > 0.05 } ?: 2.51)
+        tripsLiveEnergyTv?.text = String.format(Locale.getDefault(), "%.2f kWh", snap.tripEnergyKwh.coerceAtLeast(0.0))
     }
 
     private fun renderActiveTab(resetScroll: Boolean = false) {
@@ -2075,7 +2188,10 @@ class ExtendedHubView(
             weightSum = 3.0f
         }
 
-        val trips = LeapVehicleDataSource.loadRecentTrips(context)
+        val allTripsIncludingHidden = LeapVehicleDataSource.loadRecentTrips(context, includeHidden = true)
+        val hiddenCount = allTripsIncludingHidden.count { it.hidden }
+        val trips = if (showHiddenTripsInUnit) allTripsIncludingHidden else allTripsIncludingHidden.filterNot { it.hidden }
+        val pricing = LeapVehicleDataSource.getEnergyPricing(context)
         val longestIdx = trips.indices.maxByOrNull { trips[it].distanceKm } ?: -1
         val efficientIdx = trips.indices.filter { trips[it].distanceKm >= 5.0 }.minByOrNull { trips[it].avgKwh100 } ?: -1
         val fastestIdx = trips.indices.maxByOrNull { trips[it].maxSpeedKmh } ?: -1
@@ -2108,35 +2224,48 @@ class ExtendedHubView(
             liveTitleRow.addView(sectionLabel("EN CURSO · VIAJE ACTUAL C10"))
             header.addView(liveTitleRow, LayoutParams(0, WRAP, 1f))
 
+            val privacyFilterBtn = smallPillButton(
+                if (showHiddenTripsInUnit) "🔓 Ocultar privados ($hiddenCount)" else "🔒 Privacidad ($hiddenCount)",
+            ) {
+                showHiddenTripsInUnit = !showHiddenTripsInUnit
+                renderActiveTab(resetScroll = false)
+            }
+            header.addView(privacyFilterBtn, LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) })
+
+            val tariffsBtn = smallPillButton("⚡⛽ Tarifas") {
+                showUnitEnergyPricingDialog()
+            }
+            header.addView(tariffsBtn, LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) })
+
             val viewLiveMapBtn = smallPillButton("🗺️ Ver mapa en vivo") {
-                val durMin = max(1, (snap.tripDurationSec / 60L).toInt().takeIf { it > 0 } ?: 12)
-                val distKm = if (snap.tripDistanceKm >= 0.1) snap.tripDistanceKm else 16.1
-                val kwh = if (snap.tripEnergyKwh >= 0.05) snap.tripEnergyKwh else 2.5
-                val avgCons = if (!snap.avgConsumptionKwh100.isNaN() && snap.avgConsumptionKwh100 > 0) snap.avgConsumptionKwh100 else 15.6
+                val durMin = max(1, (snap.tripDurationSec / 60L).toInt().takeIf { it > 0 } ?: 1)
+                val distKm = snap.tripDistanceKm.coerceAtLeast(0.0)
+                val kwh = snap.tripEnergyKwh.coerceAtLeast(0.0)
+                val avgCons = if (!snap.avgConsumptionKwh100.isNaN() && snap.avgConsumptionKwh100 > 0 && distKm >= 0.05) snap.avgConsumptionKwh100 else 0.0
                 val endSoc = if (!snap.socPct.isNaN()) snap.socPct else 78.0
-                val maxSpd = if (snap.maxSpeedKmh >= 5.0) snap.maxSpeedKmh else max(86.0, snap.effectiveSpeedKmh)
-                val maxG = if (snap.peakG >= 0.08f) snap.peakG.toDouble() else 0.34
+                val maxSpd = max(snap.maxSpeedKmh.coerceAtLeast(0.0), snap.effectiveSpeedKmh.coerceAtLeast(0.0))
+                val maxG = if (snap.peakG >= 0.01f && distKm >= 0.01) snap.peakG.toDouble() else 0.0
                 selectedTripDetail = LeapVehicleDataSource.TripRecord(
                     startTimeMs = System.currentTimeMillis() - durMin * 60_000L,
                     durationMin = durMin,
                     distanceKm = distKm,
                     energyKwh = kwh,
                     avgKwh100 = avgCons,
-                    startSoc = (endSoc + 4.0).coerceAtMost(100.0),
+                    startSoc = (endSoc + (kwh / 81.9) * 100.0).coerceAtMost(100.0),
                     endSoc = endSoc,
                     maxSpeedKmh = maxSpd,
-                    avgSpeedKmh = (distKm / (durMin / 60.0)).coerceIn(22.0, maxSpd),
+                    avgSpeedKmh = if (snap.tripDurationSec > 10 && distKm >= 0.05) (distKm / (snap.tripDurationSec / 3600.0)).coerceIn(0.0, max(1.0, maxSpd)) else 0.0,
                     maxAccelG = maxG,
-                    zeroToFiftySec = if (!snap.zeroToFiftySec.isNaN()) snap.zeroToFiftySec else 3.1,
-                    zeroToHundredSec = if (!snap.zeroToHundredSec.isNaN()) snap.zeroToHundredSec else 7.3,
-                    climbM = 140.0,
-                    descentM = 115.0,
+                    zeroToFiftySec = snap.zeroToFiftySec,
+                    zeroToHundredSec = snap.zeroToHundredSec,
+                    climbM = (distKm * 3.5).roundToInt().toDouble(),
+                    descentM = (distKm * 3.2).roundToInt().toDouble(),
                     costEur = kwh * 0.18,
                     smoothnessScore = snap.smoothnessScore,
                     originName = "Posición de salida C10",
                     destinationName = "En curso (Ruta actual)",
                     stopsCount = 0,
-                    stopsSummary = "En movimiento · Sin paradas",
+                    stopsSummary = "En curso · Telemetría real C10",
                     track = LeapVehicleDataSource.getLiveTrack(),
                 )
                 renderActiveTab(resetScroll = true)
@@ -2145,6 +2274,7 @@ class ExtendedHubView(
 
             val saveResetBtn = smallPillButton("💾 Guardar y reiniciar") {
                 val saved = LeapVehicleDataSource.saveCurrentTripAndReset(context)
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
                 Toast.makeText(
                     context,
                     String.format(Locale.getDefault(), "Viaje guardado (%.1f km · Vel. máx %.0f km/h)", saved.distanceKm, saved.maxSpeedKmh),
@@ -2157,12 +2287,12 @@ class ExtendedHubView(
 
             val durMin = (snap.tripDurationSec / 60L).toInt()
             val durSec = (snap.tripDurationSec % 60L).toInt()
-            val liveDist = if (snap.tripDistanceKm > 0.05) snap.tripDistanceKm else 16.1
-            val liveAvgKmh = if (snap.tripDurationSec > 60) (liveDist / (snap.tripDurationSec / 3600.0)) else 68.0
-            val avgCons = if (!snap.avgConsumptionKwh100.isNaN() && snap.avgConsumptionKwh100 > 0) snap.avgConsumptionKwh100 else 15.6
-            val liveMaxSpd = if (snap.maxSpeedKmh > 5.0) snap.maxSpeedKmh else max(96.0, snap.effectiveSpeedKmh)
-            val livePeakG = if (snap.peakG > 0.05f) snap.peakG else 0.34f
-            val live0to100 = if (!snap.zeroToHundredSec.isNaN()) String.format(Locale.getDefault(), "%.1f s", snap.zeroToHundredSec) else "7,3 s"
+            val liveDist = snap.tripDistanceKm.coerceAtLeast(0.0)
+            val liveAvgKmh = if (snap.tripDurationSec > 10 && liveDist >= 0.05) (liveDist / (snap.tripDurationSec / 3600.0)).coerceIn(0.0, 220.0) else 0.0
+            val avgCons = if (!snap.avgConsumptionKwh100.isNaN() && snap.avgConsumptionKwh100 > 0 && liveDist >= 0.05) snap.avgConsumptionKwh100 else 0.0
+            val liveMaxSpd = max(snap.maxSpeedKmh.coerceAtLeast(0.0), snap.effectiveSpeedKmh.coerceAtLeast(0.0))
+            val livePeakG = if (snap.peakG > 0.01f && liveDist >= 0.01) snap.peakG else 0f
+            val live0to100 = if (!snap.zeroToHundredSec.isNaN()) String.format(Locale.getDefault(), "%.1f s", snap.zeroToHundredSec) else "-- s"
 
             val mainLiveRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
@@ -2187,9 +2317,9 @@ class ExtendedHubView(
             mainLiveRow.addView(timeAvgText, LayoutParams(0, WRAP, 1f))
 
             val consText = TextView(context).apply {
-                text = String.format(Locale.getDefault(), "🍃 %.1f kWh/100", avgCons)
+                text = if (avgCons > 0.1) String.format(Locale.getDefault(), "🍃 %.1f kWh/100", avgCons) else "🍃 -- kWh/100"
                 setTextSp(24f)
-                setTextColor(tripConsumptionColor(avgCons))
+                setTextColor(if (avgCons > 0.1) tripConsumptionColor(avgCons) else PanelFormat.DIM)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             }
             tripsLiveConsTv = consText
@@ -2213,12 +2343,31 @@ class ExtendedHubView(
                 LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) },
             )
             liveStatsRow.addView(
-                liveMiniStatChip("🔋 Energía", String.format(Locale.getDefault(), "%.2f kWh", snap.tripEnergyKwh.takeIf { it > 0.05 } ?: 2.51), PanelFormat.ACCENT) { tripsLiveEnergyTv = it },
+                liveMiniStatChip("🔋 Energía", String.format(Locale.getDefault(), "%.2f kWh", snap.tripEnergyKwh.coerceAtLeast(0.0)), PanelFormat.ACCENT) { tripsLiveEnergyTv = it },
                 LayoutParams(0, WRAP, 1f),
             )
             addView(liveStatsRow, LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
         }
         leftCol.addView(liveCard, LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) })
+
+        if (trips.isEmpty()) {
+            val emptyCard = cardLayout().apply {
+                setPadding(dp(20), dp(18), dp(20), dp(18))
+                addView(TextView(context).apply {
+                    text = "📍 Sin viajes ficticios · Grabación 100 % real activa"
+                    setTextSp(18f)
+                    setTextColor(PanelFormat.ACCENT)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                })
+                addView(TextView(context).apply {
+                    text = "Aún no hay recorridos guardados en el historial. Al conducir tu Leapmotor C10 (≥ 0,2 km) y poner la marcha P al aparcar —o al pulsar «💾 Guardar y reiniciar» arriba—, cada trayecto real se guardará aquí automáticamente y se sincronizará con Qonecta Companion en tu móvil."
+                    setTextSp(14.5f)
+                    setTextColor(PanelFormat.DIM)
+                    setPadding(0, dp(6), 0, 0)
+                })
+            }
+            leftCol.addView(emptyCard, LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) })
+        }
 
         // 2. Tarjetas del historial de viajes con Mini-Mapa de ruta y telemetría Qonecta+
         val fmtDay = SimpleDateFormat("EEE, d MMM · HH:mm", Locale.getDefault())
@@ -2261,9 +2410,10 @@ class ExtendedHubView(
                 gravity = Gravity.CENTER_VERTICAL
             }
             val dateTxt = TextView(context).apply {
-                text = "${fmtDay.format(Date(t.startTimeMs)).uppercase(Locale.getDefault())}  ·  ${t.originName} → ${t.destinationName}"
+                val privTag = if (t.hidden) "🔒 [OCULTO] " else ""
+                text = "$privTag${fmtDay.format(Date(t.startTimeMs)).uppercase(Locale.getDefault())}  ·  ${t.originName} → ${t.destinationName}"
                 setTextSp(13f)
-                setTextColor(PanelFormat.DIM)
+                setTextColor(if (t.hidden) QonectaTheme.amber else PanelFormat.DIM)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
@@ -2283,7 +2433,7 @@ class ExtendedHubView(
             }
             infoCol.addView(topMetaRow, LayoutParams(MATCH, WRAP))
 
-            // Fila central: Distancia en grande + duración + velocidad media
+            // Fila central: Distancia en grande + duración + velocidad media + botones Ocultar / Eliminar / Mapa
             val midRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -2300,6 +2450,42 @@ class ExtendedHubView(
                 setTextColor(PanelFormat.DIM)
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             }, LayoutParams(0, WRAP, 1f))
+
+            val hideBtn = TextView(context).apply {
+                text = if (t.hidden) "👁 Mostrar" else "👁 Ocultar"
+                setTextSp(13.5f)
+                setTextColor(if (t.hidden) PanelFormat.ACCENT else QonectaTheme.amber)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setPadding(dp(10), dp(5), dp(10), dp(5))
+                background = pillDrawable(PanelFormat.BG, if (t.hidden) PanelFormat.ACCENT else QonectaTheme.amber)
+                setOnClickListener {
+                    val nowHidden = LeapVehicleDataSource.toggleTripHidden(context, t.startTimeMs)
+                    com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
+                    Toast.makeText(
+                        context,
+                        if (nowHidden) "Viaje oculto por privacidad (sincronizado con Companion)" else "Viaje visible de nuevo (sincronizado con Companion)",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    renderActiveTab(resetScroll = false)
+                }
+            }
+            midRow.addView(hideBtn, LayoutParams(WRAP, WRAP).apply { rightMargin = dp(6) })
+
+            val delCardBtn = TextView(context).apply {
+                text = "🗑"
+                setTextSp(13.5f)
+                setTextColor(0xFFFF6B6B.toInt())
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setPadding(dp(10), dp(5), dp(10), dp(5))
+                background = pillDrawable(PanelFormat.BG, 0xFFFF6B6B.toInt())
+                setOnClickListener {
+                    LeapVehicleDataSource.deleteTrip(context, t.startTimeMs)
+                    com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
+                    Toast.makeText(context, "Viaje eliminado en Qonecta Unit y Companion", Toast.LENGTH_SHORT).show()
+                    renderActiveTab(resetScroll = false)
+                }
+            }
+            midRow.addView(delCardBtn, LayoutParams(WRAP, WRAP).apply { rightMargin = dp(6) })
 
             val openMapBtn = TextView(context).apply {
                 text = "🗺️ Mapa ›"
@@ -2365,7 +2551,10 @@ class ExtendedHubView(
             weightSum = 2f
         }
 
-        val total7DaysKm = trips.sumOf { it.distanceKm }
+        val nowMs = System.currentTimeMillis()
+        val sevenDaysAgoMs = nowMs - 7L * 24L * 3600_000L
+        val total7DaysKm = trips.filter { it.startTimeMs >= sevenDaysAgoMs }.sumOf { it.distanceKm }
+        val avgConsAll = if (trips.isNotEmpty()) trips.map { it.avgKwh100 }.average() else 0.0
         val daysCard = cardLayout().apply {
             setPadding(dp(18), dp(14), dp(18), dp(14))
             addView(sectionLabel("ÚLTIMOS 14 DÍAS"), LayoutParams(MATCH, WRAP))
@@ -2374,7 +2563,7 @@ class ExtendedHubView(
                 gravity = Gravity.BOTTOM
             }
             weekRow.addView(TextView(context).apply {
-                text = String.format(Locale.getDefault(), "%.0f km", total7DaysKm)
+                text = String.format(Locale.getDefault(), "%.1f km", total7DaysKm)
                 setTextSp(34f)
                 setTextColor(PanelFormat.TEXT)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
@@ -2386,7 +2575,11 @@ class ExtendedHubView(
             })
             addView(weekRow, LayoutParams(MATCH, WRAP).apply { topMargin = dp(2) })
             addView(TextView(context).apply {
-                text = "+14 % frente a los 7 días anteriores · Media ${String.format(Locale.getDefault(), "%.1f", trips.map { it.avgKwh100 }.average())} kWh/100"
+                text = if (trips.isNotEmpty()) {
+                    "Datos 100 % reales · Media ${String.format(Locale.getDefault(), "%.1f", avgConsAll)} kWh/100"
+                } else {
+                    "Datos 100 % reales · Sin viajes registrados en los últimos 14 días"
+                }
                 setTextSp(14f)
                 setTextColor(PanelFormat.DIM)
             })
@@ -2412,19 +2605,19 @@ class ExtendedHubView(
                 orientation = HORIZONTAL
                 weightSum = 2f
             }
-            val rtLong = trips.getOrNull(longestIdx) ?: trips.first()
-            val rtEff = trips.getOrNull(efficientIdx) ?: trips.first()
-            val rtFast = trips.getOrNull(fastestIdx) ?: trips.first()
-            val rtClimb = trips.getOrNull(climbIdx) ?: trips.first()
+            val rtLong = trips.getOrNull(longestIdx) ?: trips.firstOrNull()
+            val rtEff = trips.getOrNull(efficientIdx) ?: trips.firstOrNull()
+            val rtFast = trips.getOrNull(fastestIdx) ?: trips.firstOrNull()
+            val rtClimb = trips.getOrNull(climbIdx) ?: trips.firstOrNull()
 
             recRow1.addView(
                 recordLineItem(
                     icon = "🏆",
                     badgeColor = 0xFFFFB547.toInt(),
                     title = "MÁS LARGO",
-                    value = String.format(Locale.getDefault(), "%.1f km", rtLong.distanceKm),
-                    whenStr = fmtShort.format(Date(rtLong.startTimeMs)),
-                    onClick = { selectedTripDetail = rtLong; renderActiveTab(resetScroll = true) },
+                    value = if (rtLong != null) String.format(Locale.getDefault(), "%.1f km", rtLong.distanceKm) else "-- km",
+                    whenStr = if (rtLong != null) fmtShort.format(Date(rtLong.startTimeMs)) else "Sin datos",
+                    onClick = { if (rtLong != null) { selectedTripDetail = rtLong; renderActiveTab(resetScroll = true) } },
                 ),
                 LayoutParams(0, MATCH, 1f).apply { rightMargin = dp(8) },
             )
@@ -2433,9 +2626,9 @@ class ExtendedHubView(
                     icon = "🍃",
                     badgeColor = 0xFF36D399.toInt(),
                     title = "MÁS EFICIENTE",
-                    value = String.format(Locale.getDefault(), "%.1f kWh/100", rtEff.avgKwh100),
-                    whenStr = fmtShort.format(Date(rtEff.startTimeMs)),
-                    onClick = { selectedTripDetail = rtEff; renderActiveTab(resetScroll = true) },
+                    value = if (rtEff != null) String.format(Locale.getDefault(), "%.1f kWh/100", rtEff.avgKwh100) else "-- kWh/100",
+                    whenStr = if (rtEff != null) fmtShort.format(Date(rtEff.startTimeMs)) else "Sin datos",
+                    onClick = { if (rtEff != null) { selectedTripDetail = rtEff; renderActiveTab(resetScroll = true) } },
                 ),
                 LayoutParams(0, MATCH, 1f),
             )
@@ -2444,9 +2637,9 @@ class ExtendedHubView(
                     icon = "🚀",
                     badgeColor = 0xFFFF6D00.toInt(),
                     title = "VEL. MÁX / ACEL.",
-                    value = String.format(Locale.getDefault(), "%.0f km/h · %.2f G", rtFast.maxSpeedKmh, rtFast.maxAccelG),
-                    whenStr = fmtShort.format(Date(rtFast.startTimeMs)),
-                    onClick = { selectedTripDetail = rtFast; renderActiveTab(resetScroll = true) },
+                    value = if (rtFast != null) String.format(Locale.getDefault(), "%.0f km/h · %.2f G", rtFast.maxSpeedKmh, rtFast.maxAccelG) else "-- km/h",
+                    whenStr = if (rtFast != null) fmtShort.format(Date(rtFast.startTimeMs)) else "Sin datos",
+                    onClick = { if (rtFast != null) { selectedTripDetail = rtFast; renderActiveTab(resetScroll = true) } },
                 ),
                 LayoutParams(0, MATCH, 1f).apply { rightMargin = dp(8) },
             )
@@ -2455,9 +2648,9 @@ class ExtendedHubView(
                     icon = "⛰️",
                     badgeColor = 0xFF38BDF8.toInt(),
                     title = "MÁS DESNIVEL",
-                    value = String.format(Locale.getDefault(), "↑%.0f m · ↓%.0f m", rtClimb.climbM, rtClimb.descentM),
-                    whenStr = fmtShort.format(Date(rtClimb.startTimeMs)),
-                    onClick = { selectedTripDetail = rtClimb; renderActiveTab(resetScroll = true) },
+                    value = if (rtClimb != null) String.format(Locale.getDefault(), "↑%.0f m · ↓%.0f m", rtClimb.climbM, rtClimb.descentM) else "-- m",
+                    whenStr = if (rtClimb != null) fmtShort.format(Date(rtClimb.startTimeMs)) else "Sin datos",
+                    onClick = { if (rtClimb != null) { selectedTripDetail = rtClimb; renderActiveTab(resetScroll = true) } },
                 ),
                 LayoutParams(0, MATCH, 1f),
             )
@@ -2469,7 +2662,7 @@ class ExtendedHubView(
             val totalKmAll = trips.sumOf { it.distanceKm }
             val totalCostAll = trips.sumOf { it.costEur }
             addView(TextView(context).apply {
-                text = String.format(Locale.getDefault(), "%d viajes guardados · %.0f km · ~%.2f € de electricidad", trips.size, totalKmAll, totalCostAll)
+                text = String.format(Locale.getDefault(), "%d viajes guardados · %.1f km · ~%.2f € de electricidad", trips.size, totalKmAll, totalCostAll)
                 setTextSp(14f)
                 setTextColor(PanelFormat.ACCENT)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
@@ -2553,6 +2746,22 @@ class ExtendedHubView(
             }
             topBar.addView(dateTitle, LayoutParams(0, WRAP, 1f))
 
+            val hideDetailBtn = TextView(context).apply {
+                text = if (t.hidden) "👁 Mostrar (Privacidad)" else "👁 Ocultar (Privacidad)"
+                setTextSp(15f)
+                setTextColor(if (t.hidden) PanelFormat.ACCENT else QonectaTheme.amber)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                background = pillDrawable(PanelFormat.SURFACE, if (t.hidden) PanelFormat.ACCENT else QonectaTheme.amber)
+                setOnClickListener {
+                    val nowHidden = LeapVehicleDataSource.toggleTripHidden(context, t.startTimeMs)
+                    com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
+                    selectedTripDetail = t.copy(hidden = nowHidden)
+                    renderActiveTab(resetScroll = false)
+                }
+            }
+            topBar.addView(hideDetailBtn, LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) })
+
             val delBtn = TextView(context).apply {
                 text = "🗑️ Borrar"
                 setTextSp(15f)
@@ -2562,6 +2771,7 @@ class ExtendedHubView(
                 background = pillDrawable(PanelFormat.SURFACE, 0xFFFF6B6B.toInt())
                 setOnClickListener {
                     LeapVehicleDataSource.deleteTrip(context, t.startTimeMs)
+                    com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
                     selectedTripDetail = null
                     renderActiveTab(resetScroll = true)
                 }
@@ -2654,6 +2864,7 @@ class ExtendedHubView(
                 String.format(Locale.getDefault(), "%.2f kWh netos consumidos", t.energyKwh),
                 PanelFormat.ACCENT,
             )
+            val detailPricing = LeapVehicleDataSource.getEnergyPricing(context)
             addMetricPair(
                 "⛰️ DESNIVEL EN RUTA",
                 String.format(Locale.getDefault(), "↑%.0f m", t.climbM),
@@ -2661,7 +2872,14 @@ class ExtendedHubView(
                 0xFF38BDF8.toInt(),
                 "💶 COSTE DEL VIAJE",
                 String.format(Locale.getDefault(), "%.2f €", t.costEur),
-                "Tarifa EV 0,18 €/kWh · 0,0 L gasolina",
+                String.format(
+                    Locale.getDefault(),
+                    "%s %.2f €/kWh · Gas. %.2f €/L · Diésel %.2f €/L",
+                    detailPricing.activeTariffLabel,
+                    detailPricing.activeElecEurKwh,
+                    detailPricing.gasolineEurLiter,
+                    detailPricing.dieselEurLiter,
+                ),
                 0xFF36D399.toInt(),
             )
             addMetricPair(
@@ -2845,18 +3063,20 @@ class ExtendedHubView(
 
         // 1. COLUMNA IZQUIERDA: VELOCIDAD
         val speedCard = cardLayout().apply {
-            setPadding(dp(20), dp(16), dp(20), dp(16))
+            val pad = if (isSplitScreen) dp(14) else dp(20)
+            val padV = if (isSplitScreen) dp(12) else dp(16)
+            setPadding(pad, padV, pad, padV)
             val headRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
             headRow.addView(sectionLabel("VELOCIDAD"), LayoutParams(0, WRAP, 1f))
-            val resetBtn = smallPillButton("Reiniciar viaje") {
+            val resetBtn = smallPillButton(if (isSplitScreen) "Reiniciar" else "Reiniciar viaje") {
                 LeapVehicleDataSource.saveCurrentTripAndReset(context)
                 Toast.makeText(context, "Viaje y picos de instrumentos reiniciados", Toast.LENGTH_SHORT).show()
                 renderActiveTab(resetScroll = false)
             }
-            headRow.addView(resetBtn, LayoutParams(WRAP, dp(42)))
+            headRow.addView(resetBtn, LayoutParams(WRAP, dp(if (isSplitScreen) 36 else 42)))
             addView(headRow, LayoutParams(MATCH, WRAP))
 
             val speedLimit = when {
@@ -2872,21 +3092,22 @@ class ExtendedHubView(
                     speedLimitKmh = speedLimit,
                     sprintLabel = sprintText,
                 ),
-                LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(4); bottomMargin = dp(8) },
+                LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(4); bottomMargin = dp(6) },
             )
 
             val chipsRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 weightSum = 3f
             }
+            val gap = if (isSplitScreen) dp(5) else dp(8)
             chipsRow.addView(
                 instrumentMetricChip(
-                    title = "VIAJE · $tripMin MIN",
+                    title = if (isSplitScreen) "VIAJE" else "VIAJE · $tripMin MIN",
                     value = String.format(Locale.getDefault(), "%.1f", tripKm),
                     unit = "km",
                     valueColor = PanelFormat.TEXT,
                 ),
-                LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) },
+                LayoutParams(0, WRAP, 1f).apply { rightMargin = gap },
             )
             chipsRow.addView(
                 instrumentMetricChip(
@@ -2895,7 +3116,7 @@ class ExtendedHubView(
                     unit = "km/h",
                     valueColor = PanelFormat.TEXT,
                 ),
-                LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) },
+                LayoutParams(0, WRAP, 1f).apply { rightMargin = gap },
             )
             chipsRow.addView(
                 instrumentMetricChip(
@@ -2913,20 +3134,35 @@ class ExtendedHubView(
         val curG = hypot(snap.longitudinalG, snap.lateralG)
         val displayPeakG = max(curG, if (snap.peakG in 0.03f..0.95f) snap.peakG else 0.51f)
         val gCard = cardLayout().apply {
-            setPadding(dp(20), dp(16), dp(20), dp(16))
-            val headRow = LinearLayout(context).apply {
-                orientation = HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+            val pad = if (isSplitScreen) dp(14) else dp(20)
+            val padV = if (isSplitScreen) dp(12) else dp(16)
+            setPadding(pad, padV, pad, padV)
+            if (isSplitScreen) {
+                addView(sectionLabel("FUERZAS G"), LayoutParams(MATCH, WRAP))
+                addView(TextView(context).apply {
+                    text = "ACELERACIÓN · FRENADA · CURVA"
+                    setTextSp(10.5f)
+                    setTextColor(QonectaTheme.dim)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                    setSingleLine(true)
+                    ellipsize = TextUtils.TruncateAt.END
+                }, LayoutParams(MATCH, WRAP).apply { topMargin = dp(2) })
+            } else {
+                val headRow = LinearLayout(context).apply {
+                    orientation = HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                headRow.addView(sectionLabel("FUERZAS G"), LayoutParams(0, WRAP, 1f))
+                val subTag = TextView(context).apply {
+                    text = "ACELERACIÓN · FRENADA · CURVA"
+                    setTextSp(12f)
+                    setTextColor(QonectaTheme.dim)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                    setSingleLine(true)
+                }
+                headRow.addView(subTag)
+                addView(headRow, LayoutParams(MATCH, WRAP))
             }
-            headRow.addView(sectionLabel("FUERZAS G"), LayoutParams(0, WRAP, 1f))
-            val subTag = TextView(context).apply {
-                text = "ACELERACIÓN · FRENADA · CURVA"
-                setTextSp(12f)
-                setTextColor(QonectaTheme.dim)
-                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-            }
-            headRow.addView(subTag)
-            addView(headRow, LayoutParams(MATCH, WRAP))
 
             addView(
                 GMeterCanvasView(
@@ -2939,7 +3175,7 @@ class ExtendedHubView(
                     maxRightG = snap.maxRightG,
                     trail = snap.gTrail,
                 ),
-                LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(4); bottomMargin = dp(8) },
+                LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(4); bottomMargin = dp(6) },
             )
 
             val gChipsRow = LinearLayout(context).apply {
@@ -2953,7 +3189,7 @@ class ExtendedHubView(
                     unit = "g",
                     valueColor = QonectaTheme.accent,
                 ),
-                LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) },
+                LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(if (isSplitScreen) 6 else 8) },
             )
             gChipsRow.addView(
                 instrumentMetricChip(
@@ -2975,7 +3211,8 @@ class ExtendedHubView(
 
         val steerDeg = if (!snap.steeringAngleDeg.isNaN()) snap.steeringAngleDeg.toFloat() else 0f
         val clinometerCard = cardLayout().apply {
-            setPadding(dp(20), dp(14), dp(20), dp(12))
+            val pad = if (isSplitScreen) dp(14) else dp(20)
+            setPadding(pad, dp(12), pad, dp(10))
             val headRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -2983,10 +3220,11 @@ class ExtendedHubView(
             headRow.addView(sectionLabel("INCLINACIÓN"), LayoutParams(0, WRAP, 1f))
             val steerBadge = TextView(context).apply {
                 text = String.format(Locale.getDefault(), "Volante %+.0f°", steerDeg)
-                setTextSp(14f)
+                setTextSp(if (isSplitScreen) 12.5f else 14f)
                 setTextColor(QonectaTheme.accent)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                setPadding(dp(10), dp(4), dp(10), dp(4))
+                setSingleLine(true)
+                setPadding(dp(8), dp(3), dp(8), dp(3))
                 background = pillDrawable(QonectaTheme.withAlpha(QonectaTheme.accent, 0x1E), QonectaTheme.accent)
             }
             headRow.addView(steerBadge)
@@ -3003,7 +3241,8 @@ class ExtendedHubView(
         }
 
         val smoothnessCard = cardLayout().apply {
-            setPadding(dp(20), dp(14), dp(20), dp(14))
+            val pad = if (isSplitScreen) dp(14) else dp(20)
+            setPadding(pad, dp(12), pad, dp(12))
             val headRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -3011,9 +3250,10 @@ class ExtendedHubView(
             headRow.addView(sectionLabel("SUAVIDAD"), LayoutParams(0, WRAP, 1f))
             val modeBadge = TextView(context).apply {
                 text = "${snap.driveModeLabel()} · Regen ${snap.regenModeLabel()}"
-                setTextSp(13f)
+                setTextSp(if (isSplitScreen) 11.5f else 13f)
                 setTextColor(QonectaTheme.dim)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setSingleLine(true)
             }
             headRow.addView(modeBadge)
             addView(headRow, LayoutParams(MATCH, WRAP))
@@ -3037,16 +3277,16 @@ class ExtendedHubView(
                 orientation = HORIZONTAL
                 weightSum = 2f
             }
-            rowTop.addView(speedCard, LayoutParams(0, MATCH, 1f).apply { rightMargin = dp(10) })
+            rowTop.addView(speedCard, LayoutParams(0, MATCH, 1f).apply { rightMargin = dp(8) })
             rowTop.addView(gCard, LayoutParams(0, MATCH, 1f))
             val rowBot = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 weightSum = 2f
             }
-            rowBot.addView(clinometerCard, LayoutParams(0, MATCH, 1f).apply { rightMargin = dp(10) })
+            rowBot.addView(clinometerCard, LayoutParams(0, MATCH, 1f).apply { rightMargin = dp(8) })
             rowBot.addView(smoothnessCard, LayoutParams(0, MATCH, 1f))
-            grid.addView(rowTop, LayoutParams(MATCH, 0, 1.08f).apply { bottomMargin = dp(10) })
-            grid.addView(rowBot, LayoutParams(MATCH, 0, 0.92f))
+            grid.addView(rowTop, LayoutParams(MATCH, 0, 1.12f).apply { bottomMargin = dp(8) })
+            grid.addView(rowBot, LayoutParams(MATCH, 0, 0.88f))
             return grid
         }
 
@@ -3067,25 +3307,22 @@ class ExtendedHubView(
         valueColor: Int,
     ): LinearLayout = LinearLayout(context).apply {
         orientation = VERTICAL
-        setPadding(dp(14), dp(10), dp(14), dp(10))
-        background = roundedDrawable(QonectaTheme.surfaceTop, dp(16), dp(1), QonectaTheme.outline)
+        val padH = if (isSplitScreen) dp(6) else dp(14)
+        val padV = if (isSplitScreen) dp(6) else dp(10)
+        setPadding(padH, padV, padH, padV)
+        background = roundedDrawable(QonectaTheme.surfaceTop, dp(14), dp(1), QonectaTheme.outline)
         addView(TextView(context).apply {
             text = title
-            setTextSp(11.5f)
+            setTextSp(if (isSplitScreen) 9.5f else 11.5f)
             setTextColor(QonectaTheme.dim)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-            letterSpacing = 0.05f
-            maxLines = 1
+            letterSpacing = if (isSplitScreen) 0.01f else 0.05f
+            setSingleLine(true)
             ellipsize = TextUtils.TruncateAt.END
         })
-        val valRow = LinearLayout(context).apply {
-            orientation = HORIZONTAL
-            gravity = Gravity.BOTTOM
-            setPadding(0, dp(2), 0, 0)
-        }
-        valRow.addView(TextView(context).apply {
-            text = value
-            setTextSp(25f)
+        addView(TextView(context).apply {
+            text = "$value $unit"
+            setTextSp(if (isSplitScreen) 15.5f else 22f)
             setTextColor(
                 when (valueColor) {
                     PanelFormat.ACCENT -> QonectaTheme.accent
@@ -3094,15 +3331,10 @@ class ExtendedHubView(
                 }
             )
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setSingleLine(true)
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, dp(2), 0, 0)
         })
-        valRow.addView(TextView(context).apply {
-            text = " $unit"
-            setTextSp(13.5f)
-            setTextColor(QonectaTheme.dim)
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-            setPadding(0, 0, 0, dp(2))
-        })
-        addView(valRow)
     }
 
     // =========================================================================
@@ -3287,14 +3519,15 @@ class ExtendedHubView(
         }
 
         val consCard = cardLayout().apply {
-            setPadding(dp(18), dp(14), dp(18), dp(12))
+            val pad = if (isSplitScreen) dp(14) else dp(18)
+            setPadding(pad, dp(12), pad, dp(10))
             addView(sectionLabel("CONSUMO"), LayoutParams(MATCH, WRAP))
 
             val colsRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 weightSum = 3f
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(6), 0, dp(4))
+                setPadding(0, dp(4), 0, dp(4))
             }
 
             fun consColumn(label: String, value: Double, isInstant: Boolean, showDivider: Boolean): View {
@@ -3304,15 +3537,17 @@ class ExtendedHubView(
                     if (showDivider) {
                         addView(View(context).apply {
                             setBackgroundColor(QonectaTheme.outline)
-                        }, LayoutParams(dp(1), dp(54)).apply { rightMargin = dp(12) })
+                        }, LayoutParams(dp(1), dp(if (isSplitScreen) 44 else 54)).apply { rightMargin = dp(if (isSplitScreen) 8 else 12) })
                     }
                     val inner = LinearLayout(context).apply { orientation = VERTICAL }
                     inner.addView(TextView(context).apply {
                         text = label
-                        setTextSp(12f)
+                        setTextSp(if (isSplitScreen) 10.5f else 12f)
                         setTextColor(QonectaTheme.dim)
                         typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                        letterSpacing = 0.05f
+                        letterSpacing = 0.04f
+                        setSingleLine(true)
+                        ellipsize = TextUtils.TruncateAt.END
                     })
                     val c = when {
                         isInstant && value < 0.0 -> 0xFF2EE59D.toInt()
@@ -3323,9 +3558,10 @@ class ExtendedHubView(
                     }
                     inner.addView(TextView(context).apply {
                         text = String.format(Locale.getDefault(), "%.1f", value)
-                        setTextSp(32f)
+                        setTextSp(if (isSplitScreen) 24f else 32f)
                         setTextColor(c)
                         typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                        setSingleLine(true)
                     })
                     addView(inner)
                 }
@@ -3333,22 +3569,27 @@ class ExtendedHubView(
 
             colsRow.addView(consColumn("AHORA", nowKwh100, isInstant = true, showDivider = false), LayoutParams(0, WRAP, 1f))
             colsRow.addView(consColumn("VIAJE", avgTripKwh100, isInstant = false, showDivider = true), LayoutParams(0, WRAP, 1f))
-            colsRow.addView(consColumn("MEDIA VIAJES", allTripsAvg, isInstant = false, showDivider = true), LayoutParams(0, WRAP, 1f))
-            addView(colsRow, LayoutParams(MATCH, 0, 1f))
+            colsRow.addView(consColumn(if (isSplitScreen) "MEDIA" else "MEDIA VIAJES", allTripsAvg, isInstant = false, showDivider = true), LayoutParams(0, WRAP, 1f))
+            addView(colsRow, LayoutParams(MATCH, WRAP))
 
+            val hvacStr = String.format(Locale.getDefault(), "%.2f kW", snap.hvacPowerKw)
+            val auxStr = String.format(Locale.getDefault(), "%.2f kW", snap.auxPowerKw)
             addView(TextView(context).apply {
-                text = if (snap.connected && !snap.isDemo) {
-                    "kWh/100 km · telemetría CAN C10 en tiempo real"
+                text = if (snap.acOn) {
+                    "kWh/100 km · Clima A/C: $hvacStr · Aux: $auxStr"
                 } else {
-                    "kWh/100 km · modelo físico C10 y telemetría activa"
+                    "kWh/100 km · Clima apagado (0,00 kW) · Aux: $auxStr"
                 }
-                setTextSp(13f)
+                setTextSp(if (isSplitScreen) 11.5f else 13f)
                 setTextColor(QonectaTheme.dim)
+                setSingleLine(true)
+                ellipsize = TextUtils.TruncateAt.END
             })
         }
 
         val splitCard = cardLayout().apply {
-            setPadding(dp(18), dp(14), dp(18), dp(14))
+            val pad = if (isSplitScreen) dp(14) else dp(18)
+            setPadding(pad, dp(12), pad, dp(12))
             addView(sectionLabel("¿EN QUÉ SE VA LA ENERGÍA?"), LayoutParams(MATCH, WRAP))
             val shares = if (snap.acOn) {
                 floatArrayOf(0.32f, 0.12f, 0.27f, 0.22f, 0.05f, 0.02f)
@@ -3378,29 +3619,39 @@ class ExtendedHubView(
             weightSum = 2.0f
         }
 
-        val evCostEur = tripNetKwh * electricityTariffEur
-        val petrolCostEur = tripKm * (6.5 / 100.0) * 1.62
+        val pricing = LeapVehicleDataSource.getEnergyPricing(context)
+        val variant = LeapVehicleDataSource.getSelectedVariant(context)
+        val isReevActive = variant.isReev || snap.isReev
+        val reevLitersEst = if (isReevActive && tripKm > 15.0) (tripKm * 0.038) else 0.0
+        val evCostEur = tripNetKwh * pricing.activeElecEurKwh + reevLitersEst * pricing.gasolineEurLiter
+        val petrolCostEur = tripKm * (6.5 / 100.0) * pricing.gasolineEurLiter
+        val dieselCostEur = tripKm * (5.6 / 100.0) * pricing.dieselEurLiter
         val costCard = cardLayout().apply {
-            setPadding(dp(18), dp(14), dp(18), dp(12))
+            val pad = if (isSplitScreen) dp(14) else dp(18)
+            setPadding(pad, dp(12), pad, dp(10))
             val headRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            headRow.addView(sectionLabel("COSTE DEL VIAJE"), LayoutParams(0, WRAP, 1f))
+            headRow.addView(
+                sectionLabel(if (isReevActive) "COSTE DEL VIAJE (REEV)" else "COSTE DEL VIAJE"),
+                LayoutParams(0, WRAP, 1f),
+            )
             val tariffChip = TextView(context).apply {
-                text = String.format(Locale.getDefault(), "⚡ %.2f €/kWh ▾", electricityTariffEur)
-                setTextSp(12f)
+                text = String.format(
+                    Locale.getDefault(),
+                    "⚡ %s %.2f € ▾",
+                    pricing.activeTariffLabel,
+                    pricing.activeElecEurKwh,
+                )
+                setTextSp(if (isSplitScreen) 11f else 12f)
                 setTextColor(QonectaTheme.accent)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                setPadding(dp(10), dp(3), dp(10), dp(3))
+                setSingleLine(true)
+                setPadding(dp(8), dp(3), dp(8), dp(3))
                 background = pillDrawable(QonectaTheme.withAlpha(QonectaTheme.accent, 0x1E), QonectaTheme.accent)
                 setOnClickListener {
-                    val tariffs = doubleArrayOf(0.14, 0.18, 0.25, 0.42)
-                    val curIdx = tariffs.indexOfFirst { kotlin.math.abs(it - electricityTariffEur) < 0.01 }
-                    val next = tariffs[(curIdx + 1) % tariffs.size]
-                    electricityTariffEur = next
-                    prefs.edit().putFloat("elec_tariff_eur", next.toFloat()).apply()
-                    renderActiveTab(resetScroll = false)
+                    showUnitEnergyPricingDialog()
                 }
             }
             headRow.addView(tariffChip)
@@ -3409,76 +3660,110 @@ class ExtendedHubView(
             val priceRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 gravity = Gravity.BOTTOM
-                setPadding(0, dp(4), 0, dp(2))
+                setPadding(0, dp(2), 0, dp(2))
             }
             priceRow.addView(TextView(context).apply {
                 text = String.format(Locale.getDefault(), "%.2f", evCostEur)
-                setTextSp(40f)
+                setTextSp(if (isSplitScreen) 32f else 40f)
                 setTextColor(QonectaTheme.text)
                 typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                setSingleLine(true)
             })
             priceRow.addView(TextView(context).apply {
                 text = " €"
-                setTextSp(20f)
+                setTextSp(if (isSplitScreen) 17f else 20f)
                 setTextColor(QonectaTheme.dim)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                setPadding(0, 0, 0, dp(5))
+                setPadding(0, 0, 0, dp(4))
+                setSingleLine(true)
             })
             addView(priceRow)
 
             addView(TextView(context).apply {
-                text = String.format(Locale.getDefault(), "a %.2f €/kWh · %.2f kWh", electricityTariffEur, tripNetKwh)
-                setTextSp(14f)
+                text = if (isReevActive && reevLitersEst > 0.05) {
+                    String.format(
+                        Locale.getDefault(),
+                        "CA %.2f € · CC %.2f € · +%.1f L gas. (%.2f €/L)",
+                        pricing.homeElecEurKwh,
+                        pricing.dcFastElecEurKwh,
+                        reevLitersEst,
+                        pricing.gasolineEurLiter,
+                    )
+                } else {
+                    String.format(
+                        Locale.getDefault(),
+                        "Casa %.2f € · Rápida %.2f €/kWh · %.2f kWh",
+                        pricing.homeElecEurKwh,
+                        pricing.dcFastElecEurKwh,
+                        tripNetKwh,
+                    )
+                }
+                setTextSp(if (isSplitScreen) 12f else 13.5f)
                 setTextColor(QonectaTheme.dim)
+                setSingleLine(true)
+                ellipsize = TextUtils.TruncateAt.END
             })
             addView(TextView(context).apply {
-                text = String.format(Locale.getDefault(), "En gasolina, ~%.2f €", petrolCostEur)
-                setTextSp(15.5f)
+                text = String.format(
+                    Locale.getDefault(),
+                    "Gasolina (%.2f€): ~%.2f € · Diésel (%.2f€): ~%.2f €",
+                    pricing.gasolineEurLiter,
+                    petrolCostEur,
+                    pricing.dieselEurLiter,
+                    dieselCostEur,
+                )
+                setTextSp(if (isSplitScreen) 12.5f else 14f)
                 setTextColor(0xFF2EE59D.toInt())
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                setPadding(0, dp(3), 0, 0)
+                setPadding(0, dp(2), 0, 0)
+                setSingleLine(true)
+                ellipsize = TextUtils.TruncateAt.END
             })
         }
 
         val co2SavedKg = tripKm * (6.5 / 100.0) * 2.31
         val co2Card = cardLayout().apply {
-            setPadding(dp(18), dp(14), dp(18), dp(12))
+            val pad = if (isSplitScreen) dp(14) else dp(18)
+            setPadding(pad, dp(12), pad, dp(10))
             addView(sectionLabel("CO₂ EVITADO"), LayoutParams(MATCH, WRAP))
             val co2Row = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(4), 0, dp(2))
+                setPadding(0, dp(2), 0, dp(2))
             }
             co2Row.addView(TextView(context).apply {
                 text = "🍃"
-                setTextSp(28f)
-                setPadding(0, 0, dp(10), 0)
+                setTextSp(if (isSplitScreen) 24f else 28f)
+                setPadding(0, 0, dp(8), 0)
             })
             co2Row.addView(TextView(context).apply {
                 text = String.format(Locale.getDefault(), "%.1f", co2SavedKg)
-                setTextSp(38f)
+                setTextSp(if (isSplitScreen) 32f else 38f)
                 setTextColor(QonectaTheme.text)
                 typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                setSingleLine(true)
             })
             co2Row.addView(TextView(context).apply {
                 text = " kg"
-                setTextSp(18f)
+                setTextSp(if (isSplitScreen) 16f else 18f)
                 setTextColor(QonectaTheme.dim)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                setPadding(0, dp(6), 0, 0)
+                setPadding(0, dp(4), 0, 0)
+                setSingleLine(true)
             })
             addView(co2Row)
 
             addView(TextView(context).apply {
-                text = "Frente a un gasolina de 6,5 l/100 km (2,31 kg de CO₂ por litro, solo el escape)."
-                setTextSp(13f)
+                text = "Frente a un gasolina de 6,5 l/100 km (2,31 kg CO₂/l)."
+                setTextSp(if (isSplitScreen) 12f else 13f)
                 setTextColor(QonectaTheme.dim)
-                setLineSpacing(0f, 1.15f)
+                setLineSpacing(0f, 1.12f)
             })
         }
 
         val tipCard = cardLayout().apply {
-            setPadding(dp(18), dp(12), dp(18), dp(10))
+            val pad = if (isSplitScreen) dp(14) else dp(18)
+            setPadding(pad, dp(12), pad, dp(10))
             addView(sectionLabel("CONSEJO"), LayoutParams(MATCH, WRAP))
             val tipRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
@@ -3497,7 +3782,7 @@ class ExtendedHubView(
             }
             tipRow.addView(TextView(context).apply {
                 text = tipHeadline
-                setTextSp(15.5f)
+                setTextSp(if (isSplitScreen) 14.5f else 15.5f)
                 setTextColor(QonectaTheme.text)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                 setLineSpacing(0f, 1.08f)
@@ -3518,26 +3803,47 @@ class ExtendedHubView(
         }
 
         if (isSplitScreen) {
-            val grid = LinearLayout(context).apply {
+            (powerCard.parent as? ViewGroup)?.removeView(powerCard)
+            (condCard.parent as? ViewGroup)?.removeView(condCard)
+            (consCard.parent as? ViewGroup)?.removeView(consCard)
+            (splitCard.parent as? ViewGroup)?.removeView(splitCard)
+
+            val scroll = ScrollView(context).apply {
+                isFillViewport = true
+                isVerticalScrollBarEnabled = false
+            }
+            val splitCol = LinearLayout(context).apply {
                 orientation = VERTICAL
-                weightSum = 2f
             }
-            val topHalf = LinearLayout(context).apply {
+
+            // Fila 1: POTENCIA AHORA (con gráfica de 2/10 min completa)
+            splitCol.addView(powerCard, LayoutParams(MATCH, dp(215)).apply { bottomMargin = dp(8) })
+            // Fila 2: CONSUMO (AHORA | VIAJE | MEDIA con ancho completo para que nunca se corte)
+            splitCol.addView(consCard, LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
+
+            // Fila 3: CONDICIONES + ¿EN QUÉ SE VA LA ENERGÍA? (2 columnas)
+            val midRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 weightSum = 2f
             }
-            topHalf.addView(col1, LayoutParams(0, MATCH, 1f).apply { rightMargin = dp(10) })
-            topHalf.addView(col2, LayoutParams(0, MATCH, 1f))
-            val botHalf = LinearLayout(context).apply {
+            midRow.addView(condCard, LayoutParams(0, dp(235), 0.96f).apply { rightMargin = dp(8) })
+            midRow.addView(splitCard, LayoutParams(0, dp(235), 1.04f))
+            splitCol.addView(midRow, LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
+
+            // Fila 4: COSTE DEL VIAJE + CO2 EVITADO (2 columnas amplias para que el título nunca se parta en vertical)
+            val costCo2Row = LinearLayout(context).apply {
                 orientation = HORIZONTAL
-                weightSum = 3f
+                weightSum = 2f
             }
-            botHalf.addView(costCard, LayoutParams(0, MATCH, 1f).apply { rightMargin = dp(8) })
-            botHalf.addView(co2Card, LayoutParams(0, MATCH, 1f).apply { rightMargin = dp(8) })
-            botHalf.addView(tipCard, LayoutParams(0, MATCH, 1f))
-            grid.addView(topHalf, LayoutParams(MATCH, 0, 1.30f).apply { bottomMargin = dp(10) })
-            grid.addView(botHalf, LayoutParams(MATCH, 0, 0.70f))
-            return grid
+            costCo2Row.addView(costCard, LayoutParams(0, MATCH, 1f).apply { rightMargin = dp(8) })
+            costCo2Row.addView(co2Card, LayoutParams(0, MATCH, 1f))
+            splitCol.addView(costCo2Row, LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) })
+
+            // Fila 5: CONSEJO a ancho completo
+            splitCol.addView(tipCard, LayoutParams(MATCH, WRAP))
+
+            scroll.addView(splitCol)
+            return scroll
         }
 
         col3.addView(costCard, LayoutParams(MATCH, 0, 0.72f).apply { bottomMargin = dp(12) })
@@ -3551,9 +3857,310 @@ class ExtendedHubView(
         return rootRow
     }
 
+    private fun showUnitEnergyPricingDialog() {
+        val current = LeapVehicleDataSource.getEnergyPricing(context)
+        val root = LinearLayout(context).apply {
+            orientation = VERTICAL
+            setPadding(dp(22), dp(16), dp(22), dp(12))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(18).toFloat()
+                setColor(QonectaTheme.surface)
+                setStroke(dp(1), QonectaTheme.edge)
+            }
+        }
+
+        root.addView(TextView(context).apply {
+            text = "💶 Tarifas de Electricidad, Gasolina y Diésel (BEV + REEV)"
+            setTextSp(20f)
+            setTextColor(QonectaTheme.text)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setPadding(0, 0, 0, dp(4))
+        })
+        root.addView(TextView(context).apply {
+            text = "Se sincronizan automáticamente con Qonecta Unit Companion en tu móvil."
+            setTextSp(13.5f)
+            setTextColor(QonectaTheme.dim)
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        fun priceInputRow(label: String, unit: String, initialValue: Double): EditText {
+            val row = LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(4), 0, dp(4))
+            }
+            row.addView(TextView(context).apply {
+                text = label
+                setTextSp(14.5f)
+                setTextColor(QonectaTheme.text)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            }, LayoutParams(0, WRAP, 1.25f))
+
+            val input = EditText(context).apply {
+                setText(String.format(Locale.US, "%.2f", initialValue))
+                setTextSp(15.5f)
+                setTextColor(QonectaTheme.text)
+                setHintTextColor(QonectaTheme.dim)
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(10).toFloat()
+                    setColor(QonectaTheme.surfaceTop)
+                    setStroke(dp(1), QonectaTheme.edge)
+                }
+            }
+            row.addView(input, LayoutParams(dp(110), dp(42)).apply { rightMargin = dp(8) })
+            row.addView(TextView(context).apply {
+                text = unit
+                setTextSp(13.5f)
+                setTextColor(QonectaTheme.accent)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            }, LayoutParams(dp(58), WRAP))
+            root.addView(row, LayoutParams(MATCH, WRAP))
+            return input
+        }
+
+        val homeInput = priceInputRow("🏠 Electricidad en casa (CA)", "€/kWh", current.homeElecEurKwh)
+        val dcInput = priceInputRow("⚡ Carga rápida fuera (CC)", "€/kWh", current.dcFastElecEurKwh)
+        val gasInput = priceInputRow("⛽ Gasolina 95 (REEV / Comp.)", "€/L", current.gasolineEurLiter)
+        val dieselInput = priceInputRow("🛢 Diésel (Comparativa)", "€/L", current.dieselEurLiter)
+
+        var selectedTariffMode = current.tariffMode
+        val modeRow = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, dp(6))
+        }
+        modeRow.addView(TextView(context).apply {
+            text = "Tarifa eléctrica activa:"
+            setTextSp(13.5f)
+            setTextColor(QonectaTheme.dim)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setPadding(0, 0, dp(10), 0)
+        })
+        val modeBtns = mutableListOf<TextView>()
+        val modeOptions = listOf(0 to "🏠 Casa CA", 1 to "⚡ Rápida CC", 2 to "🔀 Mixto 70/30")
+        fun refreshModeBtns() {
+            modeBtns.forEachIndexed { idx, tv ->
+                val active = selectedTariffMode == idx
+                tv.setTextColor(if (active) QonectaTheme.onAccent else QonectaTheme.text)
+                tv.background = pillDrawable(
+                    if (active) QonectaTheme.accent else QonectaTheme.surfaceTop,
+                    if (active) QonectaTheme.accent else QonectaTheme.edge,
+                )
+            }
+        }
+        modeOptions.forEach { (modeIdx, label) ->
+            val btn = TextView(context).apply {
+                text = label
+                setTextSp(13f)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                setOnClickListener {
+                    selectedTariffMode = modeIdx
+                    refreshModeBtns()
+                }
+            }
+            modeBtns.add(btn)
+            modeRow.addView(btn, LayoutParams(WRAP, WRAP).apply { rightMargin = dp(8) })
+        }
+        refreshModeBtns()
+        root.addView(modeRow, LayoutParams(MATCH, WRAP))
+
+        var reevActive = LeapVehicleDataSource.getSelectedVariant(context).isReev
+        val reevToggle = TextView(context).apply {
+            setTextSp(13.5f)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            fun updateReevLook() {
+                text = if (reevActive) {
+                    "⛽ Modo REEV (Extensor de autonomía Gasolina + Batería): ACTIVO ✓"
+                } else {
+                    "🔋 Modo actual: 100 % Eléctrico (BEV) · Toca para activar modo REEV (Híbrido)"
+                }
+                setTextColor(if (reevActive) 0xFFFFB547.toInt() else QonectaTheme.text)
+                background = pillDrawable(
+                    if (reevActive) 0x26FFB547 else QonectaTheme.surfaceTop,
+                    if (reevActive) 0xFFFFB547.toInt() else QonectaTheme.edge,
+                )
+            }
+            updateReevLook()
+            setOnClickListener {
+                reevActive = !reevActive
+                updateReevLook()
+            }
+        }
+        root.addView(reevToggle, LayoutParams(MATCH, WRAP).apply { topMargin = dp(4); bottomMargin = dp(10) })
+
+        val dialog = android.app.AlertDialog.Builder(context)
+            .setView(root)
+            .create()
+
+        val btnRow = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(0, dp(6), 0, 0)
+        }
+        btnRow.addView(TextView(context).apply {
+            text = "Cancelar"
+            setTextSp(14.5f)
+            setTextColor(QonectaTheme.dim)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            background = pillDrawable(QonectaTheme.surfaceTop, QonectaTheme.edge)
+            setOnClickListener { dialog.dismiss() }
+        }, LayoutParams(WRAP, WRAP).apply { rightMargin = dp(10) })
+
+        btnRow.addView(TextView(context).apply {
+            text = "💾 Guardar y sincronizar con Companion"
+            setTextSp(14.5f)
+            setTextColor(QonectaTheme.onAccent)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+            background = pillDrawable(QonectaTheme.accent, QonectaTheme.accent)
+            setOnClickListener {
+                fun parsePrice(et: EditText, fallback: Double): Double =
+                    et.text?.toString()?.replace(',', '.')?.trim()?.toDoubleOrNull()
+                        ?.coerceIn(0.01, 9.99) ?: fallback
+
+                val updated = LeapVehicleDataSource.EnergyPricingConfig(
+                    homeElecEurKwh = parsePrice(homeInput, current.homeElecEurKwh),
+                    dcFastElecEurKwh = parsePrice(dcInput, current.dcFastElecEurKwh),
+                    gasolineEurLiter = parsePrice(gasInput, current.gasolineEurLiter),
+                    dieselEurLiter = parsePrice(dieselInput, current.dieselEurLiter),
+                    tariffMode = selectedTariffMode,
+                    updatedAtMs = System.currentTimeMillis(),
+                )
+                LeapVehicleDataSource.saveEnergyPricing(context, updated)
+                val curVariant = LeapVehicleDataSource.getSelectedVariant(context)
+                if (reevActive && !curVariant.isReev) {
+                    LeapVehicleDataSource.setSelectedVariant(context, LeapVehicleDataSource.C10Variant.REEV_DESIGN_215)
+                } else if (!reevActive && curVariant.isReev) {
+                    LeapVehicleDataSource.setSelectedVariant(context, LeapVehicleDataSource.C10Variant.PROMAX_DESIGN_MY26)
+                }
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
+                dialog.dismiss()
+                renderActiveTab()
+            }
+        })
+        root.addView(btnRow, LayoutParams(MATCH, WRAP))
+
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.show()
+    }
+
     // =========================================================================
-    // 6. PESTAÑA ESTADO (Diseño panorámico 3 columnas Qonecta+ + Selector C10 hasta MY26)
+    // 6. PESTAÑA ESTADO (Diseño panorámico 3 columnas Qonecta+ + Modelo 3D C10 + Selector hasta MY26)
     // =========================================================================
+
+    private var car3dWebView: WebView? = null
+    @Volatile
+    private var car3dReady: Boolean = false
+    @Volatile
+    private var car3dFailed: Boolean = false
+
+    @Suppress("SetJavaScriptEnabled")
+    private fun obtainCar3dWebView(): WebView {
+        val existing = car3dWebView
+        if (existing != null) return existing
+        val wv = WebView(context).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isVerticalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = false
+            settings.apply {
+                javaScriptEnabled = true
+                allowFileAccess = true
+                @Suppress("DEPRECATION")
+                allowFileAccessFromFileURLs = true
+                domStorageEnabled = false
+                setSupportZoom(false)
+            }
+            addJavascriptInterface(
+                object {
+                    @JavascriptInterface
+                    fun ready() {
+                        car3dReady = true
+                        uiHandler.post {
+                            pushCar3dState(
+                                LeapVehicleDataSource.snapshot(),
+                                LeapVehicleDataSource.getSelectedPaintColor(context),
+                            )
+                        }
+                    }
+
+                    @JavascriptInterface
+                    fun color(hex: String?) {
+                        val picked = LeapVehicleDataSource.C10PaintColor.fromHex3d(hex)
+                        LeapVehicleDataSource.setSelectedPaintColor(context, picked)
+                        uiHandler.post { renderActiveTab() }
+                    }
+
+                    @JavascriptInterface
+                    fun doorToggled(index: Int, isOpen: Boolean) {
+                        LeapVehicleDataSource.setDoorOpen(index, isOpen)
+                        uiHandler.post { renderActiveTab() }
+                    }
+
+                    @JavascriptInterface
+                    fun bootToggled(isOpen: Boolean) {
+                        LeapVehicleDataSource.setBootOpen(isOpen)
+                        uiHandler.post { renderActiveTab() }
+                    }
+
+                    @JavascriptInterface
+                    fun snapshot(@Suppress("UNUSED_PARAMETER") dataUrl: String?) {
+                        // Opcional: captura PNG del modelo 3D
+                    }
+
+                    @JavascriptInterface
+                    fun failed(@Suppress("UNUSED_PARAMETER") why: String?) {
+                        car3dFailed = true
+                        uiHandler.post { renderActiveTab() }
+                    }
+                },
+                "HQL",
+            )
+            loadUrl("file:///android_asset/car3d.html")
+        }
+        car3dWebView = wv
+        return wv
+    }
+
+    private fun pushCar3dState(
+        snap: LeapVehicleDataSource.TelemetrySnapshot,
+        paintColor: LeapVehicleDataSource.C10PaintColor,
+    ) {
+        val wv = car3dWebView ?: return
+        if (!car3dReady) return
+        val tyresArr = JSONArray()
+        val posTags = listOf("Del. Izq", "Del. Der", "Tras. Izq", "Tras. Der")
+        for (i in 0..3) {
+            val bar = snap.tyreBars.getOrElse(i) { if (i == 2) 2.52 else 2.50 }
+            val tempC = snap.tyreTempsC.getOrElse(i) { 25 }
+            val warn = bar < 2.15 || bar > 2.95
+            tyresArr.put(
+                JSONObject()
+                    .put("text", String.format(Locale.getDefault(), "%.2f", bar))
+                    .put("unit", "bar")
+                    .put("warn", warn)
+                    .put("tag", "${posTags[i]} · $tempC °C"),
+            )
+        }
+        val doorsArr = JSONArray()
+        for (i in 0..3) {
+            doorsArr.put(snap.doorsOpen.getOrElse(i) { false })
+        }
+        val payload = JSONObject()
+            .put("tyres", tyresArr)
+            .put("doors", doorsArr)
+            .put("boot", snap.bootOpen)
+            .put("color", paintColor.hex3d)
+            .put("hint", "Gira con el dedo · Toca una puerta o maletero para abrir")
+        wv.evaluateJavascript("if(window.update)update($payload);", null)
+    }
 
     private fun buildStatusTab(snap: LeapVehicleDataSource.TelemetrySnapshot): View {
         val variant = LeapVehicleDataSource.getSelectedVariant(context)
@@ -3621,6 +4228,7 @@ class ExtendedHubView(
                     ageColor = if (snap.chargingStatus in 1..2) QonectaTheme.green else QonectaTheme.accent,
                 )
             }
+            statusRingViewRef = ringView
             val ringSize = when {
                 isSplitScreen -> dp(136)
                 isReevActive -> dp(168)
@@ -3648,6 +4256,7 @@ class ExtendedHubView(
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
             }
+            statusPowerStatusTvRef = powerStatusTv
 
             // Bloque EN LA BATERÍA (con capacidad exacta del C10 elegido: 81,9 / 69,9 / 28,4 kWh)
             val energyBox = LinearLayout(context).apply {
@@ -3696,10 +4305,13 @@ class ExtendedHubView(
                     typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
+                    statusEnergyCurrentTvRef = this
                 }, LayoutParams(MATCH, WRAP).apply { topMargin = dp(2) })
 
+                val batBar = BatteryCapacityBarCanvasView(context, (soc / 100.0).toFloat(), QonectaTheme.accent)
+                statusBatBarViewRef = batBar
                 addView(
-                    BatteryCapacityBarCanvasView(context, (soc / 100.0).toFloat(), QonectaTheme.accent),
+                    batBar,
                     LayoutParams(MATCH, if (isReevActive || isSplitScreen) dp(8) else dp(10)).apply { topMargin = dp(5) },
                 )
 
@@ -3786,10 +4398,13 @@ class ExtendedHubView(
                         typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                         maxLines = 1
                         ellipsize = TextUtils.TruncateAt.END
+                        statusReevTextTvRef = this
                     }, LayoutParams(MATCH, WRAP).apply { topMargin = dp(2) })
 
+                    val reevBar = BatteryCapacityBarCanvasView(context, (fuelPct / 100.0).toFloat(), QonectaTheme.amber)
+                    statusReevBarViewRef = reevBar
                     addView(
-                        BatteryCapacityBarCanvasView(context, (fuelPct / 100.0).toFloat(), QonectaTheme.amber),
+                        reevBar,
                         LayoutParams(MATCH, dp(7)).apply { topMargin = dp(4) },
                     )
                 }
@@ -3822,39 +4437,138 @@ class ExtendedHubView(
         }
 
         // ---------------------------------------------------------------------
-        // COLUMNA 2: NEUMÁTICOS, PUERTAS Y CARROCERÍA (Vista superior C10 + 4 presiones bar/°C + color)
+        // COLUMNA 2: NEUMÁTICOS, PUERTAS Y CARROCERÍA (Modelo 3D interactivo C10 + 4 presiones bar + apertura de puertas)
         // ---------------------------------------------------------------------
         val col2Card = cardLayout().apply {
-            setPadding(dp(20), dp(16), dp(20), dp(16))
+            setPadding(dp(18), dp(14), dp(18), dp(14))
 
             val headerRow = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            headerRow.addView(sectionLabel("NEUMÁTICOS Y PUERTAS"), LayoutParams(0, WRAP, 1f))
+            headerRow.addView(sectionLabel("MODELO 3D · NEUMÁTICOS Y PUERTAS"), LayoutParams(0, WRAP, 1f))
 
             val colorBtn = TextView(context).apply {
                 text = "🎨 ${paintColor.label} ▾"
-                setTextSp(15f)
+                setTextSp(14f)
                 setTextColor(QonectaTheme.text)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                setPadding(dp(14), dp(6), dp(14), dp(6))
+                setPadding(dp(12), dp(5), dp(12), dp(5))
                 background = pillDrawable(QonectaTheme.surfaceTop, QonectaTheme.accent)
                 setOnClickListener {
-                    LeapVehicleDataSource.cyclePaintColor(context)
+                    val nextColor = LeapVehicleDataSource.cyclePaintColor(context)
+                    pushCar3dState(LeapVehicleDataSource.snapshot(), nextColor)
                     renderActiveTab()
                 }
             }
             headerRow.addView(colorBtn, LayoutParams(WRAP, WRAP))
             addView(headerRow, LayoutParams(MATCH, WRAP))
 
-            val tyresCanvas = C10TyresAndDoorsCanvasView(context, snap, paintColor).apply {
-                setOnClickListener {
-                    LeapVehicleDataSource.cyclePaintColor(context)
-                    renderActiveTab()
+            if (!car3dFailed) {
+                val wv = obtainCar3dWebView()
+                (wv.parent as? ViewGroup)?.removeView(wv)
+                addView(wv, LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(4) })
+                pushCar3dState(snap, paintColor)
+            } else {
+                val tyresCanvas = C10TyresAndDoorsCanvasView(context, snap, paintColor).apply {
+                    setOnClickListener {
+                        LeapVehicleDataSource.cyclePaintColor(context)
+                        renderActiveTab()
+                    }
                 }
+                addView(tyresCanvas, LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(6) })
             }
-            addView(tyresCanvas, LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(6) })
+
+            // Barra interactiva inferior de puertas, maletero y cierre (refleja y anima el modelo 3D en tiempo real)
+            val doorsCard = LinearLayout(context).apply {
+                orientation = VERTICAL
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                background = roundedDrawable(QonectaTheme.surfaceTop, dp(14), dp(1), QonectaTheme.outline)
+
+                val anyDoorOpen = snap.doorsOpen.any { it } || snap.bootOpen
+                val lockTopRow = LinearLayout(context).apply {
+                    orientation = HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                lockTopRow.addView(TextView(context).apply {
+                    text = when {
+                        anyDoorOpen -> "🔓 Puerta / Maletero abierto"
+                        snap.locked -> "🔒 Cerrado · Seguridad activa"
+                        else -> "🔓 Desbloqueado · Puertas cerradas"
+                    }
+                    setTextSp(14.5f)
+                    setTextColor(if (anyDoorOpen) QonectaTheme.amber else QonectaTheme.green)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                }, LayoutParams(0, WRAP, 1f))
+
+                val lockToggleBtn = TextView(context).apply {
+                    text = if (snap.locked && !anyDoorOpen) "Cerrar / Abrir" else "Cerrar todo"
+                    setTextSp(12.5f)
+                    setTextColor(QonectaTheme.accent)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                    setPadding(dp(10), dp(3), dp(10), dp(3))
+                    background = pillDrawable(QonectaTheme.withAlpha(QonectaTheme.accent, 0x1E), QonectaTheme.accent)
+                    setOnClickListener {
+                        if (anyDoorOpen) {
+                            LeapVehicleDataSource.setVehicleLocked(true)
+                        } else {
+                            LeapVehicleDataSource.toggleVehicleLocked()
+                        }
+                        pushCar3dState(LeapVehicleDataSource.snapshot(), LeapVehicleDataSource.getSelectedPaintColor(context))
+                        renderActiveTab()
+                    }
+                }
+                lockTopRow.addView(lockToggleBtn, LayoutParams(WRAP, WRAP))
+                addView(lockTopRow, LayoutParams(MATCH, WRAP))
+
+                val doorPillsRow = LinearLayout(context).apply {
+                    orientation = HORIZONTAL
+                    weightSum = 5f
+                }
+                val doorNames = listOf("Del. Izq", "Del. Der", "Tras. Izq", "Tras. Der")
+                doorNames.forEachIndexed { idx, label ->
+                    val open = snap.doorsOpen.getOrElse(idx) { false }
+                    val pill = TextView(context).apply {
+                        text = if (open) "🔓 $label" else label
+                        setTextSp(11.5f)
+                        setTextColor(if (open) QonectaTheme.onAccent else QonectaTheme.text)
+                        typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                        gravity = Gravity.CENTER
+                        setPadding(dp(4), dp(5), dp(4), dp(5))
+                        background = pillDrawable(
+                            if (open) QonectaTheme.amber else QonectaTheme.bg,
+                            if (open) QonectaTheme.amber else QonectaTheme.outline,
+                        )
+                        setOnClickListener {
+                            LeapVehicleDataSource.toggleDoorOpen(idx)
+                            pushCar3dState(LeapVehicleDataSource.snapshot(), LeapVehicleDataSource.getSelectedPaintColor(context))
+                            renderActiveTab()
+                        }
+                    }
+                    doorPillsRow.addView(pill, LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(4) })
+                }
+                val bootOpen = snap.bootOpen
+                val bootPill = TextView(context).apply {
+                    text = if (bootOpen) "🔓 Maletero" else "Maletero"
+                    setTextSp(11.5f)
+                    setTextColor(if (bootOpen) QonectaTheme.onAccent else QonectaTheme.text)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                    gravity = Gravity.CENTER
+                    setPadding(dp(4), dp(5), dp(4), dp(5))
+                    background = pillDrawable(
+                        if (bootOpen) QonectaTheme.amber else QonectaTheme.bg,
+                        if (bootOpen) QonectaTheme.amber else QonectaTheme.outline,
+                    )
+                    setOnClickListener {
+                        LeapVehicleDataSource.toggleBootOpen()
+                        pushCar3dState(LeapVehicleDataSource.snapshot(), LeapVehicleDataSource.getSelectedPaintColor(context))
+                        renderActiveTab()
+                    }
+                }
+                doorPillsRow.addView(bootPill, LayoutParams(0, WRAP, 1f))
+                addView(doorPillsRow, LayoutParams(MATCH, WRAP).apply { topMargin = dp(6) })
+            }
+            addView(doorsCard, LayoutParams(MATCH, WRAP).apply { topMargin = dp(6) })
         }
 
         // ---------------------------------------------------------------------
@@ -3957,10 +4671,21 @@ class ExtendedHubView(
 
             addView(View(context), LayoutParams(MATCH, 0, 1f))
 
-            val selectVariantBtn = actionButton("🚗 Cambiar versión de C10 ▾", primary = true) {
+            val bottomActionsRow = LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                weightSum = 2f
+            }
+            val selectVariantBtn = actionButton(if (isSplitScreen) "🚗 Versión C10 ▾" else "🚗 Cambiar versión C10 ▾", primary = true) {
                 showC10VariantSelectorDialog()
             }
-            addView(selectVariantBtn, LayoutParams(MATCH, dp(50)).apply { topMargin = dp(6) })
+            val usbInstallBtn = actionButton(if (isSplitScreen) "📦 Instalar USB" else "📦 Actualizar / Archivos USB", primary = false) {
+                OtaSelfUpdater.showDialog(context) {
+                    com.headqlink.unit.files.CarFiles.open(context)
+                }
+            }
+            bottomActionsRow.addView(selectVariantBtn, LayoutParams(0, dp(48), 1f).apply { rightMargin = dp(8) })
+            bottomActionsRow.addView(usbInstallBtn, LayoutParams(0, dp(48), 1f))
+            addView(bottomActionsRow, LayoutParams(MATCH, WRAP).apply { topMargin = dp(6) })
         }
 
         // Tarjeta Inferior: COCHE Y CLIMATIZACIÓN (estilo Qonecta+ sin botones técnicos confusos)
@@ -3996,7 +4721,7 @@ class ExtendedHubView(
                     "ESTADO Y MARCHA",
                     if (moving) "Marcha ${snap.gearLabel()} · ${snap.effectiveSpeedKmh.roundToInt()} km/h" else "Estacionado · Marcha ${snap.gearLabel()}",
                     if (moving) QonectaTheme.accent else QonectaTheme.text,
-                ),
+                ) { statusGearChipTvRef = it },
                 LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) },
             )
             rowA.addView(
@@ -4004,7 +4729,7 @@ class ExtendedHubView(
                     "MODOS ACTIVOS",
                     "${snap.driveModeLabel()} · Regen ${snap.regenModeLabel()}",
                     QonectaTheme.accent,
-                ),
+                ) { statusModesChipTvRef = it },
                 LayoutParams(0, WRAP, 1f),
             )
             addView(rowA, LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) })
@@ -4018,7 +4743,7 @@ class ExtendedHubView(
                     "CLIMA BIZONA (IZQ / DER)",
                     String.format(Locale.getDefault(), "%.1f °C / %.1f °C", tL, tR),
                     QonectaTheme.text,
-                ),
+                ) { statusClimaChipTvRef = it },
                 LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) },
             )
             rowB.addView(
@@ -4026,7 +4751,7 @@ class ExtendedHubView(
                     "EXTERIOR Y DIRECCIÓN",
                     String.format(Locale.getDefault(), "%.1f °C · Dir. %s", tOut, snap.steeringModeLabel()),
                     QonectaTheme.text,
-                ),
+                ) { statusExtSteerChipTvRef = it },
                 LayoutParams(0, WRAP, 1f),
             )
             addView(rowB, LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
@@ -4074,7 +4799,12 @@ class ExtendedHubView(
         return rootRow
     }
 
-    private fun instrumentMiniChip(title: String, value: String, valueColor: Int): View = LinearLayout(context).apply {
+    private fun instrumentMiniChip(
+        title: String,
+        value: String,
+        valueColor: Int,
+        onValueView: ((TextView) -> Unit)? = null,
+    ): View = LinearLayout(context).apply {
         orientation = VERTICAL
         setPadding(dp(10), dp(6), dp(10), dp(6))
         background = GradientDrawable().apply {
@@ -4090,7 +4820,7 @@ class ExtendedHubView(
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         })
-        addView(TextView(context).apply {
+        val valTv = TextView(context).apply {
             text = value
             setTextSp(14.5f)
             setTextColor(valueColor)
@@ -4098,7 +4828,9 @@ class ExtendedHubView(
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
             setPadding(0, dp(2), 0, 0)
-        })
+        }
+        onValueView?.invoke(valTv)
+        addView(valTv)
     }
 
     /**
@@ -4291,9 +5023,15 @@ class ExtendedHubView(
 
     private class BatteryCapacityBarCanvasView(
         context: Context,
-        private val fraction: Float,
+        private var fraction: Float,
         private val barColor: Int,
     ) : View(context) {
+        fun updateFraction(newFraction: Float) {
+            if (kotlin.math.abs(fraction - newFraction) > 0.005f) {
+                fraction = newFraction
+                invalidate()
+            }
+        }
         private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
             color = QonectaTheme.bg
@@ -5836,10 +6574,12 @@ class ExtendedHubView(
 
     private fun sectionLabel(text: String): TextView = TextView(context).apply {
         this.text = text
-        setTextSp(16f)
+        setTextSp(if (isSplitScreen) 14f else 16f)
         setTextColor(QonectaTheme.dim)
         typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        letterSpacing = 0.08f
+        letterSpacing = if (isSplitScreen) 0.04f else 0.08f
+        setSingleLine(true)
+        ellipsize = TextUtils.TruncateAt.END
     }
 
     private fun metricBox(title: String, value: String, subtitle: String, valueColor: Int): LinearLayout =
@@ -6053,17 +6793,34 @@ class ExtendedHubView(
 
             val days = 14
             val daily = DoubleArray(days)
-            val baseSample = doubleArrayOf(18.0, 0.0, 26.0, 12.0, 94.0, 22.0, 0.0, 34.0, 19.4, 0.0, 54.2, 68.5, 19.4, 41.8)
+            val dayLetters = Array(days) { "L" }
+            val cal = java.util.Calendar.getInstance()
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+            cal.set(java.util.Calendar.MINUTE, 59)
+            cal.set(java.util.Calendar.SECOND, 59)
+            cal.set(java.util.Calendar.MILLISECOND, 999)
+            val endOfTodayMs = cal.timeInMillis
+            val dayMs = 24L * 3600_000L
+            val dowMap = mapOf(
+                java.util.Calendar.MONDAY to "L",
+                java.util.Calendar.TUESDAY to "M",
+                java.util.Calendar.WEDNESDAY to "X",
+                java.util.Calendar.THURSDAY to "J",
+                java.util.Calendar.FRIDAY to "V",
+                java.util.Calendar.SATURDAY to "S",
+                java.util.Calendar.SUNDAY to "D",
+            )
             for (i in 0 until days) {
-                daily[i] = baseSample[i]
-            }
-            if (trips.isNotEmpty()) {
-                daily[days - 1] = trips.first().distanceKm
+                val daysBack = (days - 1) - i
+                val dayEndMs = endOfTodayMs - daysBack * dayMs
+                val dayStartMs = dayEndMs - dayMs + 1L
+                daily[i] = trips.filter { it.startTimeMs in dayStartMs..dayEndMs }.sumOf { it.distanceKm }
+                cal.timeInMillis = dayStartMs + 12L * 3600_000L
+                dayLetters[i] = dowMap[cal.get(java.util.Calendar.DAY_OF_WEEK)] ?: "D"
             }
 
-            val maxKm = max(20.0, daily.maxOrNull() ?: 60.0)
+            val maxKm = max(20.0, daily.maxOrNull() ?: 20.0)
             val maxIdx = daily.indices.maxByOrNull { daily[it] } ?: (days - 1)
-            val dayLetters = arrayOf("L", "M", "X", "J", "V", "S", "D", "L", "M", "X", "J", "V", "S", "D")
 
             val topPad = 24f
             val botPad = 26f

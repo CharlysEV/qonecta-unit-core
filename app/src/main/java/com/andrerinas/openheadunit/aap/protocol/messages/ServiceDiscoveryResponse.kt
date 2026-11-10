@@ -182,19 +182,26 @@ class ServiceDiscoveryResponse(private val context: Context)
                 }
             }
 
-            // Microphone Service (Channel 7) - Always required for AA connection (Assistant)
-            val mic = Control.Service.newBuilder().also { service ->
-                service.id = Channel.ID_MIC
-                service.mediaSourceService = Control.Service.MediaSourceService.newBuilder().also {
-                    it.type = Media.MediaCodecType.MEDIA_CODEC_AUDIO_PCM
-                    it.audioConfig = Media.AudioConfiguration.newBuilder().apply {
-                        sampleRate = 16000
-                        numberOfBits = 16
-                        numberOfChannels = 1
+            // Microphone Service (Channel 7) — Announced when head unit can capture audio;
+            // if RECORD_AUDIO is missing or all OEM audio sources fail, omit Channel 7 and claim
+            // vehicle_type = 3 (MOTORCYCLE) so Android Auto records from the phone's own microphone.
+            val headUnitMicActive = com.andrerinas.openheadunit.decoder.MicRecorder.canHeadUnitCaptureAudio(context)
+            if (headUnitMicActive) {
+                val mic = Control.Service.newBuilder().also { service ->
+                    service.id = Channel.ID_MIC
+                    service.mediaSourceService = Control.Service.MediaSourceService.newBuilder().also {
+                        it.type = Media.MediaCodecType.MEDIA_CODEC_AUDIO_PCM
+                        it.audioConfig = Media.AudioConfiguration.newBuilder().apply {
+                            sampleRate = 16000
+                            numberOfBits = 16
+                            numberOfChannels = 1
+                        }.build()
                     }.build()
                 }.build()
-            }.build()
-            services.add(mic)
+                services.add(mic)
+            } else {
+                AppLog.w("[ServiceDiscovery] Head-unit mic unavailable; omitting Channel.ID_MIC and claiming vehicle_type=3 so phone records voice directly")
+            }
 
             // Bluetooth Service
             if (settings.bluetoothAddress.isNotEmpty()) {
@@ -229,11 +236,14 @@ class ServiceDiscoveryResponse(private val context: Context)
             }.build()
             services.add(navigationStatus)
 
+            val announcedVehicleType = if (headUnitMicActive) 1 else 3
+            val announcedVehicleId = if (headUnitMicActive) settings.vehicleId else "${settings.vehicleId}-moto"
+
             return Control.ServiceDiscoveryResponse.newBuilder().apply {
                 make = settings.vehicleMake
                 model = settings.vehicleModel
                 year = settings.vehicleYear
-                vehicleId = settings.vehicleId
+                vehicleId = announcedVehicleId
                 headUnitModel = settings.headUnitModel
                 headUnitMake = settings.headUnitMake
                 headUnitSoftwareBuild = "1"
@@ -249,9 +259,10 @@ class ServiceDiscoveryResponse(private val context: Context)
                     setMake(settings.vehicleMake)
                     setModel(settings.vehicleModel)
                     setYear(settings.vehicleYear)
-                    setVehicleId(settings.vehicleId)
+                    setVehicleId(announcedVehicleId)
                     setHeadUnitSoftwareBuild("1")
                     setHeadUnitSoftwareVersion("0.1.0")
+                    setVehicleType(announcedVehicleType)
                 }.build())
 
                 addAllServices(services)

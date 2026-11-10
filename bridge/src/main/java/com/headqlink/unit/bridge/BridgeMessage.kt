@@ -46,6 +46,8 @@ sealed class BridgeMessage {
         val carName: String,
         val token: String,
         val newlyPaired: Boolean,
+        val carAppVersion: String = "",
+        val carVersionCode: Int = 0,
     ) : BridgeMessage()
 
     /** Coche → móvil: rechazado, y el coche cierra la conexión. */
@@ -102,6 +104,53 @@ sealed class BridgeMessage {
         val error: String? = null,
     ) : BridgeMessage()
 
+    /** Coche ↔ móvil: sincronización en vivo de telemetría C10, puertas/maletero, presiones TPMS y viajes. */
+    data class TelemetrySync(
+        val payloadJson: String,
+    ) : BridgeMessage()
+
+    /** Móvil → coche: solicita los últimos registros de diagnóstico (ohu.log + logcat) sin usar pendrive. */
+    data class LogsRequest(
+        val id: String,
+        val maxLines: Int = 800,
+    ) : BridgeMessage()
+
+    /** Coche → móvil: devuelve el archivo de registros recopilado en Qonecta Unit. */
+    data class LogsResult(
+        val id: String,
+        val fileName: String,
+        val logText: String,
+    ) : BridgeMessage()
+
+    /** Móvil → coche: solicita enviar e instalar una actualización APK de Qonecta Unit en 1 toque. */
+    data class ApkPushStart(
+        val id: String,
+        val fileName: String,
+        val sizeBytes: Long,
+        val sha256: String,
+        val versionName: String,
+        val versionCode: Int,
+        val httpUrls: List<String> = emptyList(),
+    ) : BridgeMessage()
+
+    /** Coche → móvil: listo para recibir el APK (por TCP directo, RFCOMM o ya cacheado). */
+    data class ApkPushReady(
+        val id: String,
+        val tcpPort: Int,
+        val rfcommAvailable: Boolean,
+        val alreadyCached: Boolean = false,
+    ) : BridgeMessage()
+
+    /** Coche → móvil: progreso en vivo y resultado del envío / lanzamiento del instalador en el coche. */
+    data class ApkPushStatus(
+        val id: String,
+        val stage: String,
+        val progressPct: Int,
+        val message: String,
+        val done: Boolean = false,
+        val ok: Boolean = false,
+    ) : BridgeMessage()
+
     object Ping : BridgeMessage()
     object Pong : BridgeMessage()
 
@@ -130,6 +179,8 @@ object BridgeCodec {
                 o.put("car", msg.carName)
                 o.put("token", msg.token)
                 o.put("newlyPaired", msg.newlyPaired)
+                if (msg.carAppVersion.isNotBlank()) o.put("carAppVersion", msg.carAppVersion)
+                if (msg.carVersionCode > 0) o.put("carVersionCode", msg.carVersionCode)
             }
             is BridgeMessage.Denied -> {
                 o.put("t", "denied")
@@ -166,6 +217,49 @@ object BridgeCodec {
                 o.put("body", msg.body)
                 msg.error?.let { o.put("error", it) }
             }
+            is BridgeMessage.TelemetrySync -> {
+                o.put("t", "telemetrySync")
+                o.put("payload", msg.payloadJson)
+            }
+            is BridgeMessage.LogsRequest -> {
+                o.put("t", "logsRequest")
+                o.put("id", msg.id)
+                o.put("maxLines", msg.maxLines)
+            }
+            is BridgeMessage.LogsResult -> {
+                o.put("t", "logsResult")
+                o.put("id", msg.id)
+                o.put("fileName", msg.fileName)
+                o.put("logText", msg.logText)
+            }
+            is BridgeMessage.ApkPushStart -> {
+                o.put("t", "apkPushStart")
+                o.put("id", msg.id)
+                o.put("fileName", msg.fileName)
+                o.put("sizeBytes", msg.sizeBytes)
+                o.put("sha256", msg.sha256)
+                o.put("versionName", msg.versionName)
+                o.put("versionCode", msg.versionCode)
+                val urlsArr = JSONArray()
+                msg.httpUrls.forEach { urlsArr.put(it) }
+                o.put("httpUrls", urlsArr)
+            }
+            is BridgeMessage.ApkPushReady -> {
+                o.put("t", "apkPushReady")
+                o.put("id", msg.id)
+                o.put("tcpPort", msg.tcpPort)
+                o.put("rfcommAvailable", msg.rfcommAvailable)
+                o.put("alreadyCached", msg.alreadyCached)
+            }
+            is BridgeMessage.ApkPushStatus -> {
+                o.put("t", "apkPushStatus")
+                o.put("id", msg.id)
+                o.put("stage", msg.stage)
+                o.put("progressPct", msg.progressPct)
+                o.put("message", msg.message)
+                o.put("done", msg.done)
+                o.put("ok", msg.ok)
+            }
             BridgeMessage.Ping -> o.put("t", "ping")
             BridgeMessage.Pong -> o.put("t", "pong")
             is BridgeMessage.Unknown -> o.put("t", msg.type)
@@ -189,6 +283,8 @@ object BridgeCodec {
                 carName = o.optString("car", ""),
                 token = o.getString("token"),
                 newlyPaired = o.optBoolean("newlyPaired", false),
+                carAppVersion = o.optString("carAppVersion", ""),
+                carVersionCode = o.optInt("carVersionCode", 0),
             )
             "denied" -> BridgeMessage.Denied(o.optString("reason", ""))
             "navigate" -> {
@@ -218,6 +314,44 @@ object BridgeCodec {
                 status = o.optInt("status", 0),
                 body = o.optString("body", ""),
                 error = o.optString("error", "").ifBlank { null },
+            )
+            "telemetrySync" -> BridgeMessage.TelemetrySync(
+                payloadJson = o.optString("payload", "{}"),
+            )
+            "logsRequest" -> BridgeMessage.LogsRequest(
+                id = o.getString("id"),
+                maxLines = o.optInt("maxLines", 800),
+            )
+            "logsResult" -> BridgeMessage.LogsResult(
+                id = o.getString("id"),
+                fileName = o.optString("fileName", "qonecta-unit-logs.txt"),
+                logText = o.optString("logText", ""),
+            )
+            "apkPushStart" -> {
+                val urlsArr = o.optJSONArray("httpUrls") ?: JSONArray()
+                BridgeMessage.ApkPushStart(
+                    id = o.getString("id"),
+                    fileName = o.optString("fileName", "QonectaUnit.apk"),
+                    sizeBytes = o.optLong("sizeBytes", 0L),
+                    sha256 = o.optString("sha256", ""),
+                    versionName = o.optString("versionName", ""),
+                    versionCode = o.optInt("versionCode", 0),
+                    httpUrls = (0 until urlsArr.length()).mapNotNull { urlsArr.optString(it, "").takeIf { s -> s.isNotBlank() } },
+                )
+            }
+            "apkPushReady" -> BridgeMessage.ApkPushReady(
+                id = o.getString("id"),
+                tcpPort = o.optInt("tcpPort", 0),
+                rfcommAvailable = o.optBoolean("rfcommAvailable", false),
+                alreadyCached = o.optBoolean("alreadyCached", false),
+            )
+            "apkPushStatus" -> BridgeMessage.ApkPushStatus(
+                id = o.getString("id"),
+                stage = o.optString("stage", ""),
+                progressPct = o.optInt("progressPct", 0),
+                message = o.optString("message", ""),
+                done = o.optBoolean("done", false),
+                ok = o.optBoolean("ok", false),
             )
             "ping" -> BridgeMessage.Ping
             "pong" -> BridgeMessage.Pong

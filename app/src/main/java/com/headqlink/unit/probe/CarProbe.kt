@@ -8,6 +8,8 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.PermissionInfo
 import android.graphics.Point
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Build
@@ -86,6 +88,10 @@ object CarProbe {
         out.append(describeDisplays(context))
 
         out.appendLine()
+        out.appendLine("== Cámaras del vehículo (Camera2 HAL y paquetes AVM 360° / DVR / DMS)")
+        out.append(describeCameras(context, pm))
+
+        out.appendLine()
         out.appendLine("== Navegadores y tiendas (de dónde vino Vivaldi)")
         out.append(describeBrowsers(pm))
 
@@ -108,6 +114,72 @@ object CarProbe {
             sb.appendLine("  ${d.displayId}: «${d.name}» ${size.x}×${size.y} ${d.refreshRate.roundToInt()} Hz" +
                     " · flags=0x${Integer.toHexString(d.flags)} · estado=${d.state}" +
                     if (d.displayId in presentation) " · PRESENTACIÓN (una app puede pintar ahí)" else "")
+        }
+        return sb.toString()
+    }
+
+    @Suppress("DEPRECATION")
+    fun describeCameras(context: Context, pm: PackageManager = context.packageManager): String {
+        val sb = StringBuilder()
+        val cm = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
+        if (cm == null) {
+            sb.appendLine("  sin CameraManager")
+        } else {
+            val ids = runCatching { cm.cameraIdList }.getOrNull() ?: emptyArray()
+            sb.appendLine("  CameraManager.cameraIdList (${ids.size}): ${ids.joinToString().ifEmpty { "ninguna expuesta a Camera2 estándar" }}")
+            for (id in ids) {
+                runCatching {
+                    val ch = cm.getCameraCharacteristics(id)
+                    val facing = when (ch.get(CameraCharacteristics.LENS_FACING)) {
+                        CameraCharacteristics.LENS_FACING_FRONT -> "FRONT (DMS/Interior)"
+                        CameraCharacteristics.LENS_FACING_BACK -> "BACK (Exterior/DVR)"
+                        CameraCharacteristics.LENS_FACING_EXTERNAL -> "EXTERNAL (AVM/USB)"
+                        else -> "UNKNOWN"
+                    }
+                    val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                    val sizes = map?.getOutputSizes(android.graphics.ImageFormat.YUV_420_888)
+                        ?.take(4)?.joinToString { "${it.width}x${it.height}" } ?: "?"
+                    sb.appendLine("    cam[$id]: facing=$facing · YUV=$sizes")
+                }.onFailure {
+                    sb.appendLine("    cam[$id]: error leyendo características (${it.message})")
+                }
+            }
+        }
+        runCatching {
+            val devDir = java.io.File("/dev")
+            val videoNodes = devDir.listFiles { _, name ->
+                name.startsWith("video") || name.startsWith("media") || name.startsWith("v4l")
+            }?.sortedBy { it.name }.orEmpty()
+            sb.appendLine("  Nodos V4L2 en /dev (${videoNodes.size}): " + videoNodes.joinToString { "${it.name}(r=${it.canRead()},w=${it.canWrite()})" })
+        }
+        val camPkgs = listOf(
+            "com.leapmotor.cameraaround",
+            "com.leapmotor.driverecord",
+            "com.leapmotor.facevideo",
+            "org.codeaurora.snapcam",
+            "com.android.camera2",
+        )
+        for (pkg in camPkgs) {
+            val info = runCatching {
+                pm.getPackageInfo(
+                    pkg,
+                    PackageManager.GET_ACTIVITIES or PackageManager.GET_SERVICES or PackageManager.GET_PROVIDERS,
+                )
+            }.getOrNull()
+            if (info == null) {
+                sb.appendLine("  paquete $pkg: no instalado")
+                continue
+            }
+            sb.appendLine("  paquete $pkg (${info.versionName}):")
+            info.activities?.forEach {
+                sb.appendLine("    activity ${it.name} · exported=${it.exported} · perm=${it.permission ?: "ninguno"}")
+            }
+            info.services?.forEach {
+                sb.appendLine("    service ${it.name} · exported=${it.exported} · perm=${it.permission ?: "ninguno"}")
+            }
+            info.providers?.forEach {
+                sb.appendLine("    provider ${it.authority} (${it.name}) · exported=${it.exported}")
+            }
         }
         return sb.toString()
     }

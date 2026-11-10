@@ -88,7 +88,7 @@ class AudioTrackWrapper(
             val low = buffer[i].toInt() and 0xFF
             val high = buffer[i + 1].toInt() // High byte handles sign
             val sample = (high shl 8) or low
-            val modifiedSample = (sample * currentGain).toInt().coerceIn(-32768, 32767)
+            val clippedS = (sample * currentGain).toInt().coerceIn(-98304, 98304); val modifiedSample = when { clippedS > 22528 -> 22528 + ((clippedS - 22528) * 10239) / ((clippedS - 22528) + 20478); clippedS < -22528 -> -(22528 + ((-clippedS - 22528) * 10239) / ((-clippedS - 22528) + 20478)); else -> clippedS }
             buffer[i] = (modifiedSample and 0xFF).toByte()
             buffer[i + 1] = (modifiedSample shr 8).toByte()
         }

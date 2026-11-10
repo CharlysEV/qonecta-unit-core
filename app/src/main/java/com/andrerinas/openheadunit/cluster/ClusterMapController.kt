@@ -14,9 +14,11 @@ import android.os.Looper
 import android.os.Parcel
 import android.os.SystemClock
 import android.view.Display
+import android.view.KeyEvent
 import android.view.Surface
 import com.andrerinas.openheadunit.App
 import com.andrerinas.openheadunit.utils.AppLog
+import com.headqlink.unit.media.QonectaMediaSessionManager
 import org.json.JSONObject
 import java.lang.ref.WeakReference
 import java.util.Locale
@@ -51,6 +53,7 @@ object ClusterMapController {
         MAP,
         MUSIC,
         EXTENDED,
+        NATIVE_C10,
     }
 
     enum class ConnectionPhase {
@@ -177,7 +180,7 @@ object ClusterMapController {
             lastLoadingVisibilitySent = null
             AppLog.i("[ClusterMap] Connected to IAutoSdkService ($name)")
             if (isActive) {
-                setDashboardMapLoadingVisibility(loadingVisible = false)
+                setDashboardMapLoadingVisibility(loadingVisible = (currentPage == ClusterPage.NATIVE_C10))
             }
         }
 
@@ -274,6 +277,8 @@ object ClusterMapController {
      */
     fun showWelcomeIfAvailable(context: Context, modeHint: Mode = Mode.ANDROID_AUTO) {
         val appContext = context.applicationContext
+        ensureMediaControlBridge(appContext)
+        QonectaMediaSessionManager.publishIdleWelcome(appContext)
         val settings = App.provide(appContext).settings
         if (!settings.clusterMapEnabled) return
         val display = findClusterDisplay(appContext) ?: return
@@ -301,6 +306,12 @@ object ClusterMapController {
 
     fun notifyConnecting(context: Context, deviceName: String, protocolLabel: String, mode: Mode = Mode.ANDROID_AUTO) {
         val appContext = context.applicationContext
+        ensureMediaControlBridge(appContext)
+        QonectaMediaSessionManager.publishConnecting(
+            context = appContext,
+            modeLabel = protocolLabel,
+            detail = deviceName.ifBlank { "Conectando con el teléfono…" },
+        )
         val settings = App.provide(appContext).settings
         if (!settings.clusterMapEnabled) return
         val display = findClusterDisplay(appContext) ?: return
@@ -356,6 +367,12 @@ object ClusterMapController {
         }
         val isWireless = runCatching { App.provide(appContext).commManager.isWirelessSession }.getOrDefault(true)
         val phoneName = settings.autoStartBluetoothDeviceName.ifBlank { "Android" }
+        ensureMediaControlBridge(appContext)
+        QonectaMediaSessionManager.publishSessionActive(
+            context = appContext,
+            modeLabel = if (isWireless) "Android Auto Inalámbrico" else "Android Auto USB",
+            subtitle = phoneName,
+        )
         currentMode = Mode.ANDROID_AUTO
         isActive = true
         hasVideoStream = true
@@ -409,6 +426,12 @@ object ClusterMapController {
         val fpsVal = runCatching {
             com.shilapi.xcertplay.AirPlayPersistence.loadFps(appContext)
         }.getOrDefault(30)
+        ensureMediaControlBridge(appContext)
+        QonectaMediaSessionManager.publishSessionActive(
+            context = appContext,
+            modeLabel = if (wireless) "Apple CarPlay Inalámbrico" else "Apple CarPlay USB",
+            subtitle = phoneName,
+        )
         currentMode = Mode.CARPLAY
         carPlaySurfaceListener = surfaceListener
         isActive = true
@@ -512,14 +535,23 @@ object ClusterMapController {
         val next = when (currentPage) {
             ClusterPage.MAP -> ClusterPage.MUSIC
             ClusterPage.MUSIC -> ClusterPage.EXTENDED
-            ClusterPage.EXTENDED -> ClusterPage.MAP
+            ClusterPage.EXTENDED -> ClusterPage.NATIVE_C10
+            ClusterPage.NATIVE_C10 -> ClusterPage.MAP
         }
+        setPage(next, context)
+    }
+
+    fun setPage(next: ClusterPage, context: Context? = null) {
         currentPage = next
         if (next != ClusterPage.MAP) {
             mediaPopupUntilElapsedMs = 0L
         }
-        AppLog.i("[ClusterMap] Cycled cluster page -> $next")
-        if (context != null && activityRef?.get() == null) {
+        // When NATIVE_C10 is selected, restore the native C10 right-hand cluster widgets
+        // (native Trip Computer "Desde el inicio / Desde la última carga", native Media card,
+        // and native C10 green turn-by-turn arrow). Otherwise show our ClusterMapActivity.
+        setDashboardMapLoadingVisibility(loadingVisible = (next == ClusterPage.NATIVE_C10))
+        AppLog.i("[ClusterMap] Cluster page -> $next")
+        if (next != ClusterPage.NATIVE_C10 && context != null && activityRef?.get() == null) {
             showWelcomeIfAvailable(context, currentMode ?: Mode.ANDROID_AUTO)
         } else {
             notifyUiChanged()
@@ -582,7 +614,56 @@ object ClusterMapController {
             isPlaying = effectivePlaying,
             updatedAtElapsedMs = now,
         )
+        App.instance?.let { ctx ->
+            QonectaMediaSessionManager.updateNowPlaying(
+                context = ctx,
+                title = newTitle.ifBlank { "Qonecta Unit" },
+                artist = newArtist.ifBlank { newApp },
+                album = newAlbum.ifBlank { newApp },
+                appName = newApp,
+                cover = newArt,
+                playing = effectivePlaying,
+                durationMs = newDur,
+                positionMs = effectivePos,
+            )
+        }
         notifyUiChanged()
+    }
+
+    private fun ensureMediaControlBridge(appContext: Context) {
+        QonectaMediaSessionManager.ensureInitialized(appContext)
+        QonectaMediaSessionManager.setMediaControlListener(object : QonectaMediaSessionManager.MediaControlListener {
+            override fun onPlay() = dispatchMediaKey(appContext, KeyEvent.KEYCODE_MEDIA_PLAY)
+            override fun onPause() = dispatchMediaKey(appContext, KeyEvent.KEYCODE_MEDIA_PAUSE)
+            override fun onPlayPause() = dispatchMediaKey(appContext, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            override fun onSkipToNext() = dispatchMediaKey(appContext, KeyEvent.KEYCODE_MEDIA_NEXT)
+            override fun onSkipToPrevious() = dispatchMediaKey(appContext, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            override fun onStop() = dispatchMediaKey(appContext, KeyEvent.KEYCODE_MEDIA_STOP)
+        })
+    }
+
+    fun dispatchMediaKey(context: Context, keyCode: Int) {
+        runCatching {
+            val comm = App.provide(context.applicationContext).commManager
+            if (comm.isConnected) {
+                comm.sendKey(keyCode, true, null, "ClusterMediaWidget")
+                comm.sendKey(keyCode, false, null, "ClusterMediaWidget")
+                AppLog.i("[ClusterMap] Dispatched media keyCode=$keyCode to Android Auto")
+            }
+        }
+    }
+
+    fun triggerVoiceAssistant(context: Context): Boolean {
+        return runCatching {
+            val comm = App.provide(context.applicationContext).commManager
+            if (comm.isConnected) {
+                comm.sendToggleVoiceAssistant()
+                AppLog.i("[ClusterMap] Triggered Google Assistant via sendToggleVoiceAssistant()")
+                true
+            } else {
+                false
+            }
+        }.getOrDefault(false)
     }
 
     fun updateNavigation(context: Context, state: ClusterNavState) {
@@ -599,7 +680,7 @@ object ClusterMapController {
     }
 
     private fun sendNativeLeapmotorNav(appContext: Context, state: ClusterNavState) {
-        if (!state.isNavigating || (currentMode == Mode.ANDROID_AUTO && hasVideoStream)) {
+        if (!state.isNavigating) {
             clearNativeLeapmotorNav(appContext)
             return
         }
@@ -820,7 +901,7 @@ object ClusterMapController {
     internal fun onSurfaceAvailable(context: Context, surface: Surface) {
         currentSurface = surface
         ensureAutoSdkBound(context)
-        setDashboardMapLoadingVisibility(loadingVisible = false)
+        setDashboardMapLoadingVisibility(loadingVisible = (currentPage == ClusterPage.NATIVE_C10))
         if (!hasVideoStream) return
         when (currentMode) {
             Mode.ANDROID_AUTO -> bindAndroidAutoSurface(context.applicationContext, surface)
@@ -853,7 +934,7 @@ object ClusterMapController {
             val component = App.provide(appContext)
             component.clusterVideoDecoder.setSurface(surface)
             component.commManager.requestClusterKeyframe()
-            setDashboardMapLoadingVisibility(loadingVisible = false)
+            setDashboardMapLoadingVisibility(loadingVisible = (currentPage == ClusterPage.NATIVE_C10))
             AppLog.i("[ClusterMap] Bound Android Auto cluster surface and requested keyframe")
         }.onFailure { e ->
             AppLog.e("[ClusterMap] Failed to bind Android Auto cluster surface: ${e.message}", e)

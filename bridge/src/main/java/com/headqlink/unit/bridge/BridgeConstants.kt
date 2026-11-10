@@ -13,8 +13,11 @@ import java.util.UUID
 object BridgeConstants {
     const val PROTOCOL_VERSION = 1
     const val TCP_PORT = 5299
+    const val APK_PUSH_TCP_PORT = 5300
     const val RFCOMM_NAME = "Qonecta Unit Companion"
+    const val APK_PUSH_RFCOMM_NAME = "Qonecta Unit OTA"
     val RFCOMM_UUID: UUID = UUID.fromString("6f3c2a1e-9d4b-4c8a-b5e2-7a1d0c9e4f51")
+    val APK_PUSH_RFCOMM_UUID: UUID = UUID.fromString("6f3c2a1e-9d4b-4c8a-b5e2-7a1d0c9e4f52")
 
     const val COMPANION_PACKAGE = "com.headqlink.unit.companion"
     const val MAPS_PACKAGE = "com.google.android.apps.maps"

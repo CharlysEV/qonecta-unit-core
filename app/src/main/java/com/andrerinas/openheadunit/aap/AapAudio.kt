@@ -55,10 +55,35 @@ internal class AapAudio(
     private val activeAudioChannels = mutableSetOf<Int>()
     private val playbackFocusListener = AudioManager.OnAudioFocusChangeListener {
         AppLog.i("AapAudio: playback audio focus changed: $it")
+        if (it == AudioManager.AUDIOFOCUS_LOSS || it == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+            onExternalFocusLoss("playbackFocusListener($it)")
+        }
     }
 
     @Volatile
     private var holdingPlaybackFocus = false
+    var onExternalAudioFocusLost: (() -> Unit)? = null
+    var onPlaybackAudioFocusAcquired: (() -> Unit)? = null
+    @Volatile
+    var externalFocusLossUntilMs = 0L
+
+    fun onExternalFocusLoss(reason: String) {
+        AppLog.i("AapAudio: yielding audio focus to external car audio/radio ($reason)")
+        externalFocusLossUntilMs = SystemClock.elapsedRealtime() + 3500L
+        synchronized(activeAudioChannels) { activeAudioChannels.clear() }
+        holdingPlaybackFocus = false
+        releasePlaybackFocus()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { runCatching { audioManager.abandonAudioFocusRequest(it) } }
+            audioFocusRequest = null
+        } else {
+            @Suppress("DEPRECATION")
+            legacyFocusListener?.let { runCatching { audioManager.abandonAudioFocus(it) } }
+            legacyFocusListener = null
+        }
+        runCatching { audioDecoder.stop(Channel.ID_AUD) }
+        onExternalAudioFocusLost?.invoke()
+    }
     @Volatile
     private var focusAcquiredAtMs = 0L
     @Volatile
@@ -314,6 +339,10 @@ internal class AapAudio(
         // round-trip to AudioService and the Bluetooth probe below is another, and this runs on
         // the transport thread for every track change.
         val wasEmpty = synchronized(activeAudioChannels) {
+            if (channel == Channel.ID_AUD && SystemClock.elapsedRealtime() < externalFocusLossUntilMs) {
+                AppLog.i("AapAudio: suppressing playback focus re-grab during external car radio cooldown")
+                return
+            }
             val empty = activeAudioChannels.isEmpty()
             activeAudioChannels.add(channel)
             empty
@@ -344,6 +373,9 @@ internal class AapAudio(
         focusAcquiredAtMs = SystemClock.elapsedRealtime()
         holdingPlaybackFocus = true
         requestPlaybackFocus()
+        if (channel == Channel.ID_AUD) {
+            onPlaybackAudioFocusAcquired?.invoke()
+        }
     }
 
     /**

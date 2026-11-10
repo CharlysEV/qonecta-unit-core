@@ -862,6 +862,30 @@ private class AudioRenderer(
         }
     }
 
+    private fun softClipSample(s: Int): Int {
+        val clippedS = s.coerceIn(-98304, 98304)
+        return when {
+            clippedS > 22528 -> 22528 + ((clippedS - 22528) * 10239) / ((clippedS - 22528) + 20478)
+            clippedS < -22528 -> -(22528 + ((-clippedS - 22528) * 10239) / ((-clippedS - 22528) + 20478))
+            else -> clippedS
+        }
+    }
+
+    private fun applyCarPlayGain(data: ByteArray, offset: Int, length: Int) {
+        val gain = 1.45f
+        val end = minOf(data.size - 1, offset + length - 1)
+        var i = offset
+        while (i < end) {
+            val low = data[i].toInt() and 0xFF
+            val high = data[i + 1].toInt()
+            val sample = (high shl 8) or low
+            val boosted = softClipSample((sample * gain).toInt())
+            data[i] = (boosted and 0xFF).toByte()
+            data[i + 1] = (boosted shr 8).toByte()
+            i += 2
+        }
+    }
+
     private fun writePcm(data: ByteArray, offset: Int = 0, length: Int = data.size) {
         val track = track ?: return
         if (!firstPcmLogged && length > 0) {
@@ -877,6 +901,7 @@ private class AudioRenderer(
             applyFadeIn(data, offset, length)
             fadeApplied = true
         }
+        applyCarPlayGain(data, offset, length)
         var written = 0
         while (written < length && running) {
             val writeLength = if (playbackStarted) {

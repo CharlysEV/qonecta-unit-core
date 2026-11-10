@@ -39,12 +39,13 @@ enum MessageStatus
 }
 
 message HeadUnitInfo {
-    optional string head_unit_make = 1;
-    optional string head_unit_model = 2;
-    optional string make = 3;
-    optional string model = 4;
-    optional string year = 5;
-    optional string head_unit_software_build = 6;
-    optional string vehicle_id = 7;
+    optional string make = 1;
+    optional string model = 2;
+    optional string year = 3;
+    optional string vehicle_id = 4;
+    optional string head_unit_make = 5;
+    optional string head_unit_model = 6;
+    optional string head_unit_software_build = 7;
     optional string head_unit_software_version = 8;
+    optional int32 vehicle_type = 9;
 }

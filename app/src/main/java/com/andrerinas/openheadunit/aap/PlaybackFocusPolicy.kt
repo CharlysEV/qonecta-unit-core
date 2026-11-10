@@ -62,7 +62,7 @@ object PlaybackFocusPolicy {
         return when (mode) {
             Mode.NEVER -> false
             Mode.ALWAYS -> true
-            Mode.AUTO -> !btMediaLinkActive && !selfDefeatingLatched
+            Mode.AUTO -> !selfDefeatingLatched
         }
     }
 

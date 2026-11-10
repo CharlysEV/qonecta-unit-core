@@ -825,8 +825,10 @@ object QonectaMediaEngine {
                 saveResumeState(context.applicationContext, currentPositionMs())
                 mp.pause()
                 isRadioPlaying = false
+                abandonAudioFocus(context.applicationContext)
             } else {
                 stopByUser = false
+                requestAudioFocus(context.applicationContext)
                 mp.start()
                 isRadioPlaying = true
             }
@@ -855,6 +857,7 @@ object QonectaMediaEngine {
     fun stopRadio(context: Context) {
         stopByUser = true
         saveResumeState(context.applicationContext, currentPositionMs())
+        abandonAudioFocus(context.applicationContext)
         stopRadioInternal(notify = false)
         notifyRadioChanged(context)
     }
@@ -874,9 +877,20 @@ object QonectaMediaEngine {
         if (notify) notifyRadioChanged(null)
     }
 
+    private fun abandonAudioFocus(context: Context) {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { req ->
+                runCatching { am.abandonAudioFocusRequest(req) }
+            }
+            audioFocusRequest = null
+        }
+    }
+
     private fun requestAudioFocus(context: Context) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            abandonAudioFocus(context)
             val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(
                     AudioAttributes.Builder()
@@ -890,8 +904,9 @@ object QonectaMediaEngine {
                             if (radioPlayer?.isPlaying == true) {
                                 radioPlayer?.pause()
                                 isRadioPlaying = false
-                                notifyRadioChanged(context)
                             }
+                            abandonAudioFocus(context.applicationContext)
+                            notifyRadioChanged(context)
                         }
                     }
                 }

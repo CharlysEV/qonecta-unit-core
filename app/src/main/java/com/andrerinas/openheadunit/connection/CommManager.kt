@@ -130,6 +130,13 @@ class CommManager(
     /** Callback for audio focus state changes (isPlaying). Set by AapService. */
     var onAudioFocusStateChanged: ((Boolean) -> Unit)? = null
 
+    fun yieldAudioFocusToExternalPlayer(reason: String) {
+        _transport?.yieldAudioFocusToExternalPlayer(reason)
+    }
+
+    fun isExternalAudioFocusLost(): Boolean =
+        _transport?.isExternalAudioFocusLost() == true
+
     /** Now-playing metadata from the phone (AAP media channel). Set by AapService. */
     var onAaMediaMetadata: ((MediaPlayback.MediaMetaData) -> Unit)? = null
     /** Playback status from the phone (AAP media channel), includes current position. */

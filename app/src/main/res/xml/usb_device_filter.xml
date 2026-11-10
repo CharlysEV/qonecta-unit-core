@@ -2,8 +2,9 @@
 
 <resources>
 
-    <!-- Match all devices -->
-    <usb-device />
+    <!-- Do NOT use a bare <usb-device /> wildcard on Leapmotor C10: the car's internal
+         DAB digital radio ("DR Receiver") enumerates as a USB audio peripheral on every boot,
+         causing Android to prompt "¿Quieres abrir Qonecta Unit para gestionar DR Receiver?". -->
 
     <!-- Google / AOA Accessory Mode -->
     <usb-device vendor-id="6353" product-id="11520" />

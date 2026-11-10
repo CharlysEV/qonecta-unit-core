@@ -100,6 +100,16 @@ class App : Application() {
 
         // Register the main broadcast receiver safely for Android 14+ using ContextCompat
         ContextCompat.registerReceiver(this, AapBroadcastReceiver(), AapBroadcastReceiver.filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {}
+            override fun onActivityStarted(activity: android.app.Activity) { topActivityRef = java.lang.ref.WeakReference(activity) }
+            override fun onActivityResumed(activity: android.app.Activity) { topActivityRef = java.lang.ref.WeakReference(activity) }
+            override fun onActivityPaused(activity: android.app.Activity) {}
+            override fun onActivityStopped(activity: android.app.Activity) { if (topActivityRef?.get() === activity) topActivityRef = null }
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) {}
+            override fun onActivityDestroyed(activity: android.app.Activity) { if (topActivityRef?.get() === activity) topActivityRef = null }
+        })
     }
 
     private fun isUserUnlocked(): Boolean {
@@ -117,6 +127,12 @@ class App : Application() {
         val appStartTime = SystemClock.elapsedRealtime()
         var appThemeManager: AppThemeManager? = null
         var isPiPActive = false
+
+        @Volatile
+        private var topActivityRef: java.lang.ref.WeakReference<android.app.Activity>? = null
+
+        val topActivity: android.app.Activity?
+            get() = topActivityRef?.get()?.takeIf { !it.isFinishing && !it.isDestroyed }
 
         @Volatile
         var instance: App? = null

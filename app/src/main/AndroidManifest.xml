@@ -13,6 +13,7 @@
         <!-- Sonda del coche (com.headqlink.unit.probe.CarProbe): servicios de Leapmotor de la unidad. -->
         <package android:name="com.leapmotor.carcontrol" />
         <package android:name="com.leapmotor.autosdk.server" />
+        <package android:name="com.leapmotor.media" />
         <intent>
             <action android:name="com.leapmotor.carcontrol.services.BINDER_POOL" />
         </intent>
@@ -27,9 +28,11 @@
         </intent>
     </queries>
 
-    <!-- Sonda del coche: la lista de paquetes de la unidad, y el permiso del kit de Leapmotor (para ver si Android lo da). -->
+    <!-- Sonda del coche + integración nativa C10 (Cluster + Media Widget + CarControl): -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="com.leapmotor.autosdk.server.USE_SERVICE" />
+    <uses-permission android:name="com.leapmotor.media.MediaService.permission.ACCESS_SERVICE" />
+    <uses-permission android:name="com.leapmotor.carcontrol.CAR_CONTROL_SERVICE" />
 
     <uses-feature
         android:name="android.hardware.usb.host"
@@ -104,6 +107,7 @@
         android:name=".App"
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/title"
         android:largeHeap="true"
         android:requestLegacyExternalStorage="true"
@@ -149,9 +153,21 @@
                 android:resource="@xml/usb_device_filter" />
         </activity>
 
+        <!-- Direct USB CarPlay NCM network bridge -->
+        <service
+            android:name="com.headqlink.unit.carplay.CarPlayVpnService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
 
         <activity
             android:name=".main.MainActivity"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
             android:configChanges="keyboardHidden|uiMode"
             android:exported="true"
             android:launchMode="singleTask"
@@ -271,66 +287,9 @@
         <service
             android:name=".aap.AapService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice|mediaPlayback"
-            android:stopWithTask="false">
-            <!-- MediaButtonReceiver looks for a Service with this intent-filter -->
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </service>
+            android:foregroundServiceType="connectedDevice|mediaPlayback|microphone"
+            android:stopWithTask="false" />
         <service android:name=".location.GpsLocationService" />
-
-        <!-- AndroidX MediaButtonReceiver: Routes MEDIA_BUTTON intents to AapService
-             on Android 8+ where implicit broadcasts to manifest-registered receivers
-             are restricted. This is the standard Android mechanism used by HUR. -->
-        <receiver
-            android:name="androidx.media.session.MediaButtonReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Handles proprietary headunit command intents (com.android.music.*,
-             com.syu.*, etc). MEDIA_BUTTON is handled by MediaButtonReceiver above. -->
-        <receiver
-            android:name=".app.RemoteControlReceiver"
-            android:exported="true">
-            <intent-filter android:priority="1000">
-                <action android:name="com.android.music.musicservicecommand" />
-                <action android:name="com.android.music.playstatechanged" />
-                <action android:name="com.android.music.metachanged" />
-                <action android:name="com.android.music.playbackcomplete" />
-                <action android:name="com.android.music.queuechanged" />
-                <action android:name="com.syu.ms.action.external_command" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Comprehensive receiver for steering wheel and hardware buttons,
-             covering both standard Android events and proprietary Chinese headunit broadcasts. -->
-        <receiver
-            android:name=".connection.CarKeyReceiver"
-            android:exported="true">
-            <intent-filter android:priority="1000">
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-                <action android:name="hy.intent.action.MEDIA_BUTTON" />
-                <action android:name="com.nwd.action.ACTION_KEY_VALUE" />
-                <action android:name="com.microntek.irkeyUp" />
-                <action android:name="com.microntek.irkeyDown" />
-                <action android:name="com.winca.service.Setting.KEY_ACTION" />
-                <action android:name="android.intent.action.C3_HARDKEY" />
-                <action android:name="IKeyClick.KEY_CLICK" />
-                <action android:name="com.eryanet.music.prev" />
-                <action android:name="com.eryanet.music.next" />
-                <action android:name="com.eryanet.media.playorpause" />
-                <action android:name="com.eryanet.media.play" />
-                <action android:name="com.eryanet.media.pause" />
-                <action android:name="com.bz.action.phone.pickup" />
-                <action android:name="com.bz.action.phone.hangup" />
-                <action android:name="com.tencent.qqmusiccar.action.MEDIA_BUTTON_INNER_ONKEY" />
-                <action android:name="cn.kuwo.kwmusicauto.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </receiver>
 
         <receiver
             android:name=".app.BootCompleteReceiver"

@@ -83,7 +83,12 @@ internal class AapControlMedia(
                 aapTransport.onUpdateUiConfigReplyReceived?.invoke()
                 return 0
             }
-            Media.MsgType.MEDIA_MESSAGE_ACK_VALUE -> return 0
+            Media.MsgType.MEDIA_MESSAGE_ACK_VALUE -> {
+                if (message.channel == Channel.ID_MIC) {
+                    aapTransport.onMicAck(message.parse(Media.Ack.newBuilder()).build())
+                }
+                return 0
+            }
             else -> AppLog.e("Unsupported Media message type: ${message.type}")
         }
         return 0
@@ -165,6 +170,8 @@ internal class AapControlMedia(
         AppLog.i("Media Sink Stop Request: " + Channel.name(channel))
         if (Channel.isAudio(channel)) {
             aapAudio.stopAudio(channel)
+        } else if (channel == Channel.ID_MIC) {
+            aapTransport.closeMicSession()
         } else if (channel == Channel.ID_VID) {
             if (aapTransport.ignoreNextStopRequest) {
                 AppLog.i("Video Sink Stopped -> Ignored (Forced Keyframe Request)")
@@ -177,12 +184,12 @@ internal class AapControlMedia(
     }
 
     private fun micRequest(micRequest: Media.MicrophoneRequest): Int {
-        AppLog.d("Mic request: %s", micRequest)
+        AppLog.i("Mic request: %s", micRequest)
 
         if (micRequest.open) {
-            micRecorder.start()
+            aapTransport.openMicSession(if (micRequest.hasMaxUnacked()) micRequest.maxUnacked else 2)
         } else {
-            micRecorder.stop()
+            aapTransport.closeMicSession(reply = true)
         }
         return 0
     }
@@ -391,6 +398,9 @@ internal class AapControlService(
 
             // Sync MediaSession
             val isGain = mappedState == Control.AudioFocusNotification.AudioFocusStateType.STATE_GAIN
+            if (isGain) {
+                aapAudio.externalFocusLossUntilMs = 0L
+            }
             aapTransport.onAudioFocusStateChanged?.invoke(isGain)
         }
 
@@ -408,6 +418,9 @@ internal class AapControlService(
                 if (aapAudio.shouldHonourProtocolFocusRequest(isRelease)) {
                     aapAudio.requestFocusChange(AudioConfigs.stream(channel, settings.separateAudioStreams), notification.request.number, AudioManager.OnAudioFocusChangeListener {
                         AppLog.i("System audio focus changed: $it ${systemFocusName[it]}")
+                        if (it == AudioManager.AUDIOFOCUS_LOSS || it == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                            aapAudio.onExternalFocusLoss("protocolFocusListener($it)")
+                        }
                     })
                 }
             }

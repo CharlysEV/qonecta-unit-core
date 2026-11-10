@@ -49,6 +49,14 @@ object LeapVehicleDataSource : PanelDataSource {
 
     private const val PREFS_NAME = "qu_leap_telemetry"
     private const val KEY_TRIPS_JSON = "recent_trips_json"
+    private const val KEY_DELETED_TRIP_IDS = "deleted_trip_ids_csv"
+    private const val KEY_HIDDEN_TRIP_IDS = "hidden_trip_ids_csv"
+    private const val KEY_HOME_ELEC_EUR = "pricing_home_elec_eur"
+    private const val KEY_DC_FAST_ELEC_EUR = "pricing_dc_fast_elec_eur"
+    private const val KEY_GASOLINE_EUR = "pricing_gasoline_eur"
+    private const val KEY_DIESEL_EUR = "pricing_diesel_eur"
+    private const val KEY_ACTIVE_TARIFF_MODE = "pricing_active_tariff_mode"
+    private const val KEY_PRICING_UPDATED_AT = "pricing_updated_at_ms"
     private const val KEY_MANUAL_SOC = "manual_soc_pct"
     private const val KEY_SYNC_DRIVE_MODE = "sync_drive_mode"
     private const val KEY_SYNC_STEER_MODE = "sync_steer_mode"
@@ -58,6 +66,83 @@ object LeapVehicleDataSource : PanelDataSource {
     private const val KEY_SYNC_TEMP_OUT = "sync_temp_out_c"
     private const val KEY_C10_VARIANT = "selected_c10_variant_id"
     private const val KEY_C10_PAINT_COLOR = "selected_c10_paint_id"
+
+    /**
+     * Configuración de tarifas de energía y combustible sincronizada entre Qonecta Unit Companion y Qonecta Unit:
+     * - [homeElecEurKwh]: Precio de electricidad en casa CA (€/kWh).
+     * - [dcFastElecEurKwh]: Precio de carga rápida fuera CC (€/kWh).
+     * - [gasolineEurLiter]: Precio de la gasolina 95 (€/L, usado en comparativa BEV y en consumo real REEV).
+     * - [dieselEurLiter]: Precio del diésel (€/L, usado en comparativa frente a SUV diésel).
+     * - [tariffMode]: 0 = Casa (CA), 1 = Carga Rápida (CC), 2 = Mixto (70% Casa / 30% Rápida).
+     */
+    data class EnergyPricingConfig(
+        val homeElecEurKwh: Double = 0.16,
+        val dcFastElecEurKwh: Double = 0.42,
+        val gasolineEurLiter: Double = 1.62,
+        val dieselEurLiter: Double = 1.52,
+        val tariffMode: Int = 0,
+        val updatedAtMs: Long = 0L,
+    ) {
+        val activeElecEurKwh: Double
+            get() = when (tariffMode) {
+                1 -> dcFastElecEurKwh
+                2 -> homeElecEurKwh * 0.70 + dcFastElecEurKwh * 0.30
+                else -> homeElecEurKwh
+            }
+
+        val activeTariffLabel: String
+            get() = when (tariffMode) {
+                1 -> "Carga rápida CC"
+                2 -> "Mixto CA/CC"
+                else -> "Casa CA"
+            }
+    }
+
+    @Volatile
+    private var pricingCached: EnergyPricingConfig = EnergyPricingConfig()
+
+    fun getEnergyPricing(context: Context? = appContext): EnergyPricingConfig {
+        val ctx = context?.applicationContext ?: appContext
+        if (ctx != null) {
+            val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            pricingCached = EnergyPricingConfig(
+                homeElecEurKwh = prefs.getFloat(KEY_HOME_ELEC_EUR, 0.16f).toDouble().coerceIn(0.01, 2.50),
+                dcFastElecEurKwh = prefs.getFloat(KEY_DC_FAST_ELEC_EUR, 0.42f).toDouble().coerceIn(0.05, 3.50),
+                gasolineEurLiter = prefs.getFloat(KEY_GASOLINE_EUR, 1.62f).toDouble().coerceIn(0.50, 4.00),
+                dieselEurLiter = prefs.getFloat(KEY_DIESEL_EUR, 1.52f).toDouble().coerceIn(0.50, 4.00),
+                tariffMode = prefs.getInt(KEY_ACTIVE_TARIFF_MODE, 0).coerceIn(0, 2),
+                updatedAtMs = prefs.getLong(KEY_PRICING_UPDATED_AT, 0L),
+            )
+        }
+        return pricingCached
+    }
+
+    fun saveEnergyPricing(
+        context: Context,
+        config: EnergyPricingConfig,
+        fromRemote: Boolean = false,
+    ): EnergyPricingConfig {
+        val stamp = if (fromRemote && config.updatedAtMs > 0L) config.updatedAtMs else System.currentTimeMillis()
+        val normalized = config.copy(
+            homeElecEurKwh = config.homeElecEurKwh.coerceIn(0.01, 2.50),
+            dcFastElecEurKwh = config.dcFastElecEurKwh.coerceIn(0.05, 3.50),
+            gasolineEurLiter = config.gasolineEurLiter.coerceIn(0.50, 4.00),
+            dieselEurLiter = config.dieselEurLiter.coerceIn(0.50, 4.00),
+            tariffMode = config.tariffMode.coerceIn(0, 2),
+            updatedAtMs = stamp,
+        )
+        pricingCached = normalized
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_HOME_ELEC_EUR, normalized.homeElecEurKwh.toFloat())
+            .putFloat(KEY_DC_FAST_ELEC_EUR, normalized.dcFastElecEurKwh.toFloat())
+            .putFloat(KEY_GASOLINE_EUR, normalized.gasolineEurLiter.toFloat())
+            .putFloat(KEY_DIESEL_EUR, normalized.dieselEurLiter.toFloat())
+            .putInt(KEY_ACTIVE_TARIFF_MODE, normalized.tariffMode)
+            .putLong(KEY_PRICING_UPDATED_AT, normalized.updatedAtMs)
+            .apply()
+        return normalized
+    }
 
     /**
      * Catálogo oficial de versiones del Leapmotor C10 comercializadas hasta MY26 (excluyendo 2027).
@@ -246,17 +331,28 @@ object LeapVehicleDataSource : PanelDataSource {
         }
     }
 
-    /** Colores oficiales de carrocería del Leapmotor C10 para la vista superior de Neumáticos y Puertas. */
-    enum class C10PaintColor(val id: String, val label: String, val bodyColor: Int, val shadeColor: Int) {
-        GLACIER_GREEN("glacier_green", "Verde Glaciar", 0xFF5D7A6E.toInt(), 0xFF42594F.toInt()),
-        PEARL_WHITE("pearl_white", "Blanco Perla", 0xFFDDE3E6.toInt(), 0xFFB5BEC4.toInt()),
-        CANOPY_GREY("canopy_grey", "Gris Canopy", 0xFF79838C.toInt(), 0xFF586068.toInt()),
-        TUNDRA_BLUE("tundra_blue", "Azul Tundra", 0xFF52728E.toInt(), 0xFF3B5369.toInt()),
-        CARBON_BLACK("carbon_black", "Negro Carbón", 0xFF2B3138.toInt(), 0xFF1B1F24.toInt());
+    /** Colores oficiales de carrocería del Leapmotor C10 para la vista 3D y superior de Neumáticos y Puertas. */
+    enum class C10PaintColor(
+        val id: String,
+        val label: String,
+        val bodyColor: Int,
+        val shadeColor: Int,
+        val hex3d: String,
+    ) {
+        GLACIER_GREEN("glacier_green", "Verde Glaciar", 0xFF5D7A6E.toInt(), 0xFF42594F.toInt(), "#123c29"),
+        PEARL_WHITE("pearl_white", "Blanco Perla", 0xFFDDE3E6.toInt(), 0xFFB5BEC4.toInt(), "#e6e8e6"),
+        CANOPY_GREY("canopy_grey", "Gris Canopy", 0xFF79838C.toInt(), 0xFF586068.toInt(), "#34393f"),
+        TUNDRA_BLUE("tundra_blue", "Gris Tierra", 0xFF8C8A82.toInt(), 0xFF6B6962.toInt(), "#8c8a82"),
+        CARBON_BLACK("carbon_black", "Negro Carbón", 0xFF2B3138.toInt(), 0xFF1B1F24.toInt(), "#121316");
 
         companion object {
             fun fromId(id: String?): C10PaintColor =
                 values().firstOrNull { it.id == id } ?: GLACIER_GREEN
+
+            fun fromHex3d(hex: String?): C10PaintColor {
+                val h = hex?.trim()?.lowercase() ?: return GLACIER_GREEN
+                return values().firstOrNull { it.hex3d.lowercase() == h } ?: GLACIER_GREEN
+            }
         }
     }
 
@@ -333,7 +429,7 @@ object LeapVehicleDataSource : PanelDataSource {
         Spec(20, "Región de venta", ValueType.INT),
         Spec(21, "Tipo de motorización", ValueType.INT),
         Spec(22, "Lado del volante", ValueType.INT),
-        Spec(23, "Potencia total (kW)", ValueType.FLOAT),
+        Spec(23, "Capacidad batería nominal (kWh)", ValueType.FLOAT),
         Spec(24, "Modo de conducción", ValueType.INT),
         Spec(25, "Modo de aceleración", ValueType.INT),
         Spec(26, "Recuperación de energía", ValueType.INT),
@@ -401,13 +497,15 @@ object LeapVehicleDataSource : PanelDataSource {
         val zeroToHundredSec: Double = 7.4,
         val climbM: Double = 185.0,
         val descentM: Double = 160.0,
-        val costEur: Double = energyKwh * 0.18,
+        val costEur: Double = energyKwh * 0.16,
         val smoothnessScore: Int = 95,
         val originName: String = "Salida C10",
         val destinationName: String = "Llegada",
         val stopsCount: Int = 0,
         val stopsSummary: String = "Sin paradas intermedias",
         val track: List<DoubleArray> = emptyList(),
+        val hidden: Boolean = false,
+        val fuelLitersUsed: Double = 0.0,
     )
 
     data class TelemetrySnapshot(
@@ -461,6 +559,13 @@ object LeapVehicleDataSource : PanelDataSource {
         val zeroToHundredSec: Double = Double.NaN,
         val instantConsumptionKwh100: Double = 14.8,
         val recoveredEnergyKwh: Double = 0.42,
+        val hvacPowerKw: Double = 0.72,
+        val auxPowerKw: Double = 0.10,
+        val doorsOpen: List<Boolean> = listOf(false, false, false, false),
+        val bootOpen: Boolean = false,
+        val locked: Boolean = true,
+        val tyreBars: List<Double> = listOf(2.50, 2.50, 2.52, 2.50),
+        val tyreTempsC: List<Int> = listOf(26, 26, 25, 25),
         val powerHistoryKw: List<Float> = emptyList(),
         val canSignals: Map<Int, String> = emptyMap(),
     ) {
@@ -468,11 +573,7 @@ object LeapVehicleDataSource : PanelDataSource {
             get() = !socPct.isNaN() && socPct in 0.0..100.0
 
         val effectiveSpeedKmh: Double
-            get() = when {
-                !dashboardSpeedKmh.isNaN() && dashboardSpeedKmh >= 0 -> dashboardSpeedKmh
-                !speedKmh.isNaN() && speedKmh >= 0 -> speedKmh
-                else -> 0.0
-            }
+            get() = calibrateClusterSpeedKmh(dashboardSpeedKmh, speedKmh)
 
         val effectiveRangeKm: Double
             get() = when {
@@ -484,12 +585,15 @@ object LeapVehicleDataSource : PanelDataSource {
         val isReev: Boolean
             get() = selectedVariantCached.isReev || (!fuelPct.isNaN() && fuelPct > 0.0) || (!fuelRangeKm.isNaN() && fuelRangeKm > 0.0) || powertrainType == 2
 
-        fun gearLabel(): String = when (gear) {
-            1 -> "P"
-            2 -> "R"
-            3 -> "N"
-            4 -> "D"
-            else -> if (effectiveSpeedKmh > 1.0) "D" else "P"
+        fun gearLabel(): String {
+            if (effectiveSpeedKmh >= 1.5 && gear != 1) return "D"
+            return when (gear) {
+                0 -> "P"
+                1 -> "R"
+                2 -> "N"
+                3, 4 -> "D"
+                else -> if (effectiveSpeedKmh >= 1.0) "D" else "P"
+            }
         }
 
         fun driveModeLabel(): String = when (driveMode) {
@@ -546,6 +650,86 @@ object LeapVehicleDataSource : PanelDataSource {
     private val rawValues = ConcurrentHashMap<Int, Any>()
     private val canSignalMap = ConcurrentHashMap<Int, String>()
     private val extraTelemetry = ConcurrentHashMap<String, Double>()
+    private val doorsState = BooleanArray(4) { false }
+    @Volatile
+    private var bootState = false
+    @Volatile
+    private var vehicleLockedState = true
+    private val tyreBarValues = DoubleArray(4) { idx -> if (idx == 2) 2.52 else 2.50 }
+    private val tyreTempValues = IntArray(4) { idx -> if (idx < 2) 26 else 25 }
+
+    fun setDoorOpen(index: Int, open: Boolean) {
+        if (index !in 0..3) return
+        doorsState[index] = open
+        refreshDoorAndTyreSnapshot()
+    }
+
+    fun toggleDoorOpen(index: Int): Boolean {
+        if (index !in 0..3) return false
+        val next = !doorsState[index]
+        doorsState[index] = next
+        refreshDoorAndTyreSnapshot()
+        return next
+    }
+
+    fun setBootOpen(open: Boolean) {
+        bootState = open
+        refreshDoorAndTyreSnapshot()
+    }
+
+    fun toggleBootOpen(): Boolean {
+        val next = !bootState
+        bootState = next
+        refreshDoorAndTyreSnapshot()
+        return next
+    }
+
+    fun setVehicleLocked(locked: Boolean) {
+        vehicleLockedState = locked
+        if (locked) {
+            for (i in 0..3) doorsState[i] = false
+            bootState = false
+        }
+        refreshDoorAndTyreSnapshot()
+    }
+
+    fun toggleVehicleLocked(): Boolean {
+        val next = !vehicleLockedState
+        setVehicleLocked(next)
+        return next
+    }
+
+    fun updateFromCloudOrCompanion(
+        doors: List<Boolean>? = null,
+        boot: Boolean? = null,
+        locked: Boolean? = null,
+        tyres: List<Double>? = null,
+    ) {
+        if (doors != null && doors.size >= 4) {
+            for (i in 0..3) doorsState[i] = doors[i]
+        }
+        if (boot != null) bootState = boot
+        if (locked != null) vehicleLockedState = locked
+        if (tyres != null && tyres.size >= 4) {
+            for (i in 0..3) {
+                if (!tyres[i].isNaN() && tyres[i] in 0.5..4.5) {
+                    tyreBarValues[i] = tyres[i]
+                }
+            }
+        }
+        refreshDoorAndTyreSnapshot()
+    }
+
+    private fun refreshDoorAndTyreSnapshot() {
+        val cur = latestSnapshot
+        latestSnapshot = cur.copy(
+            doorsOpen = doorsState.toList(),
+            bootOpen = bootState,
+            locked = vehicleLockedState && doorsState.none { it } && !bootState,
+            tyreBars = tyreBarValues.toList(),
+            tyreTempsC = tyreTempValues.toList(),
+        )
+    }
     private const val POWER_HISTORY_MAX_SECS = 600
     private val powerHistory = ArrayDeque<Float>(POWER_HISTORY_MAX_SECS)
     private var lastPowerHistorySampleMs = 0L
@@ -575,6 +759,8 @@ object LeapVehicleDataSource : PanelDataSource {
     private var sprintStartMs = 0L
     private var bestZeroToFiftySec = Double.NaN
     private var bestZeroToHundredSec = Double.NaN
+    private var lastGearState = -1
+    private var lastTrackSampleRealtimeMs = 0L
 
     private fun readSmartFloatFromParcel(p: Parcel): Float {
         val rawBits = p.readInt()
@@ -674,7 +860,7 @@ object LeapVehicleDataSource : PanelDataSource {
             } catch (t: Throwable) {
                 AppLog.d("[QU-Telemetry] Poll error: ${t.message}")
             }
-            workerHandler?.postDelayed(this, 1500L)
+            workerHandler?.postDelayed(this, 3000L)
         }
     }
 
@@ -682,11 +868,9 @@ object LeapVehicleDataSource : PanelDataSource {
         val ctx = context.applicationContext
         appContext = ctx
         loadSavedSyncPreferences(ctx)
+        OtaSelfUpdater.cleanupCarInternalDumpStorageAsync(ctx)
         if (started) return
         started = true
-        if (tripStartRealtimeMs == 0L) {
-            tripStartRealtimeMs = SystemClock.elapsedRealtime()
-        }
         val thread = HandlerThread("qu-leap-telemetry").apply { start() }
         workerThread = thread
         val handler = Handler(thread.looper)
@@ -899,9 +1083,9 @@ object LeapVehicleDataSource : PanelDataSource {
     fun saveCurrentTripAndReset(context: Context): TripRecord {
         val snap = snapshot()
         val now = System.currentTimeMillis()
-        val durMin = max(1, (snap.tripDurationSec / 60L).toInt().takeIf { it > 0 } ?: 18)
-        val distKm = if (snap.tripDistanceKm >= 0.1) snap.tripDistanceKm else 14.6
-        val kwh = if (snap.tripEnergyKwh >= 0.05) snap.tripEnergyKwh else (distKm * 0.154)
+        val durMin = max(1, (snap.tripDurationSec / 60L).toInt().takeIf { it > 0 } ?: 1)
+        val distKm = snap.tripDistanceKm.coerceAtLeast(0.1)
+        val kwh = if (snap.tripEnergyKwh >= 0.01) snap.tripEnergyKwh else (distKm * 0.154)
         val avgCons = if (!snap.avgConsumptionKwh100.isNaN() && snap.avgConsumptionKwh100 > 0) {
             snap.avgConsumptionKwh100
         } else {
@@ -913,12 +1097,23 @@ object LeapVehicleDataSource : PanelDataSource {
         } else {
             (endSoc + (kwh / currentBatteryCapacityKwh) * 100.0).coerceAtMost(100.0)
         }
-        val maxSpd = if (snap.maxSpeedKmh >= 5.0) snap.maxSpeedKmh else max(68.0, snap.effectiveSpeedKmh)
-        val avgSpd = (distKm / (durMin / 60.0)).coerceIn(18.0, maxSpd)
-        val maxG = if (snap.peakG >= 0.08f) snap.peakG.toDouble() else 0.34
-        val z50 = if (!snap.zeroToFiftySec.isNaN()) snap.zeroToFiftySec else 3.2
-        val z100 = if (!snap.zeroToHundredSec.isNaN()) snap.zeroToHundredSec else 7.5
+        val maxSpd = if (snap.maxSpeedKmh >= 1.0) snap.maxSpeedKmh else snap.effectiveSpeedKmh
+        val avgSpd = (distKm / (durMin / 60.0)).coerceIn(1.0, max(1.0, maxSpd))
+        val maxG = if (snap.peakG >= 0.02f) snap.peakG.toDouble() else 0.15
+        val z50 = snap.zeroToFiftySec
+        val z100 = snap.zeroToHundredSec
         val trackToSave = if (liveTrackPoints.size >= 2) liveTrackPoints.toList() else sampleTrack1()
+        val startStamp = java.text.SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date(now - durMin * 60_000L))
+        val endStamp = java.text.SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date(now))
+
+        val pricing = getEnergyPricing(context)
+        val isReev = selectedVariantCached.isReev || snap.isReev
+        val reevLiters = if (isReev && distKm > 15.0 && startSoc <= 25.0) {
+            (distKm * 0.054)
+        } else {
+            0.0
+        }
+        val tripCostEur = kwh * pricing.activeElecEurKwh + reevLiters * pricing.gasolineEurLiter
 
         val record = TripRecord(
             startTimeMs = now - durMin * 60_000L,
@@ -933,26 +1128,174 @@ object LeapVehicleDataSource : PanelDataSource {
             maxAccelG = maxG,
             zeroToFiftySec = z50,
             zeroToHundredSec = z100,
-            climbM = (distKm * 4.2).roundToInt().toDouble(),
-            descentM = (distKm * 3.8).roundToInt().toDouble(),
-            costEur = kwh * 0.18,
+            climbM = (distKm * 3.5).roundToInt().toDouble(),
+            descentM = (distKm * 3.2).roundToInt().toDouble(),
+            costEur = tripCostEur,
             smoothnessScore = snap.smoothnessScore,
-            originName = "Loeches · C10",
-            destinationName = "Recorrido guardado",
+            originName = "Salida $startStamp (${startSoc.roundToInt()}%)",
+            destinationName = "Llegada $endStamp (${endSoc.roundToInt()}%)",
             stopsCount = 0,
-            stopsSummary = "Sin paradas intermedias (> 2 min)",
+            stopsSummary = if (reevLiters > 0.05) {
+                String.format(Locale.getDefault(), "Trayecto real REEV (%.2f L gasolina + %.2f kWh)", reevLiters, kwh)
+            } else {
+                "Trayecto real registrado en Leapmotor C10"
+            },
             track = trackToSave,
+            hidden = false,
+            fuelLitersUsed = reevLiters,
         )
-        val existing = loadRecentTrips(context).toMutableList()
-        existing.add(0, record)
-        saveTripsList(context, existing.take(30))
+        val existing = loadRecentTrips(context, includeHidden = true).toMutableList()
+        if (snap.tripDistanceKm >= 0.2) {
+            existing.add(0, record)
+            saveTripsList(context, existing.take(40))
+        }
         resetTrip()
         return record
     }
 
+    fun getDeletedTripIds(context: Context): Set<Long> {
+        val raw = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_DELETED_TRIP_IDS, "").orEmpty()
+        return raw.split(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
+    }
+
+    private fun saveDeletedTripIds(context: Context, ids: Set<Long>) {
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_DELETED_TRIP_IDS, ids.take(200).joinToString(","))
+            .apply()
+    }
+
+    fun getHiddenTripIds(context: Context): Set<Long> {
+        val raw = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_HIDDEN_TRIP_IDS, "").orEmpty()
+        return raw.split(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
+    }
+
+    private fun saveHiddenTripIds(context: Context, ids: Set<Long>) {
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_HIDDEN_TRIP_IDS, ids.take(200).joinToString(","))
+            .apply()
+    }
+
     fun deleteTrip(context: Context, startTimeMs: Long) {
-        val updated = loadRecentTrips(context).filterNot { it.startTimeMs == startTimeMs }
+        val deletedIds = getDeletedTripIds(context).toMutableSet().apply { add(startTimeMs) }
+        saveDeletedTripIds(context, deletedIds)
+        val hiddenIds = getHiddenTripIds(context).toMutableSet().apply { remove(startTimeMs) }
+        saveHiddenTripIds(context, hiddenIds)
+        val updated = loadRecentTrips(context, includeHidden = true).filterNot { it.startTimeMs == startTimeMs }
         saveTripsList(context, updated)
+    }
+
+    fun setTripHidden(context: Context, startTimeMs: Long, hidden: Boolean) {
+        val hiddenIds = getHiddenTripIds(context).toMutableSet()
+        if (hidden) hiddenIds.add(startTimeMs) else hiddenIds.remove(startTimeMs)
+        saveHiddenTripIds(context, hiddenIds)
+        val updated = loadRecentTrips(context, includeHidden = true).map {
+            if (it.startTimeMs == startTimeMs) it.copy(hidden = hidden) else it
+        }
+        saveTripsList(context, updated)
+    }
+
+    fun toggleTripHidden(context: Context, startTimeMs: Long): Boolean {
+        val curHidden = getHiddenTripIds(context).contains(startTimeMs)
+        val next = !curHidden
+        setTripHidden(context, startTimeMs, next)
+        return next
+    }
+
+    /**
+     * Aplica cambios enviados por Qonecta Unit Companion (teléfono -> coche):
+     * - Viajes eliminados (`deletedTripIds`)
+     * - Viajes ocultos / visibles por privacidad (`hiddenTripIds`, `unhiddenTripIds`)
+     * - Precios de electricidad (casa CA y rápida CC), gasolina, diésel y modo REEV / versión C10.
+     */
+    fun applyCompanionSync(context: Context, json: JSONObject): Boolean {
+        var changed = false
+        val deletedIds = getDeletedTripIds(context).toMutableSet()
+        json.optJSONArray("deletedTripIds")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val id = arr.optLong(i, 0L)
+                if (id > 0L && deletedIds.add(id)) changed = true
+            }
+        }
+        if (changed) saveDeletedTripIds(context, deletedIds)
+
+        val hiddenIds = getHiddenTripIds(context).toMutableSet()
+        var hiddenChanged = false
+        json.optJSONArray("unhiddenTripIds")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val id = arr.optLong(i, 0L)
+                if (id > 0L && hiddenIds.remove(id)) hiddenChanged = true
+            }
+        }
+        json.optJSONArray("hiddenTripIds")?.let { arr ->
+            if (json.optBoolean("replaceHiddenSet", false)) {
+                val newSet = mutableSetOf<Long>()
+                for (i in 0 until arr.length()) {
+                    val id = arr.optLong(i, 0L)
+                    if (id > 0L && !deletedIds.contains(id)) newSet.add(id)
+                }
+                if (newSet != hiddenIds) {
+                    hiddenIds.clear()
+                    hiddenIds.addAll(newSet)
+                    hiddenChanged = true
+                }
+            } else {
+                for (i in 0 until arr.length()) {
+                    val id = arr.optLong(i, 0L)
+                    if (id > 0L && !deletedIds.contains(id) && hiddenIds.add(id)) hiddenChanged = true
+                }
+            }
+        }
+        if (hiddenChanged) {
+            saveHiddenTripIds(context, hiddenIds)
+            changed = true
+        }
+
+        if (changed) {
+            val allTrips = loadRecentTrips(context, includeHidden = true)
+                .filterNot { deletedIds.contains(it.startTimeMs) }
+                .map { it.copy(hidden = hiddenIds.contains(it.startTimeMs)) }
+            saveTripsList(context, allTrips)
+        }
+
+        json.optJSONObject("pricing")?.let { p ->
+            val remoteTs = p.optLong("updatedAtMs", 0L)
+            val current = getEnergyPricing(context)
+            if (remoteTs >= current.updatedAtMs || remoteTs == 0L) {
+                val nextPricing = EnergyPricingConfig(
+                    homeElecEurKwh = p.optDouble("homeElecEurKwh", current.homeElecEurKwh),
+                    dcFastElecEurKwh = p.optDouble("dcFastElecEurKwh", current.dcFastElecEurKwh),
+                    gasolineEurLiter = p.optDouble("gasolineEurLiter", current.gasolineEurLiter),
+                    dieselEurLiter = p.optDouble("dieselEurLiter", current.dieselEurLiter),
+                    tariffMode = p.optInt("tariffMode", current.tariffMode),
+                    updatedAtMs = if (remoteTs > 0L) remoteTs else System.currentTimeMillis(),
+                )
+                saveEnergyPricing(context, nextPricing, fromRemote = true)
+                changed = true
+            }
+            if (p.has("isReevMode")) {
+                val wantReev = p.optBoolean("isReevMode", selectedVariantCached.isReev)
+                if (wantReev != selectedVariantCached.isReev) {
+                    setSelectedVariant(
+                        context,
+                        if (wantReev) C10Variant.REEV_DESIGN_215 else C10Variant.PROMAX_DESIGN_MY26,
+                    )
+                    changed = true
+                }
+            }
+        }
+        val variantId = json.optString("variantId", "")
+        if (variantId.isNotBlank()) {
+            val v = C10Variant.fromId(variantId)
+            if (v != selectedVariantCached) {
+                setSelectedVariant(context, v)
+                changed = true
+            }
+        }
+        return changed
     }
 
     private fun saveTripsList(context: Context, trips: List<TripRecord>) {
@@ -980,6 +1323,8 @@ object LeapVehicleDataSource : PanelDataSource {
             o.put("destinationName", t.destinationName)
             o.put("stopsCount", t.stopsCount)
             o.put("stopsSummary", t.stopsSummary)
+            o.put("hidden", t.hidden)
+            o.put("fuelLitersUsed", t.fuelLitersUsed)
             val trk = JSONArray()
             for (pt in t.track) {
                 if (pt.size >= 2) {
@@ -996,7 +1341,7 @@ object LeapVehicleDataSource : PanelDataSource {
     }
 
     fun resetTrip() {
-        tripStartRealtimeMs = SystemClock.elapsedRealtime()
+        tripStartRealtimeMs = 0L
         lastSampleRealtimeMs = 0L
         lastSampleSpeedKmh = Double.NaN
         tripDistanceKm = 0.0
@@ -1035,15 +1380,38 @@ object LeapVehicleDataSource : PanelDataSource {
         )
     }
 
-    fun loadRecentTrips(context: Context): List<TripRecord> {
+    fun loadRecentTrips(context: Context, includeHidden: Boolean = false): List<TripRecord> {
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val raw = prefs.getString(KEY_TRIPS_JSON, null)
+        val deletedIds = getDeletedTripIds(context)
+        val hiddenIds = getHiddenTripIds(context)
+        val pricing = getEnergyPricing(context)
         val parsed = mutableListOf<TripRecord>()
+        var purgedLegacyDemo = false
         if (!raw.isNullOrBlank()) {
             runCatching {
                 val arr = JSONArray(raw)
+                val cleanArr = JSONArray()
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
+                    val startMs = o.optLong("startTimeMs")
+                    val orig = o.optString("originName", "Salida C10")
+                    val dest = o.optString("destinationName", "Llegada C10")
+                    val isLegacyDemo = orig.contains("Loeches", ignoreCase = true) ||
+                        dest.contains("Castellana", ignoreCase = true) ||
+                        dest.contains("Guadalajara", ignoreCase = true) ||
+                        dest.contains("Alcalá", ignoreCase = true) ||
+                        dest.contains("Aranjuez", ignoreCase = true) ||
+                        orig.contains("Aranjuez", ignoreCase = true)
+                    val dist = o.optDouble("distanceKm", 0.0)
+                    if (isLegacyDemo || dist < 0.2 || deletedIds.contains(startMs)) {
+                        purgedLegacyDemo = true
+                        continue
+                    }
+                    val isHidden = o.optBoolean("hidden", false) || hiddenIds.contains(startMs)
+                    o.put("hidden", isHidden)
+                    cleanArr.put(o)
+                    if (!includeHidden && isHidden) continue
                     val trkList = mutableListOf<DoubleArray>()
                     val trkArr = o.optJSONArray("track")
                     if (trkArr != null) {
@@ -1061,133 +1429,58 @@ object LeapVehicleDataSource : PanelDataSource {
                             }
                         }
                     }
-                    val dist = o.optDouble("distanceKm", 25.0)
-                    val dur = o.optInt("durationMin", 28)
-                    val kwh = o.optDouble("energyKwh", 3.9)
+                    var dur = o.optInt("durationMin", 1)
+                    var kwh = o.optDouble("energyKwh", 0.0)
+                    var avgConsVal = o.optDouble("avgKwh100", 15.6)
+                    if (dur > 180 && dist < 15.0) {
+                        dur = max(4, ((dist / 22.0) * 60.0).roundToInt())
+                        o.put("durationMin", dur)
+                        o.put("avgSpeedKmh", dist / (dur / 60.0))
+                        purgedLegacyDemo = true
+                    }
+                    if (dist in 0.2..8.0 && avgConsVal > 34.0) {
+                        avgConsVal = 16.4
+                        kwh = (dist * avgConsVal) / 100.0
+                        o.put("energyKwh", kwh)
+                        o.put("avgKwh100", avgConsVal)
+                        purgedLegacyDemo = true
+                    }
+                    val fuelLiters = o.optDouble("fuelLitersUsed", 0.0)
+                    val dynamicCost = kwh * pricing.activeElecEurKwh + fuelLiters * pricing.gasolineEurLiter
                     parsed.add(
                         TripRecord(
-                            startTimeMs = o.optLong("startTimeMs"),
+                            startTimeMs = startMs,
                             durationMin = dur,
                             distanceKm = dist,
                             energyKwh = kwh,
-                            avgKwh100 = o.optDouble("avgKwh100", 15.6),
+                            avgKwh100 = avgConsVal,
                             startSoc = o.optDouble("startSoc", 82.0),
                             endSoc = o.optDouble("endSoc", 74.0),
-                            maxSpeedKmh = o.optDouble("maxSpeedKmh", 108.0),
-                            avgSpeedKmh = o.optDouble("avgSpeedKmh", if (dur > 0) dist / (dur / 60.0) else 62.0),
-                            maxAccelG = o.optDouble("maxAccelG", 0.37),
-                            zeroToFiftySec = o.optDouble("zeroToFiftySec", 3.1),
-                            zeroToHundredSec = o.optDouble("zeroToHundredSec", 7.4),
-                            climbM = o.optDouble("climbM", 195.0),
-                            descentM = o.optDouble("descentM", 170.0),
-                            costEur = o.optDouble("costEur", kwh * 0.18),
+                            maxSpeedKmh = o.optDouble("maxSpeedKmh", 0.0),
+                            avgSpeedKmh = o.optDouble("avgSpeedKmh", if (dur > 0) dist / (dur / 60.0) else 0.0),
+                            maxAccelG = o.optDouble("maxAccelG", 0.0),
+                            zeroToFiftySec = o.optDouble("zeroToFiftySec", Double.NaN),
+                            zeroToHundredSec = o.optDouble("zeroToHundredSec", Double.NaN),
+                            climbM = o.optDouble("climbM", 0.0),
+                            descentM = o.optDouble("descentM", 0.0),
+                            costEur = if (dynamicCost > 0.0) dynamicCost else o.optDouble("costEur", kwh * pricing.activeElecEurKwh),
                             smoothnessScore = o.optInt("smoothnessScore", 95),
-                            originName = o.optString("originName", "Loeches · M-300"),
-                            destinationName = o.optString("destinationName", "Madrid / Corredor del Henares"),
+                            originName = orig,
+                            destinationName = dest,
                             stopsCount = o.optInt("stopsCount", 0),
                             stopsSummary = o.optString("stopsSummary", "Sin paradas intermedias"),
-                            track = if (trkList.size >= 2) trkList else sampleTrackForIndex(i),
+                            track = trkList,
+                            hidden = isHidden,
+                            fuelLitersUsed = fuelLiters,
                         )
                     )
                 }
+                if (purgedLegacyDemo) {
+                    prefs.edit().putString(KEY_TRIPS_JSON, cleanArr.toString()).apply()
+                }
             }
         }
-        if (parsed.isNotEmpty()) return parsed
-        val now = System.currentTimeMillis()
-        return listOf(
-            TripRecord(
-                startTimeMs = now - 3_600_000L * 3,
-                durationMin = 34,
-                distanceKm = 41.8,
-                energyKwh = 6.4,
-                avgKwh100 = 15.3,
-                startSoc = 86.0,
-                endSoc = 77.0,
-                maxSpeedKmh = 114.0,
-                avgSpeedKmh = 73.8,
-                maxAccelG = 0.39,
-                zeroToFiftySec = 3.0,
-                zeroToHundredSec = 7.2,
-                climbM = 240.0,
-                descentM = 195.0,
-                costEur = 1.15,
-                smoothnessScore = 96,
-                originName = "Loeches (Plaza Duquesa de Alba)",
-                destinationName = "Madrid · Av. de América",
-                stopsCount = 1,
-                stopsSummary = "P1 · 4 min en Torrejón (km 14,2)",
-                track = sampleTrack1(),
-            ),
-            TripRecord(
-                startTimeMs = now - 3_600_000L * 22,
-                durationMin = 52,
-                distanceKm = 68.5,
-                energyKwh = 11.2,
-                avgKwh100 = 16.4,
-                startSoc = 94.0,
-                endSoc = 78.0,
-                maxSpeedKmh = 120.0,
-                avgSpeedKmh = 79.0,
-                maxAccelG = 0.44,
-                zeroToFiftySec = 2.9,
-                zeroToHundredSec = 6.9,
-                climbM = 410.0,
-                descentM = 380.0,
-                costEur = 2.02,
-                smoothnessScore = 93,
-                originName = "Madrid · Castellana",
-                destinationName = "Guadalajara · A-2",
-                stopsCount = 2,
-                stopsSummary = "P1 · 6 min (km 28,1)  ·  P2 · 3 min (km 51,0)",
-                track = sampleTrack2(),
-            ),
-            TripRecord(
-                startTimeMs = now - 3_600_000L * 48,
-                durationMin = 21,
-                distanceKm = 19.4,
-                energyKwh = 2.7,
-                avgKwh100 = 13.9,
-                startSoc = 71.0,
-                endSoc = 67.0,
-                maxSpeedKmh = 92.0,
-                avgSpeedKmh = 55.4,
-                maxAccelG = 0.31,
-                zeroToFiftySec = 3.3,
-                zeroToHundredSec = 7.8,
-                climbM = 115.0,
-                descentM = 130.0,
-                costEur = 0.49,
-                smoothnessScore = 98,
-                originName = "Loeches · C. Arganda",
-                destinationName = "Alcalá de Henares · Centro",
-                stopsCount = 0,
-                stopsSummary = "Sin paradas intermedias (> 2 min)",
-                track = sampleTrack3(),
-            ),
-            TripRecord(
-                startTimeMs = now - 3_600_000L * 96,
-                durationMin = 44,
-                distanceKm = 54.2,
-                energyKwh = 8.1,
-                avgKwh100 = 14.9,
-                startSoc = 65.0,
-                endSoc = 53.0,
-                maxSpeedKmh = 116.0,
-                avgSpeedKmh = 73.9,
-                maxAccelG = 0.37,
-                zeroToFiftySec = 3.1,
-                zeroToHundredSec = 7.3,
-                climbM = 310.0,
-                descentM = 285.0,
-                costEur = 1.46,
-                smoothnessScore = 95,
-                originName = "Alcalá de Henares",
-                destinationName = "Aranjuez · M-300 / A-4",
-                stopsCount = 1,
-                stopsSummary = "P1 · 5 min en Arganda (km 24,6)",
-                track = sampleTrack4(),
-            ),
-        )
+        return parsed
     }
 
     private fun sampleTrackForIndex(idx: Int): List<DoubleArray> = when (idx % 4) {
@@ -1250,12 +1543,6 @@ object LeapVehicleDataSource : PanelDataSource {
         }.onFailure {
             AppLog.d("[QU-Telemetry] AutoSdk bind failed: ${it.message}")
         }
-        runCatching {
-            val poolIntent = Intent(BINDER_POOL_ACTION).setPackage(CARCONTROL_PACKAGE)
-            ctx.bindService(poolIntent, binderPoolConnection, Context.BIND_AUTO_CREATE)
-        }.onFailure {
-            AppLog.d("[QU-Telemetry] BinderPool bind failed: ${it.message}")
-        }
         connectAndroidCar(ctx)
     }
 
@@ -1303,20 +1590,18 @@ object LeapVehicleDataSource : PanelDataSource {
         }
     }
 
-    private fun pollCarPropertiesAndSettings() {
-        val ctx = appContext
-        if (ctx != null) {
-            pollSystemSettingsTelemetry(ctx)
-        }
+    private var lastSlowPropertiesPollRealtimeMs = 0L
+
+    private fun pollCarPropertiesAndSettings(forceSlowScan: Boolean = false) {
+        val nowRealtime = SystemClock.elapsedRealtime()
+        val runSlow = forceSlowScan || lastSlowPropertiesPollRealtimeMs == 0L || (nowRealtime - lastSlowPropertiesPollRealtimeMs >= 30_000L)
+        if (!runSlow) return
+        lastSlowPropertiesPollRealtimeMs = nowRealtime
+
         val mgr = carPropertyManagerObj ?: return
         runCatching {
             val getFloat = mgr.javaClass.getMethod(
                 "getFloatProperty",
-                Int::class.javaPrimitiveType,
-                Int::class.javaPrimitiveType,
-            )
-            val getInt = mgr.javaClass.getMethod(
-                "getIntProperty",
                 Int::class.javaPrimitiveType,
                 Int::class.javaPrimitiveType,
             )
@@ -1329,59 +1614,11 @@ object LeapVehicleDataSource : PanelDataSource {
                     }
                 }
             }
-            // HVAC_TEMPERATURE_SET = 0x15600503 (358614275), HVAC_TEMPERATURE_CURRENT = 0x15600502 (358614274)
-            for (propId in intArrayOf(0x15600503, 0x15600502)) {
-                for (area in intArrayOf(0x1, 0x31, 0x35, 0x75, 0)) {
-                    runCatching {
-                        val v = (getFloat.invoke(mgr, propId, area) as? Number)?.toDouble() ?: Double.NaN
-                        if (!v.isNaN() && v in 14.0..34.0) {
-                            extraTelemetry["car_temp_left"] = v
-                        }
-                    }
-                }
-                for (area in intArrayOf(0x4, 0x40, 0x35, 0x75, 0)) {
-                    runCatching {
-                        val v = (getFloat.invoke(mgr, propId, area) as? Number)?.toDouble() ?: Double.NaN
-                        if (!v.isNaN() && v in 14.0..34.0) {
-                            extraTelemetry["car_temp_right"] = v
-                        }
-                    }
-                }
-            }
             // PERF_STEERING_ANGLE = 0x11600209 (291504649)
             runCatching {
                 val steer = (getFloat.invoke(mgr, 0x11600209, 0) as? Number)?.toDouble() ?: Double.NaN
                 if (!steer.isNaN() && steer in -720.0..720.0 && steer != 0.0) {
                     extraTelemetry["car_steer_angle"] = steer
-                }
-            }
-            // Scan property list for vendor properties (drive mode, HVAC, outside temp)
-            runCatching {
-                val getPropList = mgr.javaClass.getMethod("getPropertyList")
-                val list = getPropList.invoke(mgr) as? Iterable<*>
-                if (list != null) {
-                    for (cfg in list) {
-                        if (cfg == null) continue
-                        val desc = cfg.toString().lowercase(Locale.ROOT)
-                        val propId = runCatching {
-                            cfg.javaClass.getMethod("getPropertyId").invoke(cfg) as? Int
-                        }.getOrNull() ?: continue
-                        if (desc.contains("drive_mode") || desc.contains("driving_mode") || desc.contains("drivemode")) {
-                            runCatching {
-                                val dm = (getInt.invoke(mgr, propId, 0) as? Number)?.toInt()
-                                if (dm != null && dm in 0..4) {
-                                    extraTelemetry["car_drive_mode"] = dm.toDouble()
-                                }
-                            }
-                        } else if (desc.contains("outside_temp") || desc.contains("ambient_temp") || desc.contains("ext_temp")) {
-                            runCatching {
-                                val t = (getFloat.invoke(mgr, propId, 0) as? Number)?.toDouble() ?: Double.NaN
-                                if (!t.isNaN() && t in -45.0..65.0 && t != 0.0) {
-                                    extraTelemetry["car_temp_out"] = t
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -1560,19 +1797,22 @@ object LeapVehicleDataSource : PanelDataSource {
         }
     }
 
+    private var staticSpecsPolled = false
+
     private fun pollAutoSdkOnce() {
-        pollCarPropertiesAndSettings()
-        carControlBinder?.let { if (it.isBinderAlive) pollCarControlCanSignals(it) }
+        pollCarPropertiesAndSettings(forceSlowScan = false)
         val binder = autoSdkBinder ?: return
         if (!binder.isBinderAlive) return
         var anySuccess = false
         for (spec in POLL_SPECS) {
+            if (staticSpecsPolled && spec.code in 17..23) continue
             val v = transactAutoSdkValue(binder, spec)
             if (v != null) {
                 rawValues[spec.code] = v
                 anySuccess = true
             }
         }
+        staticSpecsPolled = true
         if (anySuccess) {
             rebuildSnapshotFromRaw()
         }
@@ -1601,12 +1841,12 @@ object LeapVehicleDataSource : PanelDataSource {
             20 -> 42
             21 -> 43
             22 -> 44
+            23 -> 1023
             24 -> 45
             else -> cbCode
         }
         rawValues[mappedPollCode] = value
         if (cbCode == 23 && value is String) {
-            rawValues[1023] = value
             parseNmeaToTrack(value)
         }
         rebuildSnapshotFromRaw()
@@ -1664,10 +1904,27 @@ object LeapVehicleDataSource : PanelDataSource {
         return fallback
     }
 
+    /**
+     * Calibra la velocidad reportada por `IAutoSdkService` (tx 33 `dashboardSpeed` y tx 35 `speed`)
+     * para que coincida exactamente con el velocímetro digital del cuadro del Leapmotor C10.
+     * En el C10, tx 33 aplica un factor 31/30 (+3,333%) sobre la velocidad del cuadro (ej. 124 km/h
+     * cuando el cuadro marca 120 km/h con ACC 120; con `/ 1.025` daba 120,975 km/h → redondeaba a 121).
+     * Con `dashSpeed * (120.0 / 124.0)` (30/31), 124.0 da exactamente 120.0 km/h (120 en pantalla).
+     */
+    fun calibrateClusterSpeedKmh(dashSpeed: Double, realSpeed: Double): Double {
+        val raw = when {
+            !dashSpeed.isNaN() && dashSpeed >= 0.0 -> dashSpeed * (120.0 / 124.0)
+            !realSpeed.isNaN() && realSpeed >= 0.0 -> realSpeed * (120.0 / 124.0)
+            else -> 0.0
+        }
+        return if (raw < 0.8) 0.0 else raw
+    }
+
     @Synchronized
     private fun rebuildSnapshotFromRaw() {
         val nowWallMs = System.currentTimeMillis()
         val nowRealtimeMs = SystemClock.elapsedRealtime()
+        val prevGearLabel = latestSnapshot.gearLabel()
 
         fun floatVal(code: Int): Double = (rawValues[code] as? Number)?.toDouble() ?: Double.NaN
         fun intVal(code: Int, default: Int = 0): Int = (rawValues[code] as? Number)?.toInt() ?: default
@@ -1678,7 +1935,9 @@ object LeapVehicleDataSource : PanelDataSource {
         val evRange = floatVal(28)
         val fuelPct = floatVal(32)
         val fuelRange = floatVal(29)
-        val powerKw = floatVal(23)
+        // Importante: el código 23 de IAutoSdkService devuelve la capacidad nominal de la batería (81.9 kWh en C10 BEV),
+        // NUNCA la potencia instantánea. Si existe sensor real de potencia en car_power_kw lo usamos; si no, estimamos.
+        val sensorPowerKw = extraTelemetry["car_power_kw"]?.takeIf { !it.isNaN() && it in -120.0..260.0 } ?: Double.NaN
         val dashSpeed = floatVal(33)
         val realSpeed = floatVal(35)
         val rawSteerDeg = floatVal(44)
@@ -1752,23 +2011,32 @@ object LeapVehicleDataSource : PanelDataSource {
             else -> 1
         }
 
-        val currentSpeed = when {
-            !dashSpeed.isNaN() && dashSpeed >= 0 -> dashSpeed
-            !realSpeed.isNaN() && realSpeed >= 0 -> realSpeed
-            else -> 0.0
-        }
+        val currentSpeed = calibrateClusterSpeedKmh(dashSpeed, realSpeed)
 
         if (tripStartSoc.isNaN() && !soc.isNaN() && soc > 0) {
             tripStartSoc = soc
         }
 
-        var longG = 0f
-        var latG = 0f
-        if (lastSampleRealtimeMs > 0L && !lastSampleSpeedKmh.isNaN()) {
+        var longG = latestSnapshot.longitudinalG
+        var latG = latestSnapshot.lateralG
+        if (lastSampleRealtimeMs <= 0L || lastSampleSpeedKmh.isNaN()) {
+            lastSampleRealtimeMs = nowRealtimeMs
+            lastSampleSpeedKmh = currentSpeed
+        } else {
             val dtSec = (nowRealtimeMs - lastSampleRealtimeMs) / 1000.0
-            if (dtSec in 0.12..8.0) {
+            if (dtSec > 600.0) {
+                // Si el coche ha estado aparcado o en suspensión más de 10 minutos, cerramos el trayecto previo si era real
+                if (tripDistanceKm >= 0.20) {
+                    appContext?.let { ctx -> runCatching { saveCurrentTripAndReset(ctx) } }
+                } else {
+                    resetTrip()
+                }
+                lastSampleRealtimeMs = nowRealtimeMs
+                lastSampleSpeedKmh = currentSpeed
+            } else if (dtSec >= 0.08) {
+                val stepSec = dtSec.coerceAtMost(5.0)
                 val dvMs = (currentSpeed - lastSampleSpeedKmh) / 3.6
-                val accelMs2 = dvMs / dtSec
+                val accelMs2 = dvMs / stepSec
                 longG = (accelMs2 / 9.80665).toFloat().coerceIn(-0.65f, 0.65f)
                 val steerRad = Math.toRadians((if (steeringDeg.isNaN()) 0.0 else steeringDeg) / 14.5)
                 val vMs = currentSpeed / 3.6
@@ -1790,20 +2058,33 @@ object LeapVehicleDataSource : PanelDataSource {
                     jerkPenalty = (jerkPenalty + j).coerceAtMost(35.0)
                     recentJerkPenalty = (recentJerkPenalty + j * 1.8).coerceAtMost(38.0)
                 } else {
-                    jerkPenalty = max(0.0, jerkPenalty - dtSec * 0.08)
-                    recentJerkPenalty = max(0.0, recentJerkPenalty - dtSec * 0.35)
+                    jerkPenalty = max(0.0, jerkPenalty - stepSec * 0.08)
+                    recentJerkPenalty = max(0.0, recentJerkPenalty - stepSec * 0.35)
                 }
 
-                tripDistanceKm += (currentSpeed * dtSec) / 3600.0
-                val pKw = if (!powerKw.isNaN()) powerKw else estimatePowerKw(currentSpeed, accelMs2)
-                tripEnergyKwh += (pKw * dtSec) / 3600.0
-                if (pKw < -0.2) {
-                    tripRecoveredKwh += (-pKw * dtSec) / 3600.0
+                val avgStepSpeed = (currentSpeed + lastSampleSpeedKmh) * 0.5
+                if (currentSpeed >= 1.0 || avgStepSpeed >= 1.0) {
+                    if (tripStartRealtimeMs <= 0L) {
+                        tripStartRealtimeMs = nowRealtimeMs
+                    }
+                    tripDistanceKm += (avgStepSpeed * stepSec) / 3600.0
                 }
+                val acActive = boolVal(39, true)
+                val pKw = if (!sensorPowerKw.isNaN()) {
+                    sensorPowerKw
+                } else {
+                    estimatePowerKw(currentSpeed, accelMs2, acActive, effectiveTempLeftC, effectiveTempOutC)
+                }
+                if (tripStartRealtimeMs > 0L && (tripDistanceKm >= 0.01 || currentSpeed >= 1.0)) {
+                    tripEnergyKwh += (pKw * stepSec) / 3600.0
+                    if (pKw < -0.2) {
+                        tripRecoveredKwh += (-pKw * stepSec) / 3600.0
+                    }
+                }
+                lastSampleRealtimeMs = nowRealtimeMs
+                lastSampleSpeedKmh = currentSpeed
             }
         }
-        lastSampleRealtimeMs = nowRealtimeMs
-        lastSampleSpeedKmh = currentSpeed
 
         if (currentSpeed > maxSpeedKmh) {
             maxSpeedKmh = currentSpeed
@@ -1825,7 +2106,14 @@ object LeapVehicleDataSource : PanelDataSource {
             }
         }
 
-        val effectivePowerKw = if (!powerKw.isNaN()) powerKw.toFloat() else estimatePowerKw(currentSpeed, longG * 9.80665).toFloat()
+        val acActive = boolVal(39, true)
+        val hvacKw = estimateHvacPowerKw(acActive, effectiveTempLeftC, effectiveTempOutC)
+        val auxKw = 0.10
+        val effectivePowerKw = if (!sensorPowerKw.isNaN()) {
+            sensorPowerKw.toFloat()
+        } else {
+            estimatePowerKw(currentSpeed, longG * 9.80665, acActive, effectiveTempLeftC, effectiveTempOutC).toFloat()
+        }
         powerWindowSum += effectivePowerKw
         powerWindowCount += 1
         if (lastPowerHistorySampleMs == 0L || (nowRealtimeMs - lastPowerHistorySampleMs) >= 1000L) {
@@ -1842,21 +2130,41 @@ object LeapVehicleDataSource : PanelDataSource {
         } else {
             Double.NaN
         }
-        val finalTripKwh = if (!socUsedKwh.isNaN() && socUsedKwh > 0.4) socUsedKwh else max(0.0, tripEnergyKwh)
+        val integratedKwh = max(0.0, tripEnergyKwh)
+        val finalTripKwh = when {
+            socUsedKwh.isNaN() || socUsedKwh <= 0.0 -> integratedKwh
+            tripDistanceKm < 10.0 -> {
+                // En trayectos cortos (< 10 km), el paso entero de 1% de SoC (0,819 kWh) tiene error de cuantización:
+                // usamos la integración real de potencia acotada a un rango físico razonable.
+                if (integratedKwh >= 0.05) integratedKwh else socUsedKwh.coerceAtMost(tripDistanceKm * 0.24)
+            }
+            else -> socUsedKwh
+        }
         val avgKwh100 = if (tripDistanceKm >= 0.2) {
-            (finalTripKwh / tripDistanceKm) * 100.0
+            ((finalTripKwh / tripDistanceKm) * 100.0).coerceIn(8.0, 42.0)
         } else {
             15.6
         }
-        val instantKwh100 = if (currentSpeed >= 4.0) {
+        val instantKwh100 = if (currentSpeed >= 3.0) {
             ((effectivePowerKw / currentSpeed) * 100.0).coerceIn(-35.0, 65.0)
         } else {
-            effectivePowerKw * 1.8
+            0.0
         }
 
         val durationSec = if (tripStartRealtimeMs > 0L) max(0L, (nowRealtimeMs - tripStartRealtimeMs) / 1000L) else 0L
         val pitchEst = (-longG * 6.5f - 1.2f).coerceIn(-12f, 12f)
         val rollEst = (latG * 7.5f + ((if (steeringDeg.isNaN()) 0.0 else steeringDeg) / 90.0).toFloat()).coerceIn(-12f, 12f)
+        val currentGear = intVal(36, 0)
+        val rawNmea = strVal(1023, "")
+
+        if ((nowRealtimeMs - lastTrackSampleRealtimeMs) >= 5_000L && (currentSpeed >= 2.0 || liveTrackPoints.isEmpty())) {
+            val coords = parseNmeaLatLon(rawNmea)
+            if (coords != null) {
+                lastTrackSampleRealtimeMs = nowRealtimeMs
+                if (liveTrackPoints.size >= 400) liveTrackPoints.removeAt(0)
+                liveTrackPoints.add(doubleArrayOf(coords.first, coords.second, durationSec.toDouble(), currentSpeed))
+            }
+        }
 
         latestSnapshot = TelemetrySnapshot(
             connected = true,
@@ -1872,19 +2180,19 @@ object LeapVehicleDataSource : PanelDataSource {
             powerKw = effectivePowerKw.toDouble(),
             speedKmh = realSpeed,
             dashboardSpeedKmh = dashSpeed,
-            gear = intVal(36, 0),
+            gear = currentGear,
             driveMode = effectiveDriveMode,
             accelMode = if (rawAccelMode > 0) rawAccelMode else effectiveDriveMode,
             regenMode = effectiveRegenMode,
             steeringMode = effectiveSteerMode,
             chargingStatus = intVal(38, 0),
-            acOn = boolVal(39, true),
+            acOn = acActive,
             tempLeftC = effectiveTempLeftC,
             tempRightC = effectiveTempRightC,
             tempRearC = effectiveTempRearC,
             tempExteriorC = effectiveTempOutC,
             steeringAngleDeg = steeringDeg,
-            gpsNmea = strVal(1023, ""),
+            gpsNmea = rawNmea,
             screenOn = boolVal(45, true),
             lastUpdateMs = nowWallMs,
             tripDistanceKm = tripDistanceKm,
@@ -1908,20 +2216,92 @@ object LeapVehicleDataSource : PanelDataSource {
             zeroToHundredSec = bestZeroToHundredSec,
             instantConsumptionKwh100 = instantKwh100,
             recoveredEnergyKwh = if (tripRecoveredKwh > 0.02) tripRecoveredKwh else 0.38,
+            hvacPowerKw = hvacKw,
+            auxPowerKw = auxKw,
+            doorsOpen = doorsState.toList(),
+            bootOpen = bootState,
+            locked = vehicleLockedState && doorsState.none { it } && !bootState,
+            tyreBars = tyreBarValues.toList(),
+            tyreTempsC = tyreTempValues.toList(),
             powerHistoryKw = powerHistory.toList(),
             canSignals = HashMap(canSignalMap),
         )
+
+        // Auto-guardado de viaje real al pasar de conducción (D/R) a Park (P) tras recorrer >= 0,20 km
+        val newGearLabel = latestSnapshot.gearLabel()
+        if ((prevGearLabel == "D" || prevGearLabel == "R") && newGearLabel == "P" && currentSpeed < 1.0 && tripDistanceKm >= 0.20) {
+            appContext?.let { ctx ->
+                runCatching {
+                    saveCurrentTripAndReset(ctx)
+                    AppLog.i("[QU-Telemetry] Auto-saved completed real trip (${String.format(Locale.US, "%.2f", tripDistanceKm)} km)")
+                }
+            }
+        }
+        lastGearState = currentGear
     }
 
-    private fun estimatePowerKw(speedKmh: Double, accelMs2: Double): Double {
+    private fun parseNmeaLatLon(nmea: String): Pair<Double, Double>? {
+        if (nmea.isBlank()) return null
+        val lines = nmea.split('\n', '\r', ';')
+        for (rawLine in lines) {
+            val line = rawLine.trim()
+            if (line.startsWith("\$G") && (line.contains("GGA") || line.contains("RMC"))) {
+                val parts = line.split(',')
+                if (line.contains("GGA") && parts.size >= 6) {
+                    val lat = parseNmeaCoord(parts[2], parts[3])
+                    val lon = parseNmeaCoord(parts[4], parts[5])
+                    if (lat != null && lon != null) return lat to lon
+                } else if (line.contains("RMC") && parts.size >= 7 && parts[2] == "A") {
+                    val lat = parseNmeaCoord(parts[3], parts[4])
+                    val lon = parseNmeaCoord(parts[5], parts[6])
+                    if (lat != null && lon != null) return lat to lon
+                }
+            }
+        }
+        return null
+    }
+
+    private fun parseNmeaCoord(raw: String, hemi: String): Double? {
+        val v = raw.toDoubleOrNull() ?: return null
+        if (v == 0.0) return null
+        val deg = (v / 100.0).toInt()
+        val min = v - (deg * 100.0)
+        var dec = deg + (min / 60.0)
+        if (hemi.equals("S", ignoreCase = true) || hemi.equals("W", ignoreCase = true)) {
+            dec = -dec
+        }
+        return if (dec in -90.0..90.0 || dec in -180.0..180.0) dec else null
+    }
+
+    private fun estimateHvacPowerKw(acOn: Boolean, cabinTempC: Double, extTempC: Double): Double {
+        if (!acOn) return 0.0
+        val tCab = if (!cabinTempC.isNaN()) cabinTempC else 22.0
+        val tExt = if (!extTempC.isNaN()) extTempC else 15.0
+        val delta = abs(tCab - tExt).coerceIn(0.0, 26.0)
+        // Bomba de calor C10: base ventilación + compresor proporcional al salto térmico (~0.40 a 1.55 kW)
+        return (0.38 + delta * 0.024).coerceIn(0.35, 1.65)
+    }
+
+    private fun estimatePowerKw(
+        speedKmh: Double,
+        accelMs2: Double,
+        acOn: Boolean = true,
+        cabinTempC: Double = 22.0,
+        extTempC: Double = 15.0,
+    ): Double {
+        val hvacKw = estimateHvacPowerKw(acOn, cabinTempC, extTempC)
+        val auxKw = 0.10
+        if (speedKmh < 1.0) {
+            return hvacKw + auxKw
+        }
         val vMs = speedKmh / 3.6
         val massKg = 1980.0
         val rollingN = massKg * 9.80665 * 0.0105
         val aeroN = 0.5 * 1.225 * 0.28 * 2.62 * vMs * vMs
         val inertiaN = massKg * accelMs2
         val tractiveW = (rollingN + aeroN + inertiaN) * vMs
-        val hvacW = 800.0
-        return ((tractiveW / 0.90) + hvacW) / 1000.0
+        val tractiveKw = (tractiveW / 0.90) / 1000.0
+        return (tractiveKw + hvacKw + auxKw).coerceIn(-75.0, 220.0)
     }
 
     /** Foto de demostración realista para previsualización cuando no está conectado al bus del coche. */
@@ -2003,6 +2383,13 @@ object LeapVehicleDataSource : PanelDataSource {
             zeroToHundredSec = 7.3,
             instantConsumptionKwh100 = -3.6,
             recoveredEnergyKwh = 0.42,
+            hvacPowerKw = estimateHvacPowerKw(true, tLeft, tOut),
+            auxPowerKw = 0.10,
+            doorsOpen = doorsState.toList(),
+            bootOpen = bootState,
+            locked = vehicleLockedState && doorsState.none { it } && !bootState,
+            tyreBars = tyreBarValues.toList(),
+            tyreTempsC = tyreTempValues.toList(),
             powerHistoryKw = history,
         )
     }

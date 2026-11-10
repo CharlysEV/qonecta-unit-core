@@ -68,7 +68,7 @@ class ClusterMapActivity : Activity(), SurfaceHolder.Callback {
     // 3. Bottom Page Toast / Pill on Map
     private var mapFooterBadge: TextView? = null
 
-    // 4. Now Playing Music Card (5s popup on track change OR pinned on ClusterPage.MUSIC)
+    // 4. Now Playing Music Card (pinned on ClusterPage.MUSIC) + Compact 5s Song Change Popup (over Map)
     private var musicCard: LinearLayout? = null
     private var musicHeaderBadge: TextView? = null
     private var musicArtImage: ImageView? = null
@@ -79,6 +79,14 @@ class ClusterMapActivity : Activity(), SurfaceHolder.Callback {
     private var musicProgressBar: ProgressBar? = null
     private var musicTimeText: TextView? = null
     private var musicFooterHint: TextView? = null
+
+    private var mediaPopupBanner: LinearLayout? = null
+    private var popupArtImage: ImageView? = null
+    private var popupFallbackIcon: TextView? = null
+    private var popupAppBadge: TextView? = null
+    private var popupTitleText: TextView? = null
+    private var popupArtistText: TextView? = null
+    private var popupAlbumText: TextView? = null
 
     // 5. Qonecta+ Extendido C10 Telemetry + Session Diagnostics Card (ClusterPage.EXTENDED)
     private var extendedCard: LinearLayout? = null
@@ -281,7 +289,7 @@ class ClusterMapActivity : Activity(), SurfaceHolder.Callback {
             gravity = Gravity.CENTER
         }
         val wIcon = ImageView(this).apply {
-            setImageResource(R.drawable.ic_android_auto)
+            setImageResource(R.drawable.hql_logo)
             val iconSz = (squareSize * 0.12f).roundToInt()
             layoutParams = LinearLayout.LayoutParams(iconSz, iconSz).apply {
                 topMargin = (squareSize * 0.03f).roundToInt()
@@ -435,7 +443,100 @@ class ClusterMapActivity : Activity(), SurfaceHolder.Callback {
         )
         mapFooterBadge = mapBadge
 
-        // 4. Now Playing Music Card (shown on 5s track change popup OR ClusterPage.MUSIC)
+        // 3b. Compact 5-second Song Change Popup Card over the Map (does not hide the map or Turn-by-Turn card)
+        val popupCard = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val hp = (squareSize * 0.032f).roundToInt()
+            val vp = (squareSize * 0.024f).roundToInt()
+            setPadding(hp, vp, hp, vp)
+            background = roundedBg(Color.parseColor("#F2121B24"), 24f, 2, Color.parseColor("#00E5C7"))
+            visibility = View.GONE
+        }
+        val popupArtSz = (squareSize * 0.175f).roundToInt()
+        val popupArtBox = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(popupArtSz, popupArtSz).apply {
+                rightMargin = (squareSize * 0.030f).roundToInt()
+            }
+            background = roundedBg(Color.parseColor("#1B2836"), 18f, 1, Color.parseColor("#2A3B4E"))
+            clipToOutline = true
+        }
+        val pFallback = TextView(this).apply {
+            text = "♫"
+            setTextColor(Color.parseColor("#00E5C7"))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, squareSize * 0.075f)
+            gravity = Gravity.CENTER
+        }
+        val pArt = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            visibility = View.GONE
+        }
+        popupArtBox.addView(pFallback, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        popupArtBox.addView(pArt, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+
+        val popupTextCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val pApp = TextView(this).apply {
+            text = "SPOTIFY"
+            setTextColor(Color.parseColor("#00E5C7"))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, squareSize * 0.020f)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            letterSpacing = 0.08f
+            maxLines = 1
+        }
+        val pTitle = TextView(this).apply {
+            text = ""
+            setTextColor(Color.parseColor("#F2F6FA"))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, squareSize * 0.034f)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, (squareSize * 0.004f).roundToInt(), 0, 0)
+        }
+        val pArtist = TextView(this).apply {
+            text = ""
+            setTextColor(Color.parseColor("#B6C5D6"))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, squareSize * 0.026f)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, (squareSize * 0.004f).roundToInt(), 0, 0)
+        }
+        val pAlbum = TextView(this).apply {
+            text = ""
+            setTextColor(Color.parseColor("#7E91A6"))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, squareSize * 0.021f)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, (squareSize * 0.002f).roundToInt(), 0, 0)
+        }
+        popupTextCol.addView(pApp)
+        popupTextCol.addView(pTitle)
+        popupTextCol.addView(pArtist)
+        popupTextCol.addView(pAlbum)
+        popupCard.addView(popupArtBox)
+        popupCard.addView(popupTextCol)
+        slot.addView(
+            popupCard,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER_VERTICAL or Gravity.CENTER_HORIZONTAL,
+            ).apply {
+                val m = (squareSize * 0.035f).roundToInt()
+                setMargins(m, (squareSize * 0.08f).roundToInt(), m, 0)
+            }
+        )
+        mediaPopupBanner = popupCard
+        popupArtImage = pArt
+        popupFallbackIcon = pFallback
+        popupAppBadge = pApp
+        popupTitleText = pTitle
+        popupArtistText = pArtist
+        popupAlbumText = pAlbum
+
+        // 4. Now Playing Music Card (pinned on ClusterPage.MUSIC)
         val music = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -641,7 +742,7 @@ class ClusterMapActivity : Activity(), SurfaceHolder.Callback {
         ext.addView(sessionBox)
 
         val extFooter = TextView(this).apply {
-            text = "Pantalla 3/3 · Doble clic en Play del volante para volver al Mapa"
+            text = "Pantalla 3/4 · 2 toques Play volante → Cuadro Original C10 (4/4)"
             setTextColor(Color.parseColor("#00E5C7"))
             setTextSize(TypedValue.COMPLEX_UNIT_PX, squareSize * 0.020f)
             gravity = Gravity.CENTER
@@ -704,21 +805,37 @@ class ClusterMapActivity : Activity(), SurfaceHolder.Callback {
                 "⚡ BATERÍA $socStr ($rngStr)  ·  MODO ${snap.driveModeLabel().uppercase()}  ·  $tmpStr"
         }
 
-        // 2. Check if 5-second Now Playing popup is active on MAP page
+        // 2. Check if 5-second Now Playing popup is active on MAP page (compact floating banner over map)
         val showMediaPopup =
             page == ClusterMapController.ClusterPage.MAP &&
                 media.hasTrack &&
                 nowElapsed < ClusterMapController.mediaPopupUntilElapsedMs
 
-        val showMusicCard = page == ClusterMapController.ClusterPage.MUSIC || showMediaPopup
+        mediaPopupBanner?.visibility = if (showMediaPopup) View.VISIBLE else View.GONE
+        if (showMediaPopup) {
+            val protoTag = if (mode == ClusterMapController.Mode.CARPLAY) "APPLE CARPLAY" else media.appName.uppercase()
+            popupAppBadge?.setTextColor(themeAccent)
+            popupAppBadge?.text = protoTag
+            if (media.albumArt != null && !media.albumArt.isRecycled) {
+                popupArtImage?.setImageBitmap(media.albumArt)
+                popupArtImage?.visibility = View.VISIBLE
+                popupFallbackIcon?.visibility = View.GONE
+            } else {
+                popupArtImage?.visibility = View.GONE
+                popupFallbackIcon?.visibility = View.VISIBLE
+            }
+            popupTitleText?.text = media.title.ifBlank { "En reproducción" }
+            popupArtistText?.text = media.artist
+            popupArtistText?.visibility = if (media.artist.isNotBlank()) View.VISIBLE else View.GONE
+            popupAlbumText?.text = media.album
+            popupAlbumText?.visibility = if (media.album.isNotBlank()) View.VISIBLE else View.GONE
+        }
+
+        val showMusicCard = page == ClusterMapController.ClusterPage.MUSIC
         musicCard?.visibility = if (showMusicCard) View.VISIBLE else View.GONE
         if (showMusicCard) {
             val protoTag = if (mode == ClusterMapController.Mode.CARPLAY) "APPLE CARPLAY" else media.appName.uppercase()
-            musicHeaderBadge?.text = if (showMediaPopup) {
-                "🎵  CAMBIO DE CANCIÓN  ·  $protoTag"
-            } else {
-                "🎵  REPRODUCIENDO AHORA  ·  $protoTag"
-            }
+            musicHeaderBadge?.text = "🎵  REPRODUCIENDO AHORA  ·  $protoTag"
             if (media.albumArt != null && !media.albumArt.isRecycled) {
                 musicArtImage?.setImageBitmap(media.albumArt)
                 musicArtImage?.visibility = View.VISIBLE
@@ -750,20 +867,13 @@ class ClusterMapActivity : Activity(), SurfaceHolder.Callback {
                 musicProgressBar?.progress = if (media.isPlaying) 500 else 0
                 musicTimeText?.text = if (media.isPlaying) "▶ En reproducción" else "⏸ En pausa"
             }
-            musicFooterHint?.text = if (showMediaPopup) {
-                val remSec = ((ClusterMapController.mediaPopupUntilElapsedMs - nowElapsed) / 1000L + 1L).coerceAtLeast(1L)
-                "Volviendo al mapa en ${remSec}s  ·  2 toques Play volante para fijar"
-            } else {
-                "Pantalla 2/3 (Música)  ·  2 toques Play volante → Extendido C10"
-            }
+            musicFooterHint?.text = "Pantalla 2/4 (Música)  ·  2 toques Play volante → Extendido C10"
         }
 
-        // 3. Top Turn-by-Turn Navigation Pill (shown only when neither Android Auto's cluster card
-        // nor the C10 native AutoSdk turn card is already displayed)
+        // 3. Top Turn-by-Turn Navigation Pill (remains visible even when the 5s compact song popup is shown!)
         val showNavPill =
             page == ClusterMapController.ClusterPage.MAP &&
                 !showWelcome &&
-                !showMediaPopup &&
                 nav.isNavigating &&
                 !(mode == ClusterMapController.Mode.ANDROID_AUTO && hasVideo) &&
                 !ClusterMapController.isAutoSdkConnected

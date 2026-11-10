@@ -13,10 +13,15 @@ object BridgeState {
         val phase: Phase = Phase.STOPPED,
         val transport: String = "",
         val carName: String = "",
+        val carAppVersion: String = "",
+        val carVersionCode: Int = 0,
         val detail: String = "",
         val lastRoute: String = "",
         val dataRequestsServed: Int = 0,
         val lastDataHost: String = "",
+        val otaInProgress: Boolean = false,
+        val otaStatusMessage: String = "",
+        val otaLastOk: Boolean? = null,
     )
 
     @Volatile

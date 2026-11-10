@@ -105,7 +105,12 @@ class Settings(private val context: Context) {
 
     // UI Scale percentage for Home
     var uiScaleHomePercent: Int
-        get() = prefs.getInt("ui-scale-home-percent", defaultUiScalePercent(120))
+        get() {
+            val dm = try { context.resources.displayMetrics } catch (_: Exception) { null }
+            val maxDim = if (dm != null) maxOf(dm.widthPixels, dm.heightPixels) else 1920
+            val defaultHomeScale = if (maxDim >= 2200 && (dm?.densityDpi ?: 200) <= 240) 115 else 100
+            return prefs.getInt("ui-scale-home-percent", defaultHomeScale)
+        }
         set(value) { prefs.edit().putInt("ui-scale-home-percent", value).apply() }
 
     // UI Scale percentage for Settings
@@ -265,8 +270,8 @@ class Settings(private val context: Context) {
 
     var screenOrientation: ScreenOrientation
         get() {
-            val value = prefs.getInt(KEY_SCREEN_ORIENTATION, 0)
-            return ScreenOrientation.fromInt(value) ?: ScreenOrientation.SYSTEM
+            val value = prefs.getInt(KEY_SCREEN_ORIENTATION, ScreenOrientation.LANDSCAPE.value)
+            return ScreenOrientation.fromInt(value) ?: ScreenOrientation.LANDSCAPE
         }
         set(orientation) {
             prefs.edit().putInt(KEY_SCREEN_ORIENTATION, orientation.value).apply()
@@ -793,11 +798,11 @@ class Settings(private val context: Context) {
         set(value) { prefs.edit().putBoolean("auto-start-self-mode", value).apply() }
 
     var autoStartOnUsb: Boolean
-        get() = prefs.getBoolean("auto-start-on-usb", true)
+        get() = prefs.getBoolean("auto-start-on-usb", false)
         set(value) { prefs.edit().putBoolean("auto-start-on-usb", value).apply() }
 
     var autoStartOnBoot: Boolean
-        get() = prefs.getBoolean("auto-start-on-boot", true)
+        get() = prefs.getBoolean("auto-start-on-boot", false)
         set(value) { prefs.edit().putBoolean("auto-start-on-boot", value).apply() }
 
     var autoStartOnScreenOn: Boolean
@@ -889,15 +894,15 @@ class Settings(private val context: Context) {
         set(value) { LocaleHelper.save(context, value) }
 
     var mediaVolumeOffset: Int
-        get() = prefs.getInt("media-volume-offset", 0)
+        get() = prefs.getInt("media-volume-offset", 50)
         set(value) { prefs.edit().putInt("media-volume-offset", value).apply() }
 
     var assistantVolumeOffset: Int
-        get() = prefs.getInt("assistant-volume-offset", 0)
+        get() = prefs.getInt("assistant-volume-offset", 40)
         set(value) { prefs.edit().putInt("assistant-volume-offset", value).apply() }
 
     var navigationVolumeOffset: Int
-        get() = prefs.getInt("navigation-volume-offset", 0)
+        get() = prefs.getInt("navigation-volume-offset", 40)
         set(value) { prefs.edit().putInt("navigation-volume-offset", value).apply() }
 
     // Custom loading screen
@@ -1281,7 +1286,7 @@ class Settings(private val context: Context) {
             } else {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             }
-            return prefs.getBoolean(KEY_AUTO_START_ON_USB, true)
+            return prefs.getBoolean(KEY_AUTO_START_ON_USB, false)
         }
 
         fun syncAutoStartOnUsbToDeviceStorage(context: Context, enabled: Boolean) {

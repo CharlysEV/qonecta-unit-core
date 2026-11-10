@@ -11,6 +11,11 @@ import androidx.annotation.RequiresApi
 @RequiresApi(31)
 class CarPresenceService : CompanionDeviceService() {
 
+    override fun onCreate() {
+        super.onCreate()
+        carAppeared()
+    }
+
     @Deprecated("API 31-32")
     override fun onDeviceAppeared(address: String) = carAppeared()
 

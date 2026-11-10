@@ -494,7 +494,7 @@ class ExtendedUi(
     private fun createPanel(): ExtendedPanelView = ExtendedPanelView(activity).apply {
         onFullscreen = { requestMode(false, "botón del panel") }
         onOpenCarData = { openCarData() }
-        onOpenSplitScreen = { openSplitScreenHub(ExtendedHubView.Tab.TV) }
+        onOpenSplitScreen = { openSplitScreenHub(ExtendedHubView.Tab.ROUTE) }
     }
 
     /**
@@ -531,9 +531,9 @@ class ExtendedUi(
 
     /**
      * Abre directamente el modo Pantalla Partida (Mapa de Android Auto al 53% + Hub Qonecta+ al 47%),
-     * igual que el modo SPLIT de Qonecta+ (CarUi.java).
+     * iniciando siempre en la pestaña Planificador (Ruta), igual que el modo SPLIT de Qonecta+ (CarUi.java).
      */
-    fun openSplitScreenHub(initialTab: ExtendedHubView.Tab = ExtendedHubView.Tab.TV) {
+    fun openSplitScreenHub(initialTab: ExtendedHubView.Tab = ExtendedHubView.Tab.ROUTE) {
         AppLog.i("[QU] abriendo Pantalla Partida ◫ (AA Mapa 53% + Qonecta+ 47% en pestaña ${initialTab.title})")
         openDockedHub(initialTab = initialTab, startSplit = true)
     }

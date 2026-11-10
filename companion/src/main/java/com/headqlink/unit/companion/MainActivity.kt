@@ -42,6 +42,7 @@ class MainActivity : Activity() {
     private companion object {
         const val REQ_ASSOCIATE = 10
         const val REQ_PERMS = 11
+        const val REQ_SAVE_APK_USB = 12
 
         const val BG = 0xFF0A0E14.toInt()
         const val SURFACE = 0xFF111821.toInt()
@@ -59,31 +60,94 @@ class MainActivity : Activity() {
 
     private lateinit var prefs: CompanionPrefs
     private lateinit var root: LinearLayout
-    private val stateListener: (BridgeState.Snapshot) -> Unit = { render() }
+    private lateinit var bottomBar: LinearLayout
+    private lateinit var scrollView: ScrollView
+    private var pendingUsbExportApk: java.io.File? = null
+    private var draftPairCode: String = ""
+    private var activeTab: Int = 0 // Pestaña principal simplificada de Conexión y Actualización en 1 toque
+    private val stateListener: (BridgeState.Snapshot) -> Unit = { s ->
+        // Quién manda: conectado a Qonecta Unit → el coche; desconectado → la cuenta Leapmotor.
+        com.headqlink.unit.companion.cloud.CompanionCloud.setConnectedToUnit(s.phase == BridgeState.Phase.CONNECTED)
+        render()
+    }
+    private val cloudListener: (com.headqlink.unit.companion.cloud.CompanionCloud.Snapshot) -> Unit = { snap ->
+        // La Ruta y los textos generales usan la batería real de la cuenta (no la de ejemplo).
+        snap.data?.let { d ->
+            if (!d.socPct.isNaN() && !d.rangeKm.isNaN()) {
+                CompanionVehicleState.update { it.copy(socPct = d.socPct.toInt(), rangeKm = d.rangeKm.toInt()) }
+            }
+        }
+        if (activeTab == 3) render()
+    }
+    private val unitListener: (UnitTelemetry.Data?) -> Unit = {
+        if (activeTab in setOf(1, 3, 4)) render()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = CompanionPrefs(this)
-        val scroll = ScrollView(this).apply { setBackgroundColor(BG); isFillViewport = true }
+        CompanionVehicleState.load(this)
+        com.headqlink.unit.companion.cloud.CompanionCloud.init(this)
+        if (!prefs.isPaired) {
+            activeTab = 0
+        }
+
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(BG)
+        }
+        scrollView = ScrollView(this).apply {
+            setBackgroundColor(BG)
+            isFillViewport = true
+        }
+        val scroll = scrollView
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(28), dp(18), dp(32))
+            setPadding(dp(16), dp(12), dp(16), dp(24))
         }
         scroll.addView(root)
-        setContentView(scroll)
+        outer.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+
+        bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            weightSum = 5f
+            setBackgroundColor(SURFACE)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+        }
+        outer.addView(bottomBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        // Android 15 dibuja la app bajo la barra de estado y la de gestos: se deja su hueco arriba y abajo.
+        outer.setOnApplyWindowInsetsListener { v, insets ->
+            @Suppress("DEPRECATION")
+            v.setPadding(0, insets.systemWindowInsetTop, 0, 0)
+            @Suppress("DEPRECATION")
+            bottomBar.setPadding(dp(6), dp(6), dp(6), dp(6) + insets.systemWindowInsetBottom)
+            insets
+        }
+        setContentView(outer)
     }
 
     override fun onResume() {
         super.onResume()
         BridgeState.addListener(stateListener)
+        com.headqlink.unit.companion.cloud.CompanionCloud.addListener(cloudListener)
+        UnitTelemetry.addListener(unitListener)
+        com.headqlink.unit.companion.cloud.CompanionCloud.startPolling()
         if (prefs.isPaired && prefs.enabled && BridgeState.current.phase == BridgeState.Phase.STOPPED) {
             BridgeService.start(this)
+        }
+        if (!GitHubReleaseUpdater.isHosting) {
+            GitHubReleaseUpdater.findBestLocalCarApk(this)?.let { apk ->
+                GitHubReleaseUpdater.startHostingApkForCar(this, apk) { render() }
+            }
         }
         render()
     }
 
     override fun onPause() {
         BridgeState.removeListener(stateListener)
+        com.headqlink.unit.companion.cloud.CompanionCloud.removeListener(cloudListener)
+        UnitTelemetry.removeListener(unitListener)
+        com.headqlink.unit.companion.cloud.CompanionCloud.stopPolling()
         super.onPause()
     }
 
@@ -91,41 +155,225 @@ class MainActivity : Activity() {
     // Pantalla
     // ------------------------------------------------------------------------------------------
 
+    private fun renderBottomNav() {
+        bottomBar.removeAllViews()
+        val tabs = listOf(
+            0 to ("🔗" to "Conexión"),
+            1 to ("📊" to "Viajes"),
+            2 to ("🏠" to "Casa"),
+            3 to ("🚗" to "Coche"),
+            4 to ("🗺️" to "Ruta"),
+        )
+        tabs.forEach { (idx, pair) ->
+            val selected = activeTab == idx
+            val tabBtn = TextView(this).apply {
+                // Icono arriba y nombre abajo, en una sola línea que se encoge si el texto del móvil es grande.
+                text = "${pair.first}\n${pair.second}"
+                gravity = Gravity.CENTER
+                maxLines = 2
+                setAutoSizeTextTypeUniformWithConfiguration(9, 13, 1, TypedValue.COMPLEX_UNIT_SP)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setTextColor(if (selected) ON_ACCENT else DIM)
+                background = if (selected) rounded(ACCENT, dp(16)) else rounded(Color.TRANSPARENT, dp(16))
+                setPadding(dp(2), dp(6), dp(2), dp(6))
+                isClickable = true
+                setOnClickListener {
+                    if (activeTab != idx) {
+                        activeTab = idx
+                        render()
+                        scrollView.scrollTo(0, 0)
+                    }
+                }
+            }
+            bottomBar.addView(tabBtn, LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+                leftMargin = dp(2)
+                rightMargin = dp(2)
+            })
+        }
+    }
+
     private fun render() {
+        renderBottomNav()
         root.removeAllViews()
+        when (activeTab) {
+            1 -> {
+                LeapCompanionHub.buildTripsTab(this, root) { render() }
+                return
+            }
+            2 -> {
+                LeapCompanionHub.buildHomeTab(this, root) { render() }
+                return
+            }
+            3 -> {
+                MyCarTab.build(this, root) { render() }
+                return
+            }
+            4 -> {
+                LeapCompanionHub.buildRouteTab(this, root)
+                return
+            }
+        }
         val s = BridgeState.current
+        val appVer = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "0.1.17"
+        val isExpert = prefs.expertMode
+        val localCarApk = GitHubReleaseUpdater.findBestLocalCarApk(this, appVer)
+        val apkName = localCarApk?.name ?: "QonectaUnit_${appVer}-unit.apk"
+        val (localVerName, localVerCode) = if (localCarApk != null) {
+            GitHubReleaseUpdater.extractApkVersionMeta(this, localCarApk)
+        } else {
+            "$appVer-unit" to 0
+        }
+        val bestIp = GitHubReleaseUpdater.findBestHotspotOrLocalIp() ?: "192.168.43.1"
 
-        root.addView(text("Qonecta Unit Companion", 26f, TEXT, bold = true))
-        root.addView(text("Tu móvil y Qonecta Unit del coche, conectados: las rutas del planificador del coche se abren en Google Maps y Android Auto las muestra.", 15f, DIM).apply {
-            setPadding(0, dp(6), 0, dp(14))
-        })
+        // --- Cabecera limpia + Interruptor Modo Experto ---
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        headerRow.addView(
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(text("Qonecta Companion", 23f, TEXT, bold = true))
+                addView(text("v$appVer · Leapmotor C10", 13f, FAINT))
+            },
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        val expertBtn = TextView(this).apply {
+            text = if (isExpert) "🛠️ Experto: ON" else "🛠️ Experto"
+            gravity = Gravity.CENTER
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setTextColor(if (isExpert) ON_ACCENT else DIM)
+            background = if (isExpert) rounded(WARN, dp(20)) else rounded(SURFACE_TOP, dp(20), OUTLINE)
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            isClickable = true
+            setOnClickListener {
+                prefs.expertMode = !prefs.expertMode
+                render()
+            }
+        }
+        headerRow.addView(expertBtn)
+        root.addView(headerRow)
 
-        // --- Estado ---
+        // ======================================================================================
+        // TARJETA 1 · ESTADO DE CONEXIÓN CON TU COCHE (Y ASISTENTE SOLO SI NO ESTÁ EMPAREJADO)
+        // ======================================================================================
         root.addView(card().apply {
-            val (label, color) = when (s.phase) {
-                BridgeState.Phase.CONNECTED -> "● Conectado con ${s.carName.ifBlank { prefs.carName ?: "el coche" }}" to OK
-                BridgeState.Phase.CONNECTING -> "● Conectando…" to ACCENT
-                BridgeState.Phase.PAIRING -> "● Emparejando…" to ACCENT
-                BridgeState.Phase.SEARCHING -> "● Buscando el coche…" to WARN
-                BridgeState.Phase.STOPPED -> (if (prefs.isPaired) "● En espera" else "● Sin emparejar") to FAINT
+            val carDisplay = s.carName.ifBlank { prefs.carName ?: prefs.carBtName ?: "tu Leapmotor C10" }
+            val (statusTitle, statusColor) = when (s.phase) {
+                BridgeState.Phase.CONNECTED -> "🟢 Conectado con $carDisplay" to OK
+                BridgeState.Phase.CONNECTING -> "🔵 Conectando con $carDisplay…" to ACCENT
+                BridgeState.Phase.PAIRING -> "🔵 Emparejando con el coche…" to ACCENT
+                BridgeState.Phase.SEARCHING -> "🟡 Buscando el coche…" to WARN
+                BridgeState.Phase.STOPPED -> (if (prefs.isPaired) "⚪ En espera" else "⚪ Pendiente de vincular por primera vez") to FAINT
             }
-            addView(text(label, 20f, color, bold = true))
-            if (s.transport.isNotBlank()) addView(text("Vía: ${s.transport}", 15f, DIM))
-            if (s.detail.isNotBlank()) addView(text(s.detail, 15f, TEXT).apply { setPadding(0, dp(6), 0, 0) })
-            val last = s.lastRoute.ifBlank { prefs.lastRouteSummary.orEmpty() }
-            if (last.isNotBlank()) addView(text("Última ruta recibida: $last", 14f, FAINT).apply { setPadding(0, dp(8), 0, 0) })
-            if (s.dataRequestsServed > 0) {
-                addView(text("🌐 Datos servidos al coche por ${s.transport.ifBlank { "Bluetooth" }}: ${s.dataRequestsServed} petición(es) (${s.lastDataHost})", 14f, OK).apply {
-                    setPadding(0, dp(6), 0, 0)
+            addView(text(statusTitle, 19f, statusColor, bold = true))
+
+            val subInfo = buildString {
+                if (s.transport.isNotBlank()) append("Vía ${s.transport}")
+                if (s.carAppVersion.isNotBlank()) {
+                    if (isNotEmpty()) append("  ·  ")
+                    append("Coche en v${s.carAppVersion}")
+                }
+            }
+            if (subInfo.isNotBlank()) {
+                addView(text(subInfo, 14f, ACCENT, bold = true).apply { setPadding(0, dp(3), 0, 0) })
+            }
+            if (s.detail.isNotBlank()) {
+                addView(text(s.detail, 14f, DIM).apply { setPadding(0, dp(6), 0, 0) })
+            }
+
+            // Comprobación silenciosa de permisos esenciales: solo molesta si falta alguno
+            val missingNotif = Build.VERSION.SDK_INT >= 33 && !has(Manifest.permission.POST_NOTIFICATIONS)
+            val missingBt = Build.VERSION.SDK_INT >= 31 && !has(Manifest.permission.BLUETOOTH_CONNECT)
+            val missingOverlay = !Settings.canDrawOverlays(this@MainActivity)
+            val pm = getSystemService(PowerManager::class.java)
+            val missingBattery = pm?.isIgnoringBatteryOptimizations(packageName) != true
+
+            if (missingBt || missingNotif || missingOverlay || missingBattery) {
+                val permBox = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = rounded(BG, dp(14), OUTLINE)
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                        topMargin = dp(10)
+                    }
+                }
+                permBox.addView(text("⚠️ Activa estos permisos para que funcione todo automático:", 13.5f, WARN, bold = true))
+                if (missingBt) {
+                    permBox.addView(permRow("Bluetooth (Dispositivos cercanos)", false) {
+                        requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), REQ_PERMS)
+                    })
+                }
+                if (missingNotif) {
+                    permBox.addView(permRow("Notificaciones", false) {
+                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_PERMS)
+                    })
+                }
+                if (missingOverlay) {
+                    permBox.addView(permRow("Abrir Google Maps automáticamente", false) {
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                    })
+                }
+                if (missingBattery) {
+                    permBox.addView(permRow("Sin ahorro de batería", false) {
+                        runCatching {
+                            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+                        }.onFailure { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+                    })
+                }
+                addView(permBox)
+            }
+
+            if (!prefs.isPaired) {
+                // Asistente limpio de primera vez (solo aparece cuando aún no está vinculado)
+                val stepBox = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = rounded(BG, dp(14), OUTLINE)
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                        topMargin = dp(12)
+                    }
+                }
+                val chosenBt = prefs.carBtName ?: prefs.carBtAddress
+                stepBox.addView(text("Paso 1 · Elige el Bluetooth de tu coche", 15f, TEXT, bold = true))
+                stepBox.addView(text(
+                    if (chosenBt != null) "✓ Seleccionado: $chosenBt" else "Toca abajo y selecciona el manos libres Bluetooth de tu coche.",
+                    13.5f, if (chosenBt != null) OK else DIM,
+                ).apply { setPadding(0, dp(4), 0, dp(8)) })
+                stepBox.addView(row(
+                    pill(if (chosenBt != null) "Cambiar Bluetooth" else "1. Elegir coche", primary = chosenBt == null) { pickBondedDevice() },
+                    pill("Buscar cercano") { associateCar() },
+                ))
+
+                stepBox.addView(text("Paso 2 · Código de 6 cifras del coche", 15f, TEXT, bold = true).apply {
+                    setPadding(0, dp(14), 0, dp(4))
                 })
-            }
-            if (prefs.isPaired) {
+                stepBox.addView(text(
+                    "En Qonecta Unit del coche entra en Ajustes Extendidos → Qonecta Companion → «Emparejar móvil» y escribe el número:",
+                    13.5f, DIM,
+                ).apply { setPadding(0, 0, 0, dp(8)) })
+
+                val codeInput = buildPairCodeInput()
+                stepBox.addView(codeInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)))
+                stepBox.addView(pill("🔗 Vincular con mi coche", primary = true) {
+                    val code = codeInput.text?.toString()?.trim().orEmpty()
+                    if (code.length != 6) {
+                        toast("Escribe las 6 cifras que muestra la pantalla del coche")
+                    } else {
+                        draftPairCode = ""
+                        BridgeService.pair(this@MainActivity, code)
+                    }
+                }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(50)).apply { topMargin = dp(10) })
+
+                addView(stepBox)
+            } else {
                 addView(row(
-                    pill(if (s.phase == BridgeState.Phase.STOPPED) "Conectar ahora" else "Reconectar", primary = true) {
+                    pill(if (s.phase == BridgeState.Phase.STOPPED) "Conectar ahora" else "Reconectar", primary = s.phase != BridgeState.Phase.CONNECTED) {
                         prefs.enabled = true
                         BridgeService.start(this@MainActivity)
                     },
-                    pill("Desconectar") {
+                    pill("Pausar") {
                         prefs.enabled = false
                         BridgeService.stop(this@MainActivity)
                     },
@@ -133,78 +381,495 @@ class MainActivity : Activity() {
             }
         })
 
-        // --- Paso 1: coche por Bluetooth ---
+        // ======================================================================================
+        // TARJETA 2 · ACTUALIZACIÓN PUSH EN 1 TOQUE (CERO USB, CERO VIVALDI, CERO PROXY)
+        // ======================================================================================
         root.addView(card().apply {
-            addView(text("1 · Tu coche por Bluetooth", 18f, TEXT, bold = true))
-            val car = prefs.carBtName ?: prefs.carBtAddress
+            addView(text("⚡ Actualizar Coche en 1 Toque", 19f, ACCENT, bold = true))
             addView(text(
-                if (car != null) "Coche elegido: $car" else "Elige el Bluetooth del coche. Así la conexión funciona también con Android Auto por cable y se abre sola al subir al coche.",
-                15f, if (car != null) OK else DIM,
-            ).apply { setPadding(0, dp(6), 0, dp(10)) })
-            addView(row(
-                pill(if (car != null) "Cambiar coche" else "Elegir coche", primary = car == null) { associateCar() },
-                pill("Lista de emparejados") { pickBondedDevice() },
-            ))
-        })
-
-        // --- Paso 2: código ---
-        root.addView(card().apply {
-            addView(text("2 · Código del coche", 18f, TEXT, bold = true))
-            addView(text(
-                "En el coche: Ajustes y Menú Extendido → Qonecta Unit Companion → «Emparejar móvil». Escribe aquí las 6 cifras que salen.",
-                15f, DIM,
-            ).apply { setPadding(0, dp(6), 0, dp(10)) })
-            val codeInput = EditText(this@MainActivity).apply {
-                hint = "000000"
-                setHintTextColor(FAINT)
-                setTextColor(TEXT)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
-                typeface = Typeface.MONOSPACE
-                letterSpacing = 0.3f
-                gravity = Gravity.CENTER
-                inputType = InputType.TYPE_CLASS_NUMBER
-                filters = arrayOf(InputFilter.LengthFilter(6))
-                background = rounded(SURFACE_TOP, dp(14), OUTLINE)
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-            }
-            addView(codeInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64)))
-            addView(pill(if (prefs.isPaired) "Volver a emparejar" else "Emparejar", primary = true) {
-                val code = codeInput.text?.toString()?.trim().orEmpty()
-                if (code.length != 6) {
-                    toast("Escribe las 6 cifras del coche")
-                } else {
-                    BridgeService.pair(this@MainActivity, code)
-                }
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(10) })
-        })
-
-        // --- Servidor de Datos Bluetooth + Punto de Acceso ---
-        root.addView(card().apply {
-            addView(text("🌐 Servidor de Datos Bluetooth · Planificador y Coche", 18f, TEXT, bold = true))
-            addView(text(
-                "Mientras estás conectado por Bluetooth (incluso usando Cable USB o Wi-Fi Direct 5 GHz sin Hotspot), este servidor comparte Internet del móvil con el Planificador de Rutas de Qonecta Unit sin gastar los 2 GB del coche.\n" +
-                    "Si además quieres dar Internet a otras apps del coche por Bluetooth PAN o Hotspot Wi-Fi, puedes abrirlo aquí en 1 toque:",
+                "Envía la nueva versión directamente del móvil al coche y abre el instalador en la pantalla del C10 sin pendrives ni navegador.",
                 14f, DIM,
             ).apply { setPadding(0, dp(4), 0, dp(10)) })
-            addView(text(
-                if (s.phase == BridgeState.Phase.CONNECTED)
-                    "● Servidor de datos Bluetooth ACTIVO · Peticiones servidas: ${s.dataRequestsServed}"
-                else
-                    "● Servidor de datos listo (se activa automáticamente al conectar con el coche por Bluetooth)",
-                14f, if (s.phase == BridgeState.Phase.CONNECTED) OK else ACCENT, bold = true,
-            ).apply { setPadding(0, 0, 0, dp(10)) })
-            addView(row(
-                pill("🔵 Tethering Bluetooth / Hotspot", primary = true) { openTetherSettings() },
-                pill("📶 Ajustes de Red") {
-                    runCatching { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }
+
+            val summaryBox = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                background = rounded(BG, dp(14), OUTLINE)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+            }
+
+            if (localCarApk != null) {
+                val sizeMb = String.format(java.util.Locale.US, "%.1f MB", localCarApk.length() / (1024.0 * 1024.0))
+                summaryBox.addView(text("📦 Lista en tu móvil: v$localVerName ($sizeMb)", 14.5f, TEXT, bold = true))
+                val cmpTextAndColor: Pair<String, Int> = when {
+                    s.phase != BridgeState.Phase.CONNECTED ->
+                        "Conecta con el coche arriba para enviarla en 1 toque." to FAINT
+                    s.carVersionCode == 0 ->
+                        "⚠️ Tu coche tiene una versión anterior a v0.1.17. Instálala por última vez con «🆘 Instalar desde cero» abajo y las próximas ya serán en 1 toque." to WARN
+                    localVerCode > s.carVersionCode ->
+                        "✨ ¡Actualización disponible! Tu coche tiene v${s.carAppVersion} → subirá a v$localVerName." to OK
+                    localVerCode == s.carVersionCode && localVerCode > 0 ->
+                        "✓ Tu coche ya está al día (v${s.carAppVersion}). Puedes reinstalarla si quieres." to OK
+                    else ->
+                        "Coche conectado en v${s.carAppVersion.ifBlank { "actual" }}." to DIM
+                }
+                summaryBox.addView(text(cmpTextAndColor.first, 13.5f, cmpTextAndColor.second).apply {
+                    setPadding(0, dp(4), 0, 0)
+                })
+            } else {
+                summaryBox.addView(text("⚠️ Aún no hay ningún APK descargado en el móvil. Pulsa «☁️ Buscar nueva versión en Internet».", 14f, WARN))
+            }
+            addView(summaryBox)
+
+            val otaFeedbackTv = text(
+                s.otaStatusMessage,
+                14f,
+                when (s.otaLastOk) {
+                    true -> OK
+                    false -> WARN
+                    null -> ACCENT
                 },
-            ))
+                bold = true,
+            ).apply {
+                visibility = if (s.otaStatusMessage.isNotBlank()) View.VISIBLE else View.GONE
+                setPadding(0, dp(10), 0, dp(4))
+            }
+            addView(otaFeedbackTv)
+
+            val pushBtnLabel = when {
+                s.otaInProgress -> "⏳ Enviando actualización al coche…"
+                localCarApk != null -> "⚡ Actualizar coche ahora (v$localVerName)"
+                else -> "⚡ Actualizar coche ahora"
+            }
+            addView(pill(pushBtnLabel, primary = true) {
+                if (s.otaInProgress) {
+                    toast("Ya se está enviando la actualización al coche…")
+                    return@pill
+                }
+                val target = GitHubReleaseUpdater.findBestLocalCarApk(this@MainActivity, appVer)
+                if (target == null) {
+                    toast("Primero descarga la última versión con el botón de abajo")
+                } else {
+                    BridgeService.pushApkUpdateToCar(this@MainActivity, target)
+                }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(10)
+            })
+
+            val cloudCheckBox = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            addView(pill("☁️ Buscar nueva versión en Internet") {
+                cloudCheckBox.removeAllViews()
+                val checkingTv = text("⏳ Buscando nuevas versiones en GitHub…", 13.5f, ACCENT).apply {
+                    setPadding(0, dp(8), 0, 0)
+                }
+                cloudCheckBox.addView(checkingTv)
+                GitHubReleaseUpdater.fetchDualReleases(
+                    unitRepo = prefs.githubRepo,
+                    companionRepo = prefs.githubCompanionRepo,
+                    githubToken = prefs.githubToken,
+                ) { statuses, assets ->
+                    cloudCheckBox.removeAllViews()
+                    val newestCar = assets.firstOrNull { it.isCarApk }
+                    val newestComp = assets.firstOrNull { it.isCompanionApk }
+                    val errors = statuses.mapNotNull { st -> st.errorMessage?.let { "${st.projectLabel}: $it" } }
+
+                    if (newestCar == null && newestComp == null) {
+                        val errTxt = if (errors.isNotEmpty()) errors.joinToString("\n") else "No se encontraron APKs publicados."
+                        cloudCheckBox.addView(text("⚠️ $errTxt", 13.5f, WARN).apply { setPadding(0, dp(8), 0, 0) })
+                        return@fetchDualReleases
+                    }
+
+                    if (newestCar != null) {
+                        val dlStatusTv = text("⬇️ Descargando ${newestCar.assetName} (${newestCar.tagName})…", 13.5f, ACCENT).apply {
+                            setPadding(0, dp(8), 0, 0)
+                        }
+                        cloudCheckBox.addView(dlStatusTv)
+                        GitHubReleaseUpdater.downloadAsset(
+                            this@MainActivity,
+                            newestCar,
+                            githubToken = prefs.githubToken,
+                            onProgress = { msg -> dlStatusTv.text = msg },
+                            onDone = { res ->
+                                res.onSuccess { file ->
+                                    GitHubReleaseUpdater.startHostingApkForCar(this@MainActivity, file) {}
+                                    dlStatusTv.text = "✅ Descargada ${file.name}. ¡Ya puedes pulsar «⚡ Actualizar coche ahora»!"
+                                    dlStatusTv.setTextColor(OK)
+                                    render()
+                                }.onFailure { err ->
+                                    dlStatusTv.text = "⚠️ No se pudo descargar: ${err.message}"
+                                    dlStatusTv.setTextColor(BAD)
+                                }
+                            },
+                        )
+                    }
+
+                    if (newestComp != null) {
+                        cloudCheckBox.addView(pill("📲 Instalar también Companion ${newestComp.tagName} en este móvil") {
+                            toast("Descargando ${newestComp.assetName}…")
+                            GitHubReleaseUpdater.downloadAsset(
+                                this@MainActivity,
+                                newestComp,
+                                githubToken = prefs.githubToken,
+                                onProgress = {},
+                                onDone = { res ->
+                                    res.onSuccess { f ->
+                                        GitHubReleaseUpdater.installApkOnPhone(this@MainActivity, f) { st -> toast(st) }
+                                    }.onFailure { e -> toast("Error: ${e.message}") }
+                                },
+                            )
+                        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                            topMargin = dp(8)
+                        })
+                    }
+                }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(8)
+            })
+            addView(cloudCheckBox)
         })
 
-        // --- Permisos ---
+        // ======================================================================================
+        // TARJETA 3 (PLEGABLE) · INSTALAR DESDE CERO (SOLO SI DESINSTALASTE LA APP DEL COCHE)
+        // ======================================================================================
         root.addView(card().apply {
-            addView(text("Permisos", 18f, TEXT, bold = true))
-            addView(text("Sin ellos la ruta llega como notificación y tienes que tocarla.", 14f, FAINT).apply { setPadding(0, dp(4), 0, dp(8)) })
+            val expanded = prefs.coldInstallExpanded || !prefs.isPaired
+            val headerToggle = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                isClickable = true
+                setOnClickListener {
+                    prefs.coldInstallExpanded = !expanded
+                    render()
+                }
+            }
+            headerToggle.addView(
+                text("🆘 Instalar desde cero (si borraste la app del coche)", 16.5f, TEXT, bold = true),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            headerToggle.addView(text(if (expanded) "▲ Ocultar" else "▼ Ver pasos", 13.5f, ACCENT, bold = true))
+            addView(headerToggle)
+
+            if (expanded) {
+                addView(text(
+                    "Cuando Qonecta Unit NO está instalada en el coche (o tienes una versión anterior a v0.1.17), instálala con este método probado en el Leapmotor C10 (sin Proxy y sin DNS):",
+                    13.5f, DIM,
+                ).apply { setPadding(0, dp(8), 0, dp(10)) })
+
+                val stepsBox = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = rounded(BG, dp(14), OUTLINE)
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                }
+                stepsBox.addView(text(
+                    "1️⃣ Conecta un Pendrive USB-C a tu móvil, pulsa abajo «💾 1. Guardar APK en Pendrive USB» y enchufa ese pendrive al coche.\n\n" +
+                        "2️⃣ Pulsa «📶 2. Encender Hotspot» en tu móvil y conecta el Wi-Fi del coche a tu móvil normalmente (no hace falta Proxy ni DNS).\n\n" +
+                        "3️⃣ Abre Vivaldi en el coche y escribe esta dirección exacta:\n" +
+                        "   👉  http://$bestIp:8788/portal\n\n" +
+                        "4️⃣ En la página que se abre, toca el Botón 2 Amarillo («📁 ABRIR ARCHIVOS DEL COCHE»), entra en tu USB a la izquierda y toca el icono pequeño de dos flechas ⤢ en la esquina del APK.",
+                    13.5f, TEXT,
+                ))
+                addView(stepsBox)
+
+                val coldStatusTv = text(
+                    if (GitHubReleaseUpdater.isHosting) "🟢 Servidor web listo en http://$bestIp:8788/portal ($apkName)"
+                    else "⚪ Pulsa «🔄 Actualizar IP» tras encender el Hotspot",
+                    13.5f,
+                    if (GitHubReleaseUpdater.isHosting) OK else WARN,
+                    bold = true,
+                ).apply { setPadding(0, dp(10), 0, dp(8)) }
+                addView(coldStatusTv)
+
+                addView(pill("💾 1. Guardar APK en Pendrive USB ($apkName)", primary = true) {
+                    val target = GitHubReleaseUpdater.findBestLocalCarApk(this@MainActivity, appVer)
+                    if (target == null) {
+                        toast("Primero pulsa «☁️ Buscar nueva versión en Internet» arriba")
+                    } else {
+                        exportApkToUsbDrive(target)
+                    }
+                }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
+                addView(row(
+                    pill("📶 2. Encender Hotspot") { openTetherSettings() },
+                    pill("🔄 3. Actualizar IP") {
+                        val target = GitHubReleaseUpdater.findBestLocalCarApk(this@MainActivity, appVer)
+                        if (target != null) {
+                            GitHubReleaseUpdater.startHostingApkForCar(this@MainActivity, target) { render() }
+                        } else {
+                            render()
+                        }
+                    },
+                ).apply { setPadding(0, dp(8), 0, 0) })
+            }
+        })
+
+        // ======================================================================================
+        // MODO EXPERTO · OCULTO POR DEFECTO, COMPLETO PARA QUIEN QUIERA TOCAR
+        // ======================================================================================
+        if (!isExpert) {
+            return
+        }
+
+        root.addView(text("🛠️ MODO EXPERTO · AJUSTES AVANZADOS", 14f, WARN, bold = true).apply {
+            setPadding(dp(4), dp(18), dp(4), dp(2))
+        })
+
+        // --- Experto 1: Re-emparejamiento manual Bluetooth + Código de 6 cifras + Olvidar coche ---
+        root.addView(card().apply {
+            addView(text("🔑 Gestión Manual de Vínculo y Bluetooth", 17.5f, TEXT, bold = true))
+            val car = prefs.carBtName ?: prefs.carBtAddress
+            addView(text(
+                if (car != null) "Bluetooth asociado: $car (${prefs.carBtAddress ?: "—"})" else "Ningún Bluetooth seleccionado manualmente.",
+                14f, if (car != null) OK else DIM,
+            ).apply { setPadding(0, dp(4), 0, dp(10)) })
+            addView(row(
+                pill("Lista Bluetooth") { pickBondedDevice() },
+                pill("Asociar CDM") { associateCar() },
+            ))
+
+            addView(text("Forzar nuevo emparejamiento con código de 6 cifras:", 13.5f, DIM).apply {
+                setPadding(0, dp(12), 0, dp(6))
+            })
+            val codeInput = buildPairCodeInput()
+            addView(codeInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)))
+            addView(row(
+                pill("Volver a emparejar", primary = true) {
+                    val code = codeInput.text?.toString()?.trim().orEmpty()
+                    if (code.length != 6) {
+                        toast("Escribe las 6 cifras del coche")
+                    } else {
+                        draftPairCode = ""
+                        BridgeService.pair(this@MainActivity, code)
+                    }
+                },
+                pill("Olvidar coche") { confirmForget() },
+            ).apply { setPadding(0, dp(10), 0, 0) })
+        })
+
+        // --- Experto 2: Servidor Portal Cautivo (:8788 / :8080), PAC y DNS Personalizado ---
+        root.addView(card().apply {
+            val activeIpsDesc = GitHubReleaseUpdater.describeActiveNetworkIps()
+            addView(text("📡 Servidor HTTP / Portal Cautivo / DNS Manual", 17.5f, TEXT, bold = true))
+            addView(text(
+                "Interfaces activas: $activeIpsDesc\n" +
+                    "• Portal Web: http://$bestIp:8788/portal  (secundario :8080)\n" +
+                    "• Descarga directa APK: http://$bestIp:8788/download/com.tencent.qqmusiccar.apk\n" +
+                    "• PAC Proxy: http://$bestIp:8788/proxy.pac",
+                13f, DIM,
+            ).apply { setPadding(0, dp(6), 0, dp(8)) })
+
+            val srvLogTv = text(
+                GitHubReleaseUpdater.lastEventLog.ifBlank {
+                    if (GitHubReleaseUpdater.isHosting) "🟢 Servidor escuchando en 0.0.0.0:8788 y :8080" else "⚪ Servidor detenido"
+                },
+                13f, if (GitHubReleaseUpdater.isHosting) OK else FAINT,
+            ).apply { setPadding(0, 0, 0, dp(8)) }
+            addView(srvLogTv)
+
+            addView(row(
+                pill("Reiniciar :8788", primary = true) {
+                    val target = GitHubReleaseUpdater.findBestLocalCarApk(this@MainActivity, appVer)
+                    if (target == null) {
+                        toast("Sin APK local")
+                    } else {
+                        GitHubReleaseUpdater.startHostingApkForCar(this@MainActivity, target) { st ->
+                            srvLogTv.text = st
+                            srvLogTv.setTextColor(OK)
+                        }
+                    }
+                },
+                pill("Detener :8788") {
+                    GitHubReleaseUpdater.stopHostingApk()
+                    render()
+                },
+            ))
+
+            // DNS Personalizado Manual (en Modo Experto)
+            addView(text("🌐 DNS Personalizado Manual (NextDNS / DNS Privado):", 14f, ACCENT, bold = true).apply {
+                setPadding(0, dp(14), 0, dp(4))
+            })
+            val dnsInput = EditText(this@MainActivity).apply {
+                hint = "Ej: xxxx.dns.nextdns.io o IP DNS"
+                setHintTextColor(FAINT)
+                setTextColor(TEXT)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setSingleLine(true)
+                setText(prefs.customDnsHost)
+                background = rounded(SURFACE_TOP, dp(12), OUTLINE)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+            }
+            addView(dnsInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            addView(row(
+                pill("📋 Copiar y Abrir DNS") {
+                    val v = dnsInput.text?.toString()?.trim().orEmpty()
+                    prefs.customDnsHost = v
+                    if (v.isNotEmpty()) {
+                        val cm = getSystemService(android.content.ClipboardManager::class.java)
+                        cm?.setPrimaryClip(android.content.ClipData.newPlainText("DNS", v))
+                        toast("DNS copiado: $v")
+                    }
+                    openPrivateDnsSettings()
+                },
+                pill("📶 Ajustes Wi-Fi") {
+                    val v = dnsInput.text?.toString()?.trim().orEmpty()
+                    prefs.customDnsHost = v
+                    runCatching { startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }
+                },
+            ).apply { setPadding(0, dp(8), 0, 0) })
+        })
+
+        // --- Experto 3: Repositorios GitHub Editables + Token PAT + Selector de Releases ---
+        root.addView(card().apply {
+            addView(text("🐙 GitHub Releases Avanzado y Token PAT", 17.5f, TEXT, bold = true))
+            addView(text("Configura repositorios personalizados o tu Token PAT si tus repositorios son privados:", 13.5f, DIM).apply {
+                setPadding(0, dp(4), 0, dp(8))
+            })
+
+            addView(text("Repositorio Qonecta Unit (Coche):", 12f, FAINT, bold = true))
+            val repoInput = EditText(this@MainActivity).apply {
+                hint = GitHubReleaseUpdater.DEFAULT_UNIT_REPO
+                setHintTextColor(FAINT)
+                setText(prefs.githubRepo)
+                setTextColor(TEXT)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setSingleLine(true)
+                background = rounded(SURFACE_TOP, dp(12), OUTLINE)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+            }
+            addView(repoInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(4) })
+
+            addView(text("Repositorio Qonecta Companion (Móvil):", 12f, FAINT, bold = true).apply { setPadding(0, dp(8), 0, 0) })
+            val companionRepoInput = EditText(this@MainActivity).apply {
+                hint = GitHubReleaseUpdater.DEFAULT_COMPANION_REPO
+                setHintTextColor(FAINT)
+                setText(prefs.githubCompanionRepo)
+                setTextColor(TEXT)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setSingleLine(true)
+                background = rounded(SURFACE_TOP, dp(12), OUTLINE)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+            }
+            addView(companionRepoInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(4) })
+
+            addView(text("Token PAT de GitHub (opcional para repos privados):", 12f, FAINT, bold = true).apply { setPadding(0, dp(8), 0, 0) })
+            val tokenInput = EditText(this@MainActivity).apply {
+                hint = "ghp_… o github_pat_…"
+                setHintTextColor(FAINT)
+                setText(prefs.githubToken)
+                setTextColor(TEXT)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setSingleLine(true)
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                background = rounded(SURFACE_TOP, dp(12), OUTLINE)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+            }
+            addView(tokenInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(4) })
+
+            val ghStatusTv = text("Pulsa para listar todas las versiones disponibles.", 13.5f, FAINT).apply {
+                setPadding(0, dp(8), 0, dp(8))
+            }
+            addView(ghStatusTv)
+
+            val assetsContainer = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+            addView(assetsContainer)
+
+            addView(pill("💾 Guardar ajustes y listar Releases", primary = true) {
+                val unitRepo = GitHubReleaseUpdater.normalizeRepo(repoInput.text?.toString().orEmpty(), GitHubReleaseUpdater.DEFAULT_UNIT_REPO)
+                val compRepo = GitHubReleaseUpdater.normalizeRepo(companionRepoInput.text?.toString().orEmpty(), GitHubReleaseUpdater.DEFAULT_COMPANION_REPO)
+                val pat = tokenInput.text?.toString()?.trim().orEmpty()
+                prefs.githubRepo = unitRepo
+                prefs.githubCompanionRepo = compRepo
+                prefs.githubToken = pat
+                ghStatusTv.text = "⏳ Consultando $unitRepo y $compRepo…"
+                ghStatusTv.setTextColor(ACCENT)
+                assetsContainer.removeAllViews()
+
+                GitHubReleaseUpdater.fetchDualReleases(unitRepo, compRepo, pat) { statuses, list ->
+                    ghStatusTv.text = statuses.joinToString("\n") { st ->
+                        if (st.errorMessage != null) "${st.projectLabel}: ⚠️ ${st.errorMessage}"
+                        else "${st.projectLabel}: ✓ ${st.assets.size} APK(s)"
+                    }
+                    ghStatusTv.setTextColor(if (list.isNotEmpty()) OK else WARN)
+
+                    list.forEach { asset ->
+                        val itemBox = LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            background = rounded(BG, dp(14), OUTLINE)
+                            setPadding(dp(12), dp(10), dp(12), dp(10))
+                            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                                topMargin = dp(8)
+                            }
+                        }
+                        itemBox.addView(text("${asset.projectLabel} · ${asset.assetName}", 14.5f, TEXT, bold = true))
+                        itemBox.addView(text("${asset.tagName} (${asset.publishedAt}) · ${String.format(java.util.Locale.US, "%.1f MB", asset.sizeMb)}", 12.5f, DIM).apply {
+                            setPadding(0, dp(2), 0, dp(8))
+                        })
+                        itemBox.addView(row(
+                            pill("📲 En móvil", primary = asset.isCompanionApk) {
+                                GitHubReleaseUpdater.downloadAsset(
+                                    this@MainActivity, asset, pat,
+                                    onProgress = { msg -> ghStatusTv.text = msg },
+                                    onDone = { dl ->
+                                        dl.onSuccess { f -> GitHubReleaseUpdater.installApkOnPhone(this@MainActivity, f) { st -> ghStatusTv.text = st } }
+                                            .onFailure { e -> ghStatusTv.text = "⚠️ ${e.message}" }
+                                    },
+                                )
+                            },
+                            pill("⚡ Push al coche", primary = asset.isCarApk) {
+                                GitHubReleaseUpdater.downloadAsset(
+                                    this@MainActivity, asset, pat,
+                                    onProgress = { msg -> ghStatusTv.text = msg },
+                                    onDone = { dl ->
+                                        dl.onSuccess { f ->
+                                            GitHubReleaseUpdater.startHostingApkForCar(this@MainActivity, f) {}
+                                            BridgeService.pushApkUpdateToCar(this@MainActivity, f)
+                                            render()
+                                        }.onFailure { e -> ghStatusTv.text = "⚠️ ${e.message}" }
+                                    },
+                                )
+                            },
+                        ))
+                        assetsContainer.addView(itemBox)
+                    }
+                }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)))
+        })
+
+        // --- Experto 4: Puente de Datos Bluetooth, Permisos completos, Logs sin pendrive y Pruebas ---
+        root.addView(card().apply {
+            addView(text("🌐 Puente de Datos BT, Permisos y Registros", 17.5f, TEXT, bold = true))
+            addView(text(
+                "Peticiones HTTP servidas al Planificador del coche por ${s.transport.ifBlank { "Bluetooth" }}: ${s.dataRequestsServed}" +
+                    (if (s.lastDataHost.isNotBlank()) " (último host: ${s.lastDataHost})" else ""),
+                13.5f, if (s.dataRequestsServed > 0) OK else DIM,
+            ).apply { setPadding(0, dp(4), 0, dp(10)) })
+
+            addView(row(
+                pill("🔵 Tethering BT / Hotspot") { openTetherSettings() },
+                pill("🗺️ Probar Maps") { testMaps() },
+            ))
+
+            val logsStatusTv = text("Extracción remota de ohu.log + logcat sin pendrive:", 13.5f, DIM).apply {
+                setPadding(0, dp(12), 0, dp(6))
+            }
+            addView(logsStatusTv)
+            addView(pill("📥 Recoger registros (Logs) del coche ahora", primary = true) {
+                logsStatusTv.text = "⏳ Solicitando registros a Qonecta Unit…"
+                logsStatusTv.setTextColor(ACCENT)
+                BridgeService.requestUnitLogs(this@MainActivity, maxLines = 800) { res ->
+                    res.onSuccess { (file, msg) ->
+                        val kb = (file.length() / 1024L).coerceAtLeast(1L)
+                        logsStatusTv.text = "✓ Recibido: ${msg.fileName} ($kb KB)"
+                        logsStatusTv.setTextColor(OK)
+                        showUnitLogsDialog(file, msg.logText)
+                    }.onFailure { err ->
+                        logsStatusTv.text = "⚠️ ${err.message}"
+                        logsStatusTv.setTextColor(BAD)
+                    }
+                }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)))
+
+            addView(text("Estado detallado de permisos:", 13.5f, FAINT, bold = true).apply { setPadding(0, dp(12), 0, dp(4)) })
             if (Build.VERSION.SDK_INT >= 33) {
                 addView(permRow("Notificaciones", has(Manifest.permission.POST_NOTIFICATIONS)) {
                     requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_PERMS)
@@ -225,142 +890,30 @@ class MainActivity : Activity() {
                 }.onFailure { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
             })
         })
+    }
 
-        // --- Actualizador desde GitHub Releases ---
-        root.addView(card().apply {
-            addView(text("🐙 Actualizador · GitHub Releases", 18f, TEXT, bold = true))
-            addView(text(
-                "Consulta los últimos APK publicados en GitHub Releases para actualizar este Companion o descargar y servir el APK de Qonecta Unit al coche por Wi-Fi/Hotspot.",
-                14f, DIM,
-            ).apply { setPadding(0, dp(4), 0, dp(10)) })
-
-            val repoInput = EditText(this@MainActivity).apply {
-                hint = "CharlysEV/qonecta-unit"
-                setHintTextColor(FAINT)
-                setText(prefs.githubRepo)
-                setTextColor(TEXT)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                setSingleLine(true)
-                background = rounded(SURFACE_TOP, dp(14), OUTLINE)
-                setPadding(dp(14), dp(10), dp(14), dp(10))
+    private fun buildPairCodeInput(): EditText = EditText(this).apply {
+        hint = "000000"
+        setHintTextColor(FAINT)
+        setTextColor(TEXT)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
+        typeface = Typeface.MONOSPACE
+        letterSpacing = 0.28f
+        gravity = Gravity.CENTER
+        inputType = InputType.TYPE_CLASS_NUMBER
+        filters = arrayOf(InputFilter.LengthFilter(6))
+        background = rounded(SURFACE_TOP, dp(14), OUTLINE)
+        setPadding(dp(12), dp(8), dp(12), dp(8))
+        if (draftPairCode.isNotEmpty()) {
+            setText(draftPairCode)
+            setSelection(draftPairCode.length)
+        }
+        addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                draftPairCode = s?.toString().orEmpty()
             }
-            addView(repoInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)))
-
-            val ghStatusTv = text(
-                GitHubReleaseUpdater.hostedApkUrl?.let { "📡 Sirviendo APK al coche en: $it" }
-                    ?: "Repositorio listo para buscar releases (.apk).",
-                14f,
-                if (GitHubReleaseUpdater.hostedApkUrl != null) OK else FAINT,
-            ).apply { setPadding(0, dp(8), 0, dp(8)) }
-            addView(ghStatusTv)
-
-            val assetsContainer = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-            }
-            addView(assetsContainer)
-
-            addView(pill("🐙 Buscar APK en GitHub Releases", primary = true) {
-                val repo = GitHubReleaseUpdater.normalizeRepo(repoInput.text?.toString().orEmpty())
-                prefs.githubRepo = repo
-                repoInput.setText(repo)
-                ghStatusTv.text = "⏳ Consultando releases de $repo…"
-                ghStatusTv.setTextColor(ACCENT)
-                assetsContainer.removeAllViews()
-                GitHubReleaseUpdater.fetchReleases(repo) { res ->
-                    res.onSuccess { list ->
-                        if (list.isEmpty()) {
-                            ghStatusTv.text = "No se encontraron archivos .apk en los releases de $repo."
-                            ghStatusTv.setTextColor(WARN)
-                        } else {
-                            ghStatusTv.text = "✓ ${list.size} archivo(s) .apk encontrados en $repo:"
-                            ghStatusTv.setTextColor(OK)
-                            list.forEach { asset ->
-                                val itemBox = LinearLayout(this@MainActivity).apply {
-                                    orientation = LinearLayout.VERTICAL
-                                    background = rounded(BG, dp(14), OUTLINE)
-                                    setPadding(dp(12), dp(10), dp(12), dp(10))
-                                    layoutParams = LinearLayout.LayoutParams(
-                                        LinearLayout.LayoutParams.MATCH_PARENT,
-                                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                                    ).apply { topMargin = dp(8) }
-                                }
-                                val badge = when {
-                                    asset.isCompanionApk -> "📱 Móvil"
-                                    asset.isCarApk -> "🚗 Coche"
-                                    else -> "📦 APK"
-                                }
-                                itemBox.addView(text("$badge · ${asset.assetName}", 15f, TEXT, bold = true))
-                                itemBox.addView(text(
-                                    String.format(
-                                        java.util.Locale.US,
-                                        "%s (%s) · %.1f MB",
-                                        asset.tagName,
-                                        asset.publishedAt.ifBlank { asset.releaseName },
-                                        asset.sizeMb,
-                                    ),
-                                    13f, DIM,
-                                ).apply { setPadding(0, dp(2), 0, dp(8)) })
-
-                                itemBox.addView(row(
-                                    pill("📲 Instalar en móvil", primary = asset.isCompanionApk) {
-                                        ghStatusTv.text = "⏳ Descargando ${asset.assetName}…"
-                                        ghStatusTv.setTextColor(ACCENT)
-                                        GitHubReleaseUpdater.downloadAsset(
-                                            this@MainActivity,
-                                            asset,
-                                            onProgress = { msg -> ghStatusTv.text = msg },
-                                            onDone = { dl ->
-                                                dl.onSuccess { file ->
-                                                    GitHubReleaseUpdater.installApkOnPhone(this@MainActivity, file) { st ->
-                                                        ghStatusTv.text = st
-                                                    }
-                                                }.onFailure { err ->
-                                                    ghStatusTv.text = "⚠️ Error al descargar: ${err.message}"
-                                                    ghStatusTv.setTextColor(BAD)
-                                                }
-                                            },
-                                        )
-                                    },
-                                    pill("📡 Servir al coche", primary = asset.isCarApk) {
-                                        ghStatusTv.text = "⏳ Descargando ${asset.assetName} para el coche…"
-                                        ghStatusTv.setTextColor(ACCENT)
-                                        GitHubReleaseUpdater.downloadAsset(
-                                            this@MainActivity,
-                                            asset,
-                                            onProgress = { msg -> ghStatusTv.text = msg },
-                                            onDone = { dl ->
-                                                dl.onSuccess { file ->
-                                                    GitHubReleaseUpdater.startHostingApkForCar(file) { st ->
-                                                        ghStatusTv.text = st
-                                                        ghStatusTv.setTextColor(OK)
-                                                    }
-                                                }.onFailure { err ->
-                                                    ghStatusTv.text = "⚠️ Error al descargar: ${err.message}"
-                                                    ghStatusTv.setTextColor(BAD)
-                                                }
-                                            },
-                                        )
-                                    },
-                                ))
-                                assetsContainer.addView(itemBox)
-                            }
-                        }
-                    }.onFailure { err ->
-                        ghStatusTv.text = "⚠️ No se pudo consultar GitHub: ${err.message}"
-                        ghStatusTv.setTextColor(BAD)
-                    }
-                }
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(50)))
-        })
-
-        // --- Pruebas y olvidar ---
-        root.addView(card().apply {
-            addView(text("Pruebas", 18f, TEXT, bold = true))
-            addView(text("«Probar Google Maps» abre en este móvil una ruta de prueba con una parada, con el mismo enlace que manda el coche.", 14f, FAINT).apply { setPadding(0, dp(4), 0, dp(10)) })
-            addView(row(
-                pill("Probar Google Maps") { testMaps() },
-                pill("Olvidar coche") { confirmForget() },
-            ))
         })
     }
 
@@ -399,6 +952,36 @@ class MainActivity : Activity() {
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == MyCarTab.REQ_CERT) {
+            if (resultCode == RESULT_OK) MyCarTab.onCertPicked(this, data) { render() }
+            return
+        }
+        if (requestCode == REQ_SAVE_APK_USB) {
+            val src = pendingUsbExportApk
+            val uri = data?.data
+            if (resultCode == RESULT_OK && src != null && uri != null) {
+                Toast.makeText(this, "Copiando ${src.name} al USB / carpeta…", Toast.LENGTH_SHORT).show()
+                kotlin.concurrent.thread(name = "usb-apk-export", isDaemon = true) {
+                    runCatching {
+                        contentResolver.openOutputStream(uri)?.use { out ->
+                            java.io.FileInputStream(src).use { input ->
+                                input.copyTo(out, bufferSize = 64 * 1024)
+                            }
+                            out.flush()
+                        } ?: error("No se pudo abrir el destino")
+                    }.onSuccess {
+                        runOnUiThread {
+                            toast("✅ ${src.name} guardado correctamente en el USB / carpeta")
+                        }
+                    }.onFailure { e ->
+                        runOnUiThread {
+                            toast("⚠️ Error al guardar APK: ${e.message}")
+                        }
+                    }
+                }
+            }
+            return
+        }
         if (requestCode != REQ_ASSOCIATE || resultCode != RESULT_OK || data == null) return
         var address: String? = null
         var name: String? = null
@@ -466,6 +1049,29 @@ class MainActivity : Activity() {
         }
         runCatching { startActivity(tetherIntent) }.onFailure {
             runCatching { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }
+        }
+    }
+
+    private fun openPrivateDnsSettings() {
+        runCatching {
+            startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure {
+            runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        }
+    }
+
+    private fun exportApkToUsbDrive(apkFile: java.io.File) {
+        pendingUsbExportApk = apkFile
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/vnd.android.package-archive"
+            putExtra(Intent.EXTRA_TITLE, apkFile.name)
+        }
+        runCatching {
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, REQ_SAVE_APK_USB)
+        }.onFailure { e ->
+            toast("No se pudo abrir el selector de archivos: ${e.message}")
         }
     }
 
@@ -546,6 +1152,40 @@ class MainActivity : Activity() {
         addView(text((if (granted) "✓ " else "✗ ") + label, 15f, if (granted) OK else BAD),
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         if (!granted) addView(pill("Dar") { onFix() })
+    }
+
+    private fun showUnitLogsDialog(file: java.io.File, logText: String) {
+        val preview = if (logText.length > 6000) {
+            "… (mostrando últimos 6.000 caracteres de ${logText.length})\n\n" + logText.takeLast(6000)
+        } else {
+            logText
+        }
+        AlertDialog.Builder(this)
+            .setTitle("📋 ${file.name}")
+            .setMessage(preview)
+            .setPositiveButton("📤 Compartir registros") { _, _ ->
+                shareUnitLogText(file, logText)
+            }
+            .setNeutralButton("📋 Copiar al portapapeles") { _, _ ->
+                val cm = getSystemService(android.content.ClipboardManager::class.java)
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText(file.name, logText))
+                toast("Registros copiados al portapapeles (${file.name})")
+            }
+            .setNegativeButton("Cerrar", null)
+            .show()
+    }
+
+    private fun shareUnitLogText(file: java.io.File, logText: String) {
+        runCatching {
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "Registros Qonecta Unit (${file.name})")
+                putExtra(Intent.EXTRA_TEXT, logText)
+            }
+            startActivity(Intent.createChooser(send, "Compartir registros de Qonecta Unit"))
+        }.onFailure { e ->
+            toast("No se pudo compartir: ${e.message}")
+        }
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
