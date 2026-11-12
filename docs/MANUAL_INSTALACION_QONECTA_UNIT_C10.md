@@ -1,120 +1,107 @@
-# 🚗📱 Manual Paso a Paso · Qonecta Unit & Qonecta Companion (`v0.1.17`)
+# 🚗📱 Manual Paso a Paso · Qonecta Unit & Qonecta Companion (`v0.1.18`)
 
-Guía clara para humanos normales para instalar, vincular y actualizar **Qonecta Unit** (la app que va en la pantalla del **Leapmotor C10**) y **Qonecta Companion** (la app compañera que va en tu **móvil Android**).
+<p align="center">
+  🇪🇸 <b>Español</b> ·
+  <a href="MANUAL_INSTALLATION_QONECTA_UNIT_C10.en.md">🇬🇧 English</a> ·
+  <a href="INSTALLATIONSANLEITUNG_QONECTA_UNIT_C10.de.md">🇩🇪 Deutsch</a>
+</p>
 
-> **⚠️ Seguridad ante todo:** Haz toda la instalación y el primer emparejamiento siempre con el coche estacionado en **`P`**.
+Guía clara paso a paso para instalar, vincular y actualizar **Qonecta Unit** (la app que va en la pantalla del **Leapmotor C10**) y **Qonecta Companion** (la app compañera que va en tu **móvil Android**), creadas por **[CharlysEV](https://github.com/CharlysEV)**.
+
+> **⚠️ Seguridad ante todo:** Haz siempre la instalación y el primer emparejamiento con el coche estacionado en **`P`**.
 
 ---
 
-## 🧩 ¿Qué son las dos aplicaciones?
+## 🧩 ¿Qué son las dos herramientas?
 
-1. **🚗 `Qonecta Unit` (`QonectaUnit_0.1.17-unit.apk` · Se instala EN EL COCHE):**
-   Convierte la pantalla original del Leapmotor C10 en un receptor nativo de **Android Auto** (inalámbrico o por cable USB) y **Apple CarPlay** (USB / inalámbrico), con **Panel Extendido C10** (batería, autonomía, potencia, viajes, consumos REEV/BEV y **Planificador de Rutas EV con paradas de carga**), respetando al 100 % la Radio original y los mandos del volante.
-2. **📱 `Qonecta Companion` (`QonectaUnitCompanion_0.1.17.apk` · Se instala EN TU MÓVIL ANDROID):**
-   Conecta tu móvil con `Qonecta Unit` automáticamente al subir al coche para:
-   - Recibir las rutas con paradas de carga del Planificador del coche y **abrirlas solas en Google Maps** (proyectándolas en Android Auto).
-   - **Dar Internet por Bluetooth** al Planificador del coche sin gastar los 2 GB de datos de Leapmotor y sin encender el Hotspot.
+1. **🚗 `Qonecta Unit` (`QonectaUnit_0.1.18-unit.apk` · Se instala EN EL COCHE):**
+   Convierte la pantalla original del Leapmotor C10 en un receptor nativo de **Android Auto** (inalámbrico o por cable USB) y **Apple CarPlay**, con **Panel Extendido C10** (batería, autonomía, potencia, viajes, consumos REEV/BEV y **Planificador de Rutas EV con paradas de carga**), casillas independientes de conexión (**Modo Solo Bluetooth sin Wi‑Fi 5 GHz**) y respeto al 100 % de la Radio FM/DAB original y los mandos del volante.
+2. **📱 `Qonecta Companion` (`QonectaUnitCompanion_0.1.18.apk` · Se instala EN TU MÓVIL ANDROID):**
+   Se sincroniza en vivo con `Qonecta Unit` al subir al coche para:
+   - Guiarte en tu primera instalación con el **🎓 Modo Tutorial interactivo de 5 pasos en vivo**.
+   - Conectar **solo por Bluetooth** (desmarcando Wi‑Fi si no quieres levantar redes de 5 GHz) o por Wi‑Fi rápido.
+   - Recibir las rutas con paradas de carga del Planificador del coche y **abrirlas solas en Google Maps**.
+   - **Dar Internet por Bluetooth** al Planificador del coche sin gastar los 2 GB de datos de Leapmotor ni encender el Hotspot.
    - **Actualizar la app del coche en 1 solo toque** desde el móvil (sin volver a usar pendrives ni navegador).
-   - Sincronizar tus viajes, tarifas eléctricas/gasolina y estado del coche.
 
 ---
 
-## ⚠️ Antes de empezar (¡Muy importante!)
+## ⚠️ Antes de empezar
 
-- **Si tenías instalada `Qonecta+` o `HeadQLink` antigua en tu móvil:** desactívala (o desactiva su conexión automática de Android Auto) antes de usar `Qonecta Unit`, para que las dos apps del móvil no se peleen por conectarse a Android Auto a la vez.
-- **Descarga en tu móvil Android los dos archivos `.apk` de la Release:**
-  1. `QonectaUnitCompanion_0.1.17.apk` *(para instalar en tu móvil)*
-  2. `QonectaUnit_0.1.17-unit.apk` *(déjala guardada en la carpeta `Descargas` de tu móvil; Companion la detectará automáticamente)*
+- **Si tenías instalada `Qonecta+` o `HeadQLink` en tu móvil:** desactiva su inicio automático mientras uses `Qonecta Unit` para que las dos apps no intenten abrir Android Auto al mismo tiempo.
+- **Instala primero Vivaldi en el coche:** abre la tienda oficial **`LeapAppStore`** en la pantalla del Leapmotor C10 y descarga el navegador gratuito **Vivaldi** (si aún no lo tienes).
 
 ---
 
 ## 📱 PARTE 1 · Instalar `Qonecta Companion` en tu móvil Android
 
-1. Abre el archivo **`QonectaUnitCompanion_0.1.17.apk`** en tu teléfono Android y pulsa **Instalar** *(si tu móvil te pregunta permiso para instalar desde tu navegador o gestor de archivos, acéptalo)*.
-2. Abre **Qonecta Companion**. Verás una pantalla limpia con solo 3 tarjetas (y un botón opcional `🛠️ Experto` arriba a la derecha que no necesitas tocar).
-3. En la primera tarjeta (**Estado de conexión**), pulsa **`Dar`** en los permisos que te pida para que todo funcione solo en el bolsillo:
-   - **Bluetooth (Dispositivos cercanos):** para detectar el coche al subirte.
-   - **Notificaciones:** para mantener la conexión activa en segundo plano.
-   - **Abrir Google Maps automáticamente (*Mostrar sobre otras apps*):** imprescindible en Android para que el móvil pueda abrir Google Maps con la ruta sin que tengas que desbloquear la pantalla.
-   - **Sin ahorro de batería:** para que el móvil no corte la conexión en mitad de un viaje.
+1. Descarga e instala **`QonectaUnitCompanion_0.1.18.apk`** desde [GitHub Releases](https://github.com/CharlysEV/qonecta-unit-companion/releases/latest) en tu móvil Android.
+2. Abre **Qonecta Companion** y concede en la primera tarjeta los permisos recomendados pulsando **`Dar`**:
+   - **Bluetooth (Dispositivos cercanos):** para detectar y conectar con tu C10 automáticamente.
+   - **Notificaciones:** para mantener el puente activo en segundo plano.
+   - **Abrir Google Maps automáticamente (*Mostrar sobre otras apps*):** necesario en Android para lanzar la ruta enviada desde el coche con el móvil en el bolsillo.
+   - **Sin ahorro de batería:** para que el sistema no corte el servicio en mitad de un viaje.
 
 ---
 
-## 🚗 PARTE 2 · Instalar `Qonecta Unit` en el Leapmotor C10 por primera vez
+## 🎓 PARTE 2 · Instalar `Qonecta Unit` en el C10 con el Modo Tutorial en Vivo (solo la 1.ª vez)
 
-Como Vivaldi en el Leapmotor C10 bloquea por seguridad la descarga directa de archivos `.apk`, la **primera instalación desde cero** se hace en **3 minutos** con un **Pendrive USB-C** y el portal web de tu propio móvil **(sin configurar Proxy y sin cambiar DNS)**:
+En **Qonecta Companion**, pulsa **`🎓 Abrir Modo Tutorial paso a paso (C10)`** (arriba del todo o en la Tarjeta 3). El asistente sincronizado te llevará de la mano en **5 pasos automáticos** *(sin tocar Proxy ni DNS)*:
 
-### Paso 1 · Pasar el APK del coche al Pendrive USB
-1. Conecta un **Pendrive USB-C** a tu móvil *(o usa un ordenador si prefieres copiar `QonectaUnit_0.1.17-unit.apk` directamente a la raíz del pendrive)*.
-2. En **Qonecta Companion** de tu móvil, despliega la tarjeta **«🆘 Instalar desde cero»** y pulsa **«💾 1. Guardar APK en Pendrive USB»**. Elige tu pendrive y guarda el archivo.
-3. Desconecta el pendrive del móvil y **enchúfalo al puerto USB de datos del Leapmotor C10** (bajo la consola central).
+### Paso 1 · Descargar `Qonecta Unit` en el móvil
+- El tutorial comprueba si ya tienes `QonectaUnit_0.1.18-unit.apk` en el móvil; si no, pulsa **«☁️ Descargar Qonecta Unit ahora»** y la bajará directamente de GitHub.
 
-### Paso 2 · Encender el Punto de acceso (Hotspot) del móvil
-1. En esa misma tarjeta de **Qonecta Companion**, pulsa **«📶 2. Encender Hotspot»** y activa el **Punto de acceso Wi-Fi / Compartir conexión** de tu teléfono.
-2. Vuelve atrás a **Qonecta Companion** y pulsa **«🔄 3. Actualizar IP»**. Fíjate en la dirección corta que te muestra en pantalla en el punto `3️⃣` (normalmente **`http://192.168.43.1:8788/portal`** o la IP que indique tu móvil).
-3. En la pantalla del coche, ve a **Ajustes → Wi-Fi** y conéctate al Wi-Fi de tu móvil normalmente *(no hace falta tocar Proxy ni DNS)*.
+### Paso 2 · Guardar el APK en un Pendrive USB‑C
+1. Conecta un **Pendrive USB‑C** a tu móvil *(o cópialo desde un PC a la raíz del pendrive)*.
+2. Pulsa **«💾 Guardar QonectaUnit en Pendrive USB»**, elige tu USB y guarda el archivo. El tutorial marcará **`🟢 ¡APK guardada!`** automáticamente.
+3. Enchufa ese pendrive en el **puerto USB de datos del Leapmotor C10** (debajo del reposabrazos central).
 
-### Paso 3 · Abrir el Instalador desde Vivaldi en el coche
-1. Abre el navegador **Vivaldi** en la pantalla del Leapmotor C10.
-2. Escribe en la barra de direcciones exactamente la dirección que te muestra Companion, por ejemplo:
-   ```text
-   http://192.168.43.1:8788/portal
-   ```
-3. Se abrirá el **Instalador Qonecta Unit · C10**. Toca el **Botón 2 Amarillo**:
-   > **📁 2. ABRIR «ARCHIVOS DEL COCHE» (INSTALAR DESDE USB)**
-4. Se abrirá el gestor nativo **Archivos** de Android en el coche:
-   - En la columna de la izquierda (o menú `☰`), toca tu **Unidad USB**.
-   - Verás el archivo `QonectaUnit_0.1.17-unit.apk`.
-   - **🔑 EL TRUCO CLAVE:** **NO toques el centro del icono** (eso solo lo selecciona). Toca el **icono pequeñito de dos flechas en diagonal `⤢` que aparece en la esquina del archivo APK**.
-5. Se abrirá el instalador oficial de Android del coche:
-   - Si es la primera vez y te pide permitir instalar aplicaciones desde *Archivos*, activa el interruptor, vuelve atrás un toque y pulsa **Instalar**.
-6. ¡Listo! Ya tienes **Qonecta Unit** instalada en el cajón de aplicaciones de tu C10 (ya puedes apagar el Hotspot del móvil y quitar el pendrive).
+### Paso 3 · Encender Hotspot en el móvil (cero Proxy · cero DNS)
+1. Pulsa **«📶 Abrir Punto de Acceso (Hotspot)»** y enciende Compartir conexión Wi‑Fi en tu móvil.
+2. El tutorial detectará automáticamente tu Hotspot (`🟢 ¡Hotspot activo detectado!`) y encenderá el servidor local `:8788`.
+3. Conecta el **Wi‑Fi del Leapmotor C10** al Hotspot de tu móvil con normalidad.
 
----
+### Paso 4 · Abrir el Portal en Vivaldi + el truco de las 2 flechas `⤢`
+1. Abre **Vivaldi** en la pantalla del C10 y escribe la dirección corta que te muestra el tutorial (por ejemplo `http://192.168.43.1:8788/portal`).
+2. **Radar en vivo:** en cuanto Vivaldi cargue la página, tu móvil se pondrá en verde confirmando **`🟢 ¡SINCRONIZADO EN VIVO! Tu Leapmotor C10 acaba de abrir el Portal`**.
+3. En la pantalla del coche, toca el **Botón Amarillo «📁 ABRIR ARCHIVOS DEL COCHE»**.
+4. En **Archivos**, entra en tu **Unidad USB** a la izquierda:
+   - **🔑 EL TRUCO CLAVE:** **NO toques el centro del archivo APK**. Toca las **dos flechas pequeñas `⤢` de la esquina del icono** (tal y como muestra el dibujo del tutorial) para abrir directamente el Instalador oficial del sistema.
+   - Acepta el permiso si es la primera vez y pulsa **Instalar**.
 
-## 🔗 PARTE 3 · Vincular Móvil y Coche (solo se hace una vez)
-
-1. Abre **Qonecta Unit** en la pantalla del coche.
-2. Entra en **Ajustes / Menú Extendido → Qonecta Companion** y pulsa **«Emparejar móvil»**. Aparecerá un código grande de **6 cifras** en la pantalla del coche.
-3. En **Qonecta Companion** de tu móvil (Tarjeta 1):
-   - **Paso 1:** Pulsa **«1. Elegir coche»** y selecciona el Bluetooth manos libres de tu Leapmotor C10.
-   - **Paso 2:** Escribe las **6 cifras** que muestra el coche y pulsa **«🔗 Vincular con mi coche»**.
-4. En un par de segundos verás arriba:
-   > **`🟢 Conectado con Leapmotor C10 · Coche en v0.1.17-unit`**
-
-A partir de ese instante, cada vez que entres al coche se conectarán solos sin tocar nada.
+### Paso 5 · Vincular y sincronizar en vivo
+1. Abre **Qonecta Unit** en tu C10 y toca el botón superior **«🔑 Vincular Companion»** para ver el código de **6 cifras**.
+2. En el Paso 5 del móvil, elige el Bluetooth de tu C10, escribe las **6 cifras** y pulsa **«🔗 Vincular y sincronizar ahora»**.
+3. Verás al instante **`🎉 ¡C10 conectado y sincronizado en vivo!`** (ya puedes apagar el Hotspot y retirar el pendrive).
 
 ---
 
-## 📡 PARTE 4 · Conectar Android Auto (o CarPlay)
+## ☑️ PARTE 3 · Elegir tus opciones de conexión (Solo Bluetooth vs Android Auto)
 
-1. Con el Bluetooth del móvil ya emparejado con el coche, abre **Qonecta Unit** en el C10 y pulsa **«Conectar teléfono»** *(o conecta el cable USB de datos si prefieres ir por cable)*.
-2. La primera vez, acepta en la pantalla de tu móvil el aviso para iniciar **Android Auto inalámbrico**.
-3. **Panel Extendido vs Pantalla Completa:**
-   - Puedes llevar Android Auto junto al **Panel Extendido C10** (batería, consumos, viajes y Planificador EV con paradas) o pulsar **«Pantalla completa»** para ocupar toda la pantalla (un botón flotante discreto te permite volver al modo extendido cuando quieras).
-4. **Radio del coche y mandos del volante blindados (`v0.1.17`):**
-   - Si cambias a la **Radio FM/DAB nativa del coche**, `Qonecta Unit` cede inmediatamente el foco de audio y los botones del volante a la radio para que nunca se bloqueen ni tengas que reiniciar la pantalla.
+Tanto en la pantalla de **Qonecta Unit** (coche) como en **Qonecta Companion** (móvil) puedes **marcar y desmarcar (`☑` / `☐`)** libremente cada modo:
 
----
-
-## ⚡ PARTE 5 · Cómo actualizar en el futuro (en 1 SOLO TOQUE, sin USB ni Vivaldi)
-
-Una vez que tienes instalada la versión **`v0.1.17`** en el coche, **ya no volverás a necesitar pendrive USB, ni Hotspot, ni Vivaldi para futuras actualizaciones**:
-
-1. Guarda la nueva versión de `QonectaUnit_X.X.X-unit.apk` en tu móvil *(o descárgala directamente desde el botón **«☁️ Buscar nueva versión en Internet»** de Companion)*.
-2. Con el móvil conectado al coche (`🟢 Conectado`), mira la **Tarjeta 2 («⚡ Actualizar Coche en 1 Toque»)** en **Qonecta Companion**.
-3. Pulsa el botón **«⚡ Actualizar coche ahora»**:
-   - El móvil enviará la nueva versión directamente al coche (en ~2 segundos si estás con Android Auto inalámbrico por Wi-Fi, o automáticamente por Bluetooth si no hay Wi-Fi).
-   - El coche verificará que el archivo esté intacto (`SHA-256`) y **abrirá solo en la pantalla del C10 el cartel de Android `«¿Quieres instalar una actualización de Qonecta Unit?»`**.
-   - Solo tienes que tocar **«Instalar»** en la pantalla del coche y listo.
+- **🔵 Quiero solo datos, viajes, tarifas y enviar rutas (sin Android Auto ni Wi‑Fi 5 GHz):**
+  Deja marcado únicamente **`☑ Bluetooth`** y desmarca **`☐ Wi‑Fi 5 GHz`** (y desmarca **`☐ Cable USB`** si solo quieres cargar batería por cable). Coche y móvil hablarán 100 % por Bluetooth puro sin tocar el Wi‑Fi ni la radio.
+- **📡 Quiero Android Auto inalámbrico:**
+  Marca **`☑ Wi‑Fi 5 GHz`** en `Qonecta Unit` y pulsa **«Conectar teléfono»**.
+- **🔌 Quiero Android Auto o CarPlay por cable:**
+  Marca **`☑ Cable USB`** y enchufa el móvil al puerto USB de datos del coche.
 
 ---
 
-## 🛠️ Preguntas Frecuentes y Modo Experto
+## ⚡ PARTE 4 · Actualizar en el futuro en 1 SOLO TOQUE (sin pendrive ni Vivaldi)
 
-- **¿Para qué sirve el botón `🛠️ Experto` arriba a la derecha en Companion?**
-  Por defecto viene apagado para que la app sea limpia y sencilla. Si alguien quiere cacharrear, al pulsar `🛠️ Experto` aparecen ajustes avanzados: selector manual de repositorios GitHub y Token PAT privado, servidor web `:8788/:8080`, DNS manual, contador de peticiones de datos Bluetooth y botón para **descargar los registros (`ohu.log` + `logcat`) del coche directo al móvil sin pendrive** para enviarnos diagnósticos si algo falla.
-- **¿Cómo descargar actualizaciones directamente desde el repositorio privado `CharlysEV/headqlink-pruebas` en Companion?**
-  Si quieres usar el botón *«☁️ Buscar nueva versión en Internet»* con este repositorio privado: activa `🛠️ Experto`, pon `CharlysEV/headqlink-pruebas` en las casillas de repositorio junto con tu *Personal Access Token (PAT)* de GitHub con permiso de lectura (`repo` / `Contents: Read`) y pulsa Guardar. Si no quieres líos de tokens, simplemente descarga el `.apk` desde la página de **Releases** en tu navegador del móvil a `Descargas` y Companion lo detectará solo al instante.
-- **¿Cómo desinstalar `Qonecta Unit` del coche si algún día quiero quitarla?**
-  Desde dentro de `Qonecta Unit` → **Ajustes → Diagnóstico / Ajustes del sistema Android → Aplicaciones → Qonecta Unit → Desinstalar**.
+A partir de ahora **nunca más necesitarás pendrive ni Vivaldi** para actualizar el coche:
+
+1. En **Qonecta Companion** (Tarjeta 2 · *Actualizar Coche en 1 Toque*), pulsa **«☁️ Buscar nueva versión en Internet»**.
+2. Pulsa **«⚡ Actualizar coche ahora»**: el móvil enviará la nueva versión directamente al coche (con verificación `SHA-256`) y abrirá solo en la pantalla del C10 el cartel oficial de Android para pulsar **«Actualizar»**.
+
+---
+
+## ☕ Apoyar el proyecto (`por CharlysEV`)
+
+Si disfrutas de **Qonecta Unit** y **Qonecta Companion** en tu Leapmotor C10 y te apetece invitar a un café o apoyar su evolución:
+
+- ☕ **Ko-fi:** [https://ko-fi.com/charlysev](https://ko-fi.com/charlysev)
+- 💙 **PayPal:** [https://www.paypal.me/CharlysEV](https://www.paypal.me/CharlysEV)
+- 🐙 **GitHub:** [https://github.com/CharlysEV](https://github.com/CharlysEV)

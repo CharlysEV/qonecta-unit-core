@@ -2017,9 +2017,9 @@ class AapService : Service(), UsbReceiver.Listener {
                 userExitedAA = false
                 userExitCooldownUntil = 0L
                 val settings = App.provide(this).settings
-                if (settings.wifiConnectionMode != 4) {
-                    settings.wifiConnectionMode = 0
-                }
+                settings.wifi5gEnabled = false
+                settings.hotspotModeEnabled = false
+                settings.usbModeEnabled = true
                 initWifiMode(force = true)
                 serviceScope.launch {
                     if (commManager.isConnected && commManager.isWirelessSession ||
@@ -2167,14 +2167,19 @@ class AapService : Service(), UsbReceiver.Listener {
             AppLog.i("Ignoring non-Android USB device attached in service (VID: ${device.vendorId}): ${device.deviceName}")
             return
         }
+        val settings = App.provide(this).settings
+        if (!settings.usbModeEnabled) {
+            AppLog.i("Ignoring USB attach because USB mode is unchecked by user: ${device.deviceName}")
+            return
+        }
         usbAttachSeen = true
         userExitedAA = false
         val deviceName = UsbDeviceCompat(device).uniqueName
-        val settings = App.provide(this).settings
         val wirelessSessionActive = commManager.isConnected && commManager.isWirelessSession
-        val wirelessModeSelected = settings.wifiConnectionMode != 0
+        val effectiveWirelessMode = WirelessScopePolicy.effectiveMode(settings.wifiConnectionMode, settings.connectionModes)
+        val wirelessModeSelected = effectiveWirelessMode != WirelessScopePolicy.NO_WIRELESS_MODE
         if (wirelessSessionActive || wirelessModeSelected) {
-            AppLog.i("USB device attached ($deviceName) while wireless mode/session active (wirelessSession=$wirelessSessionActive, mode=${settings.wifiConnectionMode}) — prompting user to switch to USB.")
+            AppLog.i("USB device attached ($deviceName) while wireless mode/session active (wirelessSession=$wirelessSessionActive, effectiveMode=$effectiveWirelessMode) — prompting user to switch to USB.")
             usbSwitchPrompt.value = UsbSwitchPrompt(deviceName = deviceName)
             if (!wirelessSessionActive) {
                 launchMainActivityIfNeeded("USB attach switch prompt ($deviceName)")
@@ -2345,6 +2350,7 @@ class AapService : Service(), UsbReceiver.Listener {
      */
     private fun checkAlreadyConnectedUsb(force: Boolean = false) {
         val settings = App.provide(this).settings
+        if (!settings.usbModeEnabled) return
         val lastSession = settings.autoConnectLastSession
         val singleUsb = settings.autoConnectSingleUsbDevice
         val usbAutoStart = settings.autoStartOnUsb

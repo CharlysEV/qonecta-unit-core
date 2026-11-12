@@ -24,6 +24,7 @@ class BridgeService : Service() {
 
     companion object {
         private const val ACTION_START = "start"
+        private const val ACTION_RECONNECT = "reconnect"
         private const val ACTION_PAIR = "pair"
         private const val ACTION_STOP = "stop"
         private const val ACTION_FETCH_LOGS = "fetch_logs"
@@ -32,6 +33,9 @@ class BridgeService : Service() {
         private const val NOTIF_ID = 1
 
         fun start(ctx: Context) = launch(ctx, Intent(ctx, BridgeService::class.java).setAction(ACTION_START))
+
+        /** Reinicia en caliente el transporte activo (por ejemplo al desmarcar Wi-Fi para quedar en Solo Bluetooth). */
+        fun reconnectNow(ctx: Context) = launch(ctx, Intent(ctx, BridgeService::class.java).setAction(ACTION_RECONNECT))
 
         fun pair(ctx: Context, code: String) =
             launch(ctx, Intent(ctx, BridgeService::class.java).setAction(ACTION_PAIR).putExtra(EXTRA_CODE, code))
@@ -392,6 +396,12 @@ class BridgeService : Service() {
                     worker?.interrupt()
                 }
             }
+            ACTION_RECONNECT -> {
+                prefs.enabled = true
+                wakeUpRequested = true
+                session?.channel?.close()
+                worker?.interrupt()
+            }
             ACTION_PAIR -> {
                 pendingPairCode = intent.getStringExtra(EXTRA_CODE)?.trim()
                 prefs.enabled = true
@@ -436,20 +446,48 @@ class BridgeService : Service() {
             }
             val code = pendingPairCode
             if (code == null && !prefs.isPaired) break
+            val useWifi = prefs.useWifi
+            val useBt = prefs.useBluetooth
+            if (code == null && !useWifi && !useBt) {
+                BridgeState.update {
+                    it.copy(
+                        phase = BridgeState.Phase.STOPPED,
+                        transport = "",
+                        detail = "Marca Bluetooth o Wi-Fi en las opciones de conexión.",
+                    )
+                }
+                shutdown()
+                return
+            }
+            val searchDetail = when {
+                code != null && !useWifi -> "Buscando el coche solo por Bluetooth para emparejar…"
+                code != null -> "Buscando el coche para emparejar…"
+                useBt && !useWifi -> "Modo Solo Bluetooth activo (sin Wi-Fi 5 GHz): buscando el coche…"
+                !useBt && useWifi -> "Modo Solo Wi-Fi activo: buscando la red del coche…"
+                else -> "Buscando el coche (Bluetooth o Wi-Fi)…"
+            }
             BridgeState.update {
                 it.copy(
                     phase = if (code != null) BridgeState.Phase.PAIRING else BridgeState.Phase.SEARCHING,
                     transport = "",
-                    detail = if (code != null) "Buscando el coche para emparejar…" else "Buscando el coche (Wi-Fi de Android Auto o Bluetooth)…",
+                    detail = searchDetail,
                 )
             }
             notifyText(if (code != null) "Emparejando con el coche…" else "Buscando el coche…")
 
-            val opened = link.open(prefs.carBtAddress)
+            val opened = link.open(
+                carBtAddress = prefs.carBtAddress,
+                useWifi = useWifi,
+                useBluetooth = useBt || code != null,
+            )
             if (opened == null) {
-                if (code != null && prefs.carBtAddress.isNullOrBlank()) {
+                if (!useWifi && useBt && prefs.carBtAddress.isNullOrBlank()) {
                     BridgeState.update {
-                        it.copy(detail = "No encuentro el coche por Wi-Fi. Elige tu coche por Bluetooth (paso 1) o conecta Android Auto inalámbrico.")
+                        it.copy(detail = "Modo Solo Bluetooth: elige el Bluetooth de tu C10 en «Conexión» o abre Qonecta Unit en el coche.")
+                    }
+                } else if (code != null && prefs.carBtAddress.isNullOrBlank()) {
+                    BridgeState.update {
+                        it.copy(detail = "Elige el Bluetooth de tu coche arriba o conecta el Wi-Fi del coche.")
                     }
                 }
                 sleep(backoffMs)
@@ -483,6 +521,12 @@ class BridgeService : Service() {
                     watchdog.interrupt()
                     prefs.token = reply.token
                     prefs.carName = reply.carName
+                    if (!opened.btAddress.isNullOrBlank() && prefs.carBtAddress.isNullOrBlank()) {
+                        prefs.carBtAddress = opened.btAddress
+                        if (!opened.btName.isNullOrBlank()) {
+                            prefs.carBtName = opened.btName
+                        }
+                    }
                     pendingPairCode = null
                     val car = reply.carName.ifBlank { "el coche" }
                     BridgeState.update {

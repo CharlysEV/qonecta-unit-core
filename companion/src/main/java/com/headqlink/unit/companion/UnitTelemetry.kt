@@ -30,6 +30,12 @@ object UnitTelemetry {
         val tripKm: Double,
         val tripKwh: Double,
         val avgKwh100: Double,
+        val unitBtCompanion: Boolean = true,
+        val unitWifi5g: Boolean = false,
+        val unitHotspot: Boolean = false,
+        val unitUsb: Boolean = true,
+        val unitAaConnected: Boolean = false,
+        val hasUnitConnInfo: Boolean = false,
     )
 
     @Volatile
@@ -43,6 +49,7 @@ object UnitTelemetry {
         android.util.Log.i("UnitTelemetry", "SYNC desde Qonecta Unit: $json")
         val o = runCatching { JSONObject(json) }.getOrNull() ?: return
         fun d(k: String) = if (o.isNull(k)) Double.NaN else o.optDouble(k, Double.NaN)
+        val connObj = o.optJSONObject("unitConn")
         val data = Data(
             receivedAtMs = System.currentTimeMillis(),
             socPct = d("soc"),
@@ -62,6 +69,12 @@ object UnitTelemetry {
             tripKm = d("tripKm"),
             tripKwh = d("tripKwh"),
             avgKwh100 = d("avgKwh100"),
+            unitBtCompanion = connObj?.optBoolean("btCompanion", true) ?: true,
+            unitWifi5g = connObj?.optBoolean("wifi5g", false) ?: false,
+            unitHotspot = connObj?.optBoolean("hotspot", false) ?: false,
+            unitUsb = connObj?.optBoolean("usb", true) ?: true,
+            unitAaConnected = connObj?.optBoolean("aaConnected", false) ?: false,
+            hasUnitConnInfo = connObj != null,
         )
         current = data
         CompanionVehicleState.update(context) { cur ->

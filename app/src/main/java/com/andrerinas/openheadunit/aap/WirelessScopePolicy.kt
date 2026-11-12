@@ -25,5 +25,5 @@ object WirelessScopePolicy {
 
     /** The wireless mode to actually bring up for the stored [storedMode] and chosen types. */
     fun effectiveMode(storedMode: Int, connectionModes: Set<Settings.ConnectionMode>): Int =
-        if (allowsWireless(connectionModes)) storedMode else NO_WIRELESS_MODE
+        if (storedMode in 1..3 && allowsWireless(connectionModes)) storedMode else NO_WIRELESS_MODE
 }

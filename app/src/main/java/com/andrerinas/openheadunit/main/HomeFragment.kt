@@ -52,6 +52,9 @@ import kotlin.math.roundToInt
 class HomeFragment : Fragment() {
     private val app get() = App.provide(requireContext())
     private var activeDialog: Dialog? = null
+    private var isBtCompanionDialogOpen = false
+    private var lastCompanionConnectedState = false
+    private var companionStatusListener: ((com.headqlink.unit.bridgehost.CompanionBridgeHost.Status) -> Unit)? = null
 
     private var manualConnectingActive = false
     private var connectingStartElapsedMs = 0L
@@ -75,8 +78,11 @@ class HomeFragment : Fragment() {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
+            if (app.settings.btCompanionEnabled) {
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.setBluetoothEnabled(requireContext(), true)
+            }
             view?.let { rebuildRecentDevicesRow(it) }
-            startPrimaryWirelessConnection()
+            startPrimaryConnection()
         } else {
             showBluetoothHelp(R.string.bt_permission_denied)
         }
@@ -87,6 +93,37 @@ class HomeFragment : Fragment() {
 
     override fun onViewCreated(view: View, state: Bundle?) {
         LeapVehicleDataSource.start(requireContext().applicationContext)
+        com.headqlink.unit.bridgehost.CompanionBridgeHost.setBluetoothEnabled(
+            requireContext().applicationContext,
+            app.settings.btCompanionEnabled
+        )
+
+        val liveBridgeListener: (com.headqlink.unit.bridgehost.CompanionBridgeHost.Status) -> Unit = { st ->
+            if (isAdded) {
+                updateConnectionModeButtons(view)
+                refreshHeroState(view)
+                rebuildRecentDevicesRow(view)
+                if (isBtCompanionDialogOpen && st.isConnected != lastCompanionConnectedState) {
+                    lastCompanionConnectedState = st.isConnected
+                    showBluetoothCompanionDialog(view)
+                } else {
+                    lastCompanionConnectedState = st.isConnected
+                }
+            }
+        }
+        companionStatusListener = liveBridgeListener
+        com.headqlink.unit.bridgehost.CompanionBridgeHost.addListener(liveBridgeListener)
+
+        view.findViewById<View>(R.id.home_support_button)?.setOnClickListener {
+            showSupportCreditsDialog()
+        }
+        view.findViewById<View>(R.id.home_version_badge)?.setOnClickListener {
+            showSupportCreditsDialog()
+        }
+
+        view.findViewById<View>(R.id.companion_pair_button)?.setOnClickListener {
+            showBluetoothCompanionDialog(view)
+        }
 
         view.findViewById<View>(R.id.wifi_button)?.setOnClickListener {
             if (app.commManager.isConnected) {
@@ -96,7 +133,7 @@ class HomeFragment : Fragment() {
             ) {
                 bluetoothPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
             } else {
-                startPrimaryWirelessConnection()
+                startPrimaryConnection()
             }
         }
 
@@ -104,7 +141,7 @@ class HomeFragment : Fragment() {
             if (app.commManager.isConnected) {
                 openProjection()
             } else if (!manualConnectingActive) {
-                startPrimaryWirelessConnection()
+                startPrimaryConnection()
             }
         }
 
@@ -113,15 +150,12 @@ class HomeFragment : Fragment() {
         }
 
         view.findViewById<View>(R.id.usb_button)?.setOnClickListener {
-            if (app.settings.wifiConnectionMode == 4 && !app.commManager.isConnected) {
-                showBluetoothCompanionDialog(view)
-                return@setOnClickListener
-            }
             if (app.commManager.isConnected && !app.commManager.isWirelessSession) {
                 openProjection()
             } else if (app.commManager.isConnected && app.commManager.isWirelessSession) {
                 showUsbSwitchDialog("Dispositivo USB")
             } else {
+                app.settings.usbModeEnabled = true
                 val usbManager = requireContext().getSystemService(Context.USB_SERVICE) as? UsbManager
                 val hasAppleUsb = usbManager?.deviceList?.values?.any { it.vendorId == 0x05AC } == true
                 if (hasAppleUsb) {
@@ -139,7 +173,6 @@ class HomeFragment : Fragment() {
                         }
                     }
                 } else {
-                    app.settings.wifiConnectionMode = 0
                     updateConnectionModeButtons(view)
                     beginConnectingUi(
                         view = view,
@@ -148,7 +181,7 @@ class HomeFragment : Fragment() {
                         transportLabel = "🔗 Conectando por cable",
                     )
                     ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
-                        action = AapService.ACTION_SWITCH_TO_USB
+                        action = AapService.ACTION_CHECK_USB
                     })
                 }
             }
@@ -159,7 +192,7 @@ class HomeFragment : Fragment() {
                 view = view,
                 targetName = "iPhone (CarPlay)",
                 protocol = "CarPlay",
-                transportLabel = if (app.settings.wifiConnectionMode == 0) "🔗 Conectando por cable" else "🔗 Conectando sin cables",
+                transportLabel = if (!app.settings.wifi5gEnabled && !app.settings.hotspotModeEnabled) "🔗 Conectando por cable / Bluetooth" else "🔗 Conectando sin cables",
             )
             carPlayLaunchJob?.cancel()
             carPlayLaunchJob = viewLifecycleOwner.lifecycleScope.launch {
@@ -170,56 +203,97 @@ class HomeFragment : Fragment() {
             }
         }
 
-        view.findViewById<View>(R.id.mode_btn_wifi_direct)?.setOnClickListener {
-            app.settings.wifiConnectionMode = 3
-            app.settings.nativeApTransport = 0
-            if (!WirelessScopePolicy.allowsWireless(app.settings.connectionModes)) {
-                app.settings.connectionModes = app.settings.connectionModes + Settings.ConnectionMode.WIFI
-            }
-            ensureCarWifiEnabled()
-            ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
-                action = AapService.ACTION_START_WIRELESS
-            })
-            updateConnectionModeButtons(view)
-            rebuildRecentDevicesRow(view)
-        }
-
-        view.findViewById<View>(R.id.mode_btn_hotspot)?.setOnClickListener {
-            app.settings.wifiConnectionMode = 1
-            if (!WirelessScopePolicy.allowsWireless(app.settings.connectionModes)) {
-                app.settings.connectionModes = app.settings.connectionModes + Settings.ConnectionMode.WIFI
-            }
-            ensureCarWifiEnabled()
-            ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
-                action = AapService.ACTION_START_WIRELESS_SCAN
-            })
-            updateConnectionModeButtons(view)
-            rebuildRecentDevicesRow(view)
-        }
-
-        view.findViewById<View>(R.id.mode_btn_usb)?.setOnClickListener {
-            if (app.commManager.isConnected && app.commManager.isWirelessSession) {
-                showUsbSwitchDialog("Modo Cable USB")
-            } else {
-                app.settings.wifiConnectionMode = 0
-                ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
-                    action = AapService.ACTION_SWITCH_TO_USB
-                })
+        // Casilla 1: Bluetooth Companion (independiente, nunca enciende Wi-Fi 5G)
+        view.findViewById<View>(R.id.mode_btn_bt_companion)?.apply {
+            setOnClickListener {
+                val next = !app.settings.btCompanionEnabled
+                app.settings.btCompanionEnabled = next
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.setBluetoothEnabled(requireContext(), next)
+                if (!next && manualConnectingActive && connectingProtocol == "Solo Bluetooth") {
+                    manualConnectingActive = false
+                }
                 updateConnectionModeButtons(view)
+                refreshHeroState(view)
                 rebuildRecentDevicesRow(view)
             }
+            setOnLongClickListener {
+                showBluetoothCompanionDialog(view)
+                true
+            }
         }
 
-        view.findViewById<View>(R.id.mode_btn_bt_companion)?.setOnClickListener {
-            app.settings.wifiConnectionMode = 4
-            com.headqlink.unit.bridgehost.CompanionBridgeHost.start(requireContext())
-            ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
-                action = AapService.ACTION_SWITCH_TO_USB
-            })
+        // Casilla 2: Wi-Fi 5 GHz (Android Auto sin cables) — desmarcar apaga 5 GHz de inmediato
+        view.findViewById<View>(R.id.mode_btn_wifi_direct)?.setOnClickListener {
+            val next = !app.settings.wifi5gEnabled
+            app.settings.wifi5gEnabled = next
+            if (next) {
+                app.settings.nativeApTransport = 0
+                ensureCarWifiEnabled()
+                ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
+                    action = AapService.ACTION_START_WIRELESS
+                })
+            } else {
+                if (app.commManager.isConnected && app.commManager.isWirelessSession) {
+                    app.commManager.disconnect(sendByeBye = true, isUserExit = true)
+                }
+                if (manualConnectingActive && connectingProtocol == "Android Auto") {
+                    manualConnectingActive = false
+                }
+                ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
+                    action = AapService.ACTION_START_WIRELESS
+                })
+            }
+            com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
             updateConnectionModeButtons(view)
             refreshHeroState(view)
             rebuildRecentDevicesRow(view)
-            showBluetoothCompanionDialog(view)
+        }
+
+        // Casilla 3: Hotspot Móvil — desmarcar detiene búsqueda Wi-Fi de inmediato
+        view.findViewById<View>(R.id.mode_btn_hotspot)?.setOnClickListener {
+            val next = !app.settings.hotspotModeEnabled
+            app.settings.hotspotModeEnabled = next
+            if (next) {
+                ensureCarWifiEnabled()
+                ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
+                    action = AapService.ACTION_START_WIRELESS_SCAN
+                })
+            } else {
+                if (app.commManager.isConnected && app.commManager.isWirelessSession) {
+                    app.commManager.disconnect(sendByeBye = true, isUserExit = true)
+                }
+                if (manualConnectingActive && connectingProtocol == "Android Auto") {
+                    manualConnectingActive = false
+                }
+                ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
+                    action = AapService.ACTION_START_WIRELESS
+                })
+            }
+            com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
+            updateConnectionModeButtons(view)
+            refreshHeroState(view)
+            rebuildRecentDevicesRow(view)
+        }
+
+        // Casilla 4: Cable USB — si se desmarca, el puerto USB solo carga batería sin lanzar Android Auto
+        view.findViewById<View>(R.id.mode_btn_usb)?.setOnClickListener {
+            val next = !app.settings.usbModeEnabled
+            app.settings.usbModeEnabled = next
+            if (next) {
+                if (!app.commManager.isConnected) {
+                    ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
+                        action = AapService.ACTION_CHECK_USB
+                    })
+                }
+            } else {
+                if (app.commManager.isConnected && !app.commManager.isWirelessSession) {
+                    app.commManager.disconnect(sendByeBye = true, isUserExit = true)
+                }
+            }
+            com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
+            updateConnectionModeButtons(view)
+            refreshHeroState(view)
+            rebuildRecentDevicesRow(view)
         }
 
         view.findViewById<View>(R.id.extended_mode_toggle_button)?.setOnClickListener {
@@ -228,6 +302,7 @@ class HomeFragment : Fragment() {
 
         view.findViewById<View>(R.id.extended_hub_button)?.setOnClickListener {
             activeDialog?.dismiss()
+            isBtCompanionDialogOpen = false
             activeDialog = ExtendedHubView.showDialog(requireContext())
         }
 
@@ -250,6 +325,7 @@ class HomeFragment : Fragment() {
 
         view.findViewById<View>(R.id.home_usb_updater_button)?.setOnClickListener {
             activeDialog?.dismiss()
+            isBtCompanionDialogOpen = false
             activeDialog = com.headqlink.unit.extended.OtaSelfUpdater.showDialog(requireContext()) {
                 val opened = com.headqlink.unit.files.CarFiles.open(requireContext())
                 if (!opened) {
@@ -271,6 +347,7 @@ class HomeFragment : Fragment() {
                 com.headqlink.unit.extended.OtaSelfUpdater.installApkFile(requireContext(), candidate.file)
             } else {
                 activeDialog?.dismiss()
+                isBtCompanionDialogOpen = false
                 activeDialog = com.headqlink.unit.extended.OtaSelfUpdater.showDialog(requireContext()) {
                     val opened = com.headqlink.unit.files.CarFiles.open(requireContext())
                     if (!opened) {
@@ -289,7 +366,7 @@ class HomeFragment : Fragment() {
         rebuildRecentDevicesRow(view)
         refreshHeroState(view)
         view.findViewById<TextView>(R.id.home_version_badge)?.text =
-            "C10 EDITION · v${com.andrerinas.openheadunit.BuildConfig.VERSION_NAME}"
+            "C10 · v${com.andrerinas.openheadunit.BuildConfig.VERSION_NAME} · por CharlysEV"
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -352,7 +429,7 @@ class HomeFragment : Fragment() {
                         val snap = LeapVehicleDataSource.snapshot(allowDemoFallback = false)
                         if (snap.hasBatteryData) {
                             subtitleView?.text =
-                                "LEAPMOTOR C10 EN VIVO  ·  BATERÍA ${snap.socPct.roundToInt()}% (${snap.effectiveRangeKm.roundToInt()} KM)  ·  MODO ${snap.driveModeLabel().uppercase()}"
+                                "LEAPMOTOR C10 EN VIVO  ·  BATERÍA ${snap.socPct.roundToInt()}% (${snap.effectiveRangeKm.roundToInt()} KM)  ·  MODO ${snap.driveModeLabel().uppercase()}  ·  POR CHARLYSEV"
                         }
 
                         val pageLabel = when (com.andrerinas.openheadunit.cluster.ClusterMapController.currentPage) {
@@ -406,11 +483,12 @@ class HomeFragment : Fragment() {
     }
 
     private fun currentTransportConnectingLabel(): String {
-        return when (app.settings.wifiConnectionMode) {
-            0 -> "🔗 Conectando por cable"
-            4 -> "🔵 Modo 4 · Solo Bluetooth Companion"
-            1, 2 -> "🔗 Conectando por Hotspot"
-            else -> "🔗 Conectando por Wi-Fi 5 GHz"
+        val s = app.settings
+        return when {
+            s.wifi5gEnabled -> "🔗 Conectando por Wi-Fi 5 GHz"
+            s.hotspotModeEnabled -> "🔗 Conectando por Hotspot Móvil"
+            s.btCompanionEnabled -> "🔵 Conectando solo por Bluetooth Companion"
+            else -> "🔗 Conectando por Cable USB"
         }
     }
 
@@ -458,7 +536,10 @@ class HomeFragment : Fragment() {
 
     private fun tryConnectSystemBluetoothDevice(device: BluetoothDevice) {
         runCatching {
-            com.headqlink.unit.bridgehost.CompanionBridgeHost.start(requireContext())
+            if (app.settings.btCompanionEnabled) {
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.setBluetoothEnabled(requireContext(), true)
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.wakeNow()
+            }
             val m = device.javaClass.getMethod("connect")
             m.isAccessible = true
             m.invoke(device)
@@ -474,34 +555,64 @@ class HomeFragment : Fragment() {
         val title = view.findViewById<TextView>(R.id.connection_status)
         val sub = view.findViewById<TextView>(R.id.hero_subtitle_text)
         val wifiBtn = view.findViewById<MaterialButton>(R.id.wifi_button)
+        val companionBtn = view.findViewById<MaterialButton>(R.id.companion_pair_button)
         val cpBtn = view.findViewById<MaterialButton>(R.id.carplay_button)
         val usbBtn = view.findViewById<MaterialButton>(R.id.usb_button)
         val cancelBtn = view.findViewById<MaterialButton>(R.id.hero_cancel_button)
         val ring = view.findViewById<ConnectionRingView>(R.id.connection_ring_view)
 
+        val s = app.settings
         val accent = com.headqlink.unit.extended.QonectaTheme.accent
         val okGreen = 0xFF3AD29F.toInt()
         pill?.setTextColor(accent)
 
         val btStatus = com.headqlink.unit.bridgehost.CompanionBridgeHost.status()
         val aclConnectedPair = firstConnectedBondedPhone()
-        val isBtOnlyMode = app.settings.wifiConnectionMode == 4
-        val btConnectedInMode4 = isBtOnlyMode && (btStatus.isConnected || aclConnectedPair != null)
+        val wirelessAaEnabled = s.wifi5gEnabled || s.hotspotModeEnabled
+        val isPureBtSelected = s.btCompanionEnabled && !wirelessAaEnabled
+        val btConnectedPure = isPureBtSelected && (btStatus.isConnected || aclConnectedPair != null)
 
-        if (btConnectedInMode4 && manualConnectingActive && connectingProtocol == "Solo Bluetooth") {
+        if (btConnectedPure && manualConnectingActive && connectingProtocol == "Solo Bluetooth") {
             manualConnectingActive = false
+        }
+
+        // Actualizar etiqueta del botón Companion siempre en vivo
+        companionBtn?.apply {
+            when {
+                btStatus.isConnected -> {
+                    val via = btStatus.connectedDevices.firstOrNull()?.second ?: "BT"
+                    text = "🔵 Companion ($via ✓)"
+                    strokeColor = android.content.res.ColorStateList.valueOf(okGreen)
+                    setTextColor(okGreen)
+                }
+                btStatus.pairedCount > 0 -> {
+                    text = "🔵 Ajustes Companion"
+                    strokeColor = android.content.res.ColorStateList.valueOf(accent)
+                    setTextColor(accent)
+                }
+                else -> {
+                    text = "🔑 Vincular Companion"
+                    strokeColor = android.content.res.ColorStateList.valueOf(0xFFFFB547.toInt())
+                    setTextColor(0xFFFFB547.toInt())
+                }
+            }
         }
 
         when {
             app.commManager.isConnected -> {
-                val devName = app.settings.autoStartBluetoothDeviceName?.takeIf { it.isNotBlank() } ?: "tu móvil"
+                val devName = s.autoStartBluetoothDeviceName.takeIf { it.isNotBlank() } ?: "tu móvil"
                 pill?.setTextColor(okGreen)
                 pill?.text = "●  CONECTADO"
-                badge?.text = if (app.commManager.isWirelessSession) "🔗 Enlace 5 GHz activo" else "🔗 Enlace USB activo"
+                badge?.text = if (app.commManager.isWirelessSession) {
+                    if (s.hotspotModeEnabled) "📲 Enlace Hotspot Wi-Fi activo" else "📡 Enlace Wi-Fi 5 GHz activo"
+                } else {
+                    "🔌 Enlace Cable USB activo"
+                }
                 title?.text = "Conectado a $devName"
                 sub?.text = "Sesión de proyección activa. Toca «Abrir proyección» para volver a la pantalla completa."
                 wifiBtn?.visibility = View.VISIBLE
                 wifiBtn?.text = getString(R.string.da_open)
+                companionBtn?.visibility = View.VISIBLE
                 cpBtn?.visibility = View.VISIBLE
                 usbBtn?.visibility = View.GONE
                 cancelBtn?.visibility = View.GONE
@@ -510,34 +621,35 @@ class HomeFragment : Fragment() {
                 ring?.protocolTitle = "Android Auto"
                 ring?.subtitleText = "En proyección"
             }
-            btConnectedInMode4 && !manualConnectingActive -> {
+            btConnectedPure && !manualConnectingActive -> {
                 val btDevName = btStatus.connectedDevices.firstOrNull()?.first
                     ?: aclConnectedPair?.second
-                    ?: app.settings.autoStartBluetoothDeviceName?.takeIf { it.isNotBlank() }
+                    ?: s.autoStartBluetoothDeviceName.takeIf { it.isNotBlank() }
                     ?: "tu móvil"
                 pill?.setTextColor(okGreen)
-                pill?.text = "●  CONECTADO POR BLUETOOTH"
+                pill?.text = "●  SOLO BLUETOOTH ACTIVO"
                 badge?.text = if (btStatus.isConnected) {
-                    "🔵 Modo 4 · Companion Bluetooth Activo (Sin Wi-Fi)"
+                    "🔵 Companion Bluetooth conectado (Wi-Fi 5 GHz apagado)"
                 } else {
-                    "🔵 Modo 4 · Bluetooth del coche conectado"
+                    "🔵 Bluetooth del coche conectado · Wi-Fi 5 GHz apagado"
                 }
                 title?.text = "Conectado a $btDevName"
                 sub?.text = if (btStatus.isConnected) {
-                    "Sincronizando viajes, tarifas, telemetría C10, rutas a Google Maps y datos por Bluetooth. Toca «Proyectar Android Auto» si quieres pantalla completa."
+                    "Sincronizando viajes, tarifas, telemetría C10, rutas a Google Maps y datos por Bluetooth sin encender Wi-Fi 5 GHz."
                 } else {
-                    "Enlace Bluetooth con $btDevName activo. Abre Qonecta Unit Companion en el móvil para sincronizar viajes y tarifas."
+                    "Bluetooth enlazado con $btDevName sin Wi-Fi 5 GHz. Abre Qonecta Companion en el móvil para sincronizar."
                 }
                 wifiBtn?.visibility = View.VISIBLE
-                wifiBtn?.text = "✨ Proyectar Android Auto (5 GHz)"
+                wifiBtn?.text = if (btStatus.isConnected) "🔄 Sincronizar Bluetooth" else "🔵 Conectar Companion BT"
+                companionBtn?.visibility = View.VISIBLE
                 cpBtn?.visibility = View.VISIBLE
-                usbBtn?.visibility = View.VISIBLE
-                usbBtn?.text = "🔵 Ajustes Bluetooth"
+                usbBtn?.visibility = if (s.usbModeEnabled) View.VISIBLE else View.GONE
+                usbBtn?.text = "Cable USB"
                 cancelBtn?.visibility = View.GONE
 
                 ring?.state = ConnectionRingView.State.CONNECTED
                 ring?.protocolTitle = "Solo Bluetooth"
-                ring?.subtitleText = if (btStatus.isConnected) "Companion activo" else "BT conectado"
+                ring?.subtitleText = if (btStatus.isConnected) "Sin Wi-Fi 5G ✓" else "BT conectado"
             }
             manualConnectingActive -> {
                 val elapsedSec = ((SystemClock.elapsedRealtime() - connectingStartElapsedMs) / 1000L).toInt().coerceAtLeast(0)
@@ -551,11 +663,12 @@ class HomeFragment : Fragment() {
                 badge?.text = connectingTransportLabel
                 title?.text = "Conectando a $connectingTargetName"
                 sub?.text = if (connectingProtocol == "Solo Bluetooth") {
-                    "Enlazando Bluetooth del coche y Qonecta Companion con $connectingTargetName…"
+                    "Enlazando solo por Bluetooth con $connectingTargetName (sin activar Wi-Fi 5 GHz)…"
                 } else {
                     "Mantén el móvil desbloqueado. Suele tardar unos segundos."
                 }
                 wifiBtn?.visibility = View.GONE
+                companionBtn?.visibility = View.GONE
                 cpBtn?.visibility = View.GONE
                 usbBtn?.visibility = View.GONE
                 cancelBtn?.visibility = View.VISIBLE
@@ -578,40 +691,59 @@ class HomeFragment : Fragment() {
                 val companionDev = btStatus.connectedDevices.firstOrNull()?.first
                 if (companionDev != null) {
                     pill?.setTextColor(okGreen)
-                    pill?.text = "●  BLUETOOTH COMPANION ACTIVO"
-                    badge?.text = when (app.settings.wifiConnectionMode) {
-                        0 -> "🔌 Modo 3 · Cable USB  ·  🔵 Companion BT conectado"
-                        1, 2 -> "📲 Modo 2 · Hotspot Móvil  ·  🔵 Companion BT conectado"
-                        else -> "📡 Modo 1 · Wi-Fi 5 GHz  ·  🔵 Companion BT conectado"
+                    pill?.text = "●  COMPANION SINCRONIZADO"
+                    badge?.text = when {
+                        s.wifi5gEnabled -> "📡 Wi-Fi 5 GHz listo  ·  🔵 Companion conectado"
+                        s.hotspotModeEnabled -> "📲 Hotspot Móvil listo  ·  🔵 Companion conectado"
+                        s.usbModeEnabled -> "🔌 Cable USB listo  ·  🔵 Companion conectado"
+                        else -> "🔵 Solo Bluetooth Companion conectado"
                     }
-                    title?.text = "$companionDev listo (BT)"
-                    sub?.text = "Viajes, tarifas y rutas conectados por Bluetooth. Toca «Conectar sin cables» o tu móvil abajo para iniciar Android Auto."
+                    title?.text = "$companionDev sincronizado"
+                    sub?.text = if (wirelessAaEnabled) {
+                        "Viajes, tarifas y rutas activos. Toca «Conectar Android Auto» o desmarca Wi-Fi 5 GHz si prefieres solo Bluetooth."
+                    } else {
+                        "Conectado por Bluetooth limpio (Wi-Fi 5 GHz desmarcado)."
+                    }
                 } else {
                     pill?.text = "●  LISTO"
-                    badge?.text = when (app.settings.wifiConnectionMode) {
-                        0 -> "🔌 Modo 3 · Proyección por Cable USB"
-                        4 -> "🔵 Modo 4 · Solo Bluetooth Companion"
-                        1, 2 -> "📲 Modo 2 · Hotspot del Móvil + Android Auto"
-                        else -> "📡 Modo 1 · Android Auto Inalámbrico 5 GHz"
+                    badge?.text = when {
+                        s.wifi5gEnabled -> "📡 Wi-Fi 5 GHz marcado" + if (s.btCompanionEnabled) " + 🔵 BT" else ""
+                        s.hotspotModeEnabled -> "📲 Hotspot Móvil marcado" + if (s.btCompanionEnabled) " + 🔵 BT" else ""
+                        s.btCompanionEnabled -> "🔵 Solo Bluetooth marcado (Sin Wi-Fi 5 GHz)"
+                        s.usbModeEnabled -> "🔌 Solo Cable USB marcado (Sin Wi-Fi)"
+                        else -> "⏸ Ninguna opción marcada — elige abajo qué activar"
                     }
                     title?.text = "Conecta tu móvil"
-                    sub?.text = "Elige el modo de conexión abajo o toca directamente tu teléfono vinculado para iniciar."
+                    sub?.text = when {
+                        isPureBtSelected -> "Wi-Fi 5 GHz está desmarcado: al conectar usarás únicamente Bluetooth limpio con Qonecta Companion."
+                        wirelessAaEnabled -> "Marca o desmarca abajo las conexiones que quieras usar, o toca tu móvil vinculado."
+                        s.usbModeEnabled -> "Conecta el cable USB para proyectar, o marca Bluetooth / Wi-Fi abajo."
+                        else -> "Marca al menos una casilla abajo (por ejemplo ☑ Bluetooth o ☑ Wi-Fi 5 GHz)."
+                    }
                 }
                 wifiBtn?.visibility = View.VISIBLE
-                wifiBtn?.text = "✨ Conectar sin cables"
+                wifiBtn?.text = when {
+                    wirelessAaEnabled -> "✨ Conectar Android Auto"
+                    s.btCompanionEnabled && btStatus.pairedCount == 0 -> "🔑 Vincular Bluetooth (6 cifras)"
+                    s.btCompanionEnabled -> "🔵 Conectar solo Bluetooth"
+                    s.usbModeEnabled -> "🔌 Conectar por Cable USB"
+                    else -> "☑ Elige una opción abajo"
+                }
+                companionBtn?.visibility = View.VISIBLE
                 cpBtn?.visibility = View.VISIBLE
-                usbBtn?.visibility = View.VISIBLE
-                usbBtn?.text = if (isBtOnlyMode) "🔵 Ajustes Bluetooth" else "🔌 Conectar por USB"
+                usbBtn?.visibility = if (s.usbModeEnabled && (wirelessAaEnabled || s.btCompanionEnabled)) View.VISIBLE else View.GONE
+                usbBtn?.text = "Cable USB"
                 cancelBtn?.visibility = View.GONE
 
                 ring?.state = if (companionDev != null) ConnectionRingView.State.CONNECTED else ConnectionRingView.State.IDLE
-                ring?.protocolTitle = when (app.settings.wifiConnectionMode) {
-                    0 -> "Cable USB"
-                    4 -> "Solo Bluetooth"
-                    1, 2 -> "Hotspot Móvil"
-                    else -> "Wi-Fi 5 GHz"
+                ring?.protocolTitle = when {
+                    s.wifi5gEnabled -> "Wi-Fi 5 GHz"
+                    s.hotspotModeEnabled -> "Hotspot Móvil"
+                    s.btCompanionEnabled -> "Solo Bluetooth"
+                    s.usbModeEnabled -> "Cable USB"
+                    else -> "En pausa"
                 }
-                ring?.subtitleText = if (companionDev != null) "BT activo · Toca AA" else "Toca para conectar"
+                ring?.subtitleText = if (companionDev != null) "Sincronizado ✓" else "Toca para conectar"
             }
         }
     }
@@ -631,9 +763,11 @@ class HomeFragment : Fragment() {
             }
         }.getOrDefault(emptyList())
 
-        val savedName = app.settings.autoStartBluetoothDeviceName?.takeIf { it.isNotBlank() }
+        val s = app.settings
+        val savedName = s.autoStartBluetoothDeviceName.takeIf { it.isNotBlank() }
         val btStatus = com.headqlink.unit.bridgehost.CompanionBridgeHost.status()
-        val isBtOnly = app.settings.wifiConnectionMode == 4
+        val wirelessAaEnabled = s.wifi5gEnabled || s.hotspotModeEnabled
+        val isPureBt = s.btCompanionEnabled && !wirelessAaEnabled
 
         if (bonded.isNotEmpty()) {
             bonded.take(3).forEachIndexed { index, dev ->
@@ -644,8 +778,12 @@ class HomeFragment : Fragment() {
                 val protocolTag = when {
                     name.contains("iPhone", ignoreCase = true) ->
                         if (aclConnected) "● CarPlay · Bluetooth conectado" else "● CarPlay · Toca para conectar"
-                    isBtOnly && (btStatus.isConnected || aclConnected) ->
-                        "● Conectado por Solo Bluetooth ✓"
+                    isPureBt && btStatus.isConnected ->
+                        "● Solo Bluetooth · Companion conectado ✓"
+                    isPureBt && aclConnected ->
+                        "● Solo Bluetooth · Enlazado sin Wi-Fi 5G ✓"
+                    isPureBt ->
+                        "● Solo Bluetooth · Toca para conectar sin 5G"
                     btStatus.isConnected && index == 0 ->
                         "● Companion BT activo · Toca para Android Auto"
                     aclConnected ->
@@ -663,20 +801,14 @@ class HomeFragment : Fragment() {
                 )
             }
         } else {
-            val defaultPhoneName = savedName ?: "Móvil Android (Sin cables)"
+            val defaultPhoneName = savedName ?: if (isPureBt) "Móvil Android (Solo Bluetooth)" else "Móvil Android"
             container.addView(
                 createRecentDeviceCard(
                     title = defaultPhoneName,
-                    subtitle = "● Android Auto · Wi-Fi 5 GHz + Bluetooth",
+                    subtitle = if (isPureBt) "● Solo Bluetooth Companion (sin Wi-Fi 5 GHz)" else "● Android Auto + Bluetooth Companion",
                     highlighted = !manualConnectingActive || connectingProtocol == "Android Auto",
                     onClick = {
-                        beginConnectingUi(
-                            view = view,
-                            targetName = defaultPhoneName,
-                            protocol = "Android Auto",
-                            transportLabel = currentTransportConnectingLabel(),
-                        )
-                        startWirelessScanOrDevice(null, defaultPhoneName)
+                        startPrimaryConnection()
                     },
                 )
             )
@@ -778,12 +910,17 @@ class HomeFragment : Fragment() {
         return card
     }
 
-    private fun startPrimaryWirelessConnection() {
+    /**
+     * Respeta estrictamente las casillas marcadas por el usuario:
+     * - Si Wi-Fi 5 GHz y Hotspot están desmarcados y Bluetooth está marcado -> conecta SOLO Bluetooth (cero 5 GHz).
+     * - Si Wi-Fi 5 GHz o Hotspot están marcados -> conecta Android Auto inalámbrico.
+     * - Si solo Cable USB está marcado -> comprueba el puerto USB.
+     */
+    private fun startPrimaryConnection() {
         val root = view ?: return
-        // Al pulsar "Conectar sin cables" o "Proyectar Android Auto", salimos siempre de Modo USB (0) o Solo BT (4) a Wi-Fi 5 GHz (3)
-        if (app.settings.wifiConnectionMode == 0 || app.settings.wifiConnectionMode == 4) {
-            app.settings.wifiConnectionMode = 3
-        }
+        val s = app.settings
+        val wirelessAaEnabled = s.wifi5gEnabled || s.hotspotModeEnabled
+
         val adapter = BluetoothHelper.getBluetoothAdapter(requireContext())
         val bonded = runCatching {
             if (adapter != null && adapter.isEnabled) {
@@ -793,8 +930,64 @@ class HomeFragment : Fragment() {
             }
         }.getOrDefault(emptyList())
 
-        val savedName = app.settings.autoStartBluetoothDeviceName
+        val savedName = s.autoStartBluetoothDeviceName
         val preferred = bonded.firstOrNull { (it.name ?: "") == savedName } ?: bonded.firstOrNull()
+
+        if (!wirelessAaEnabled) {
+            if (s.btCompanionEnabled) {
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.setBluetoothEnabled(requireContext(), true)
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.wakeNow()
+                val btStatus = com.headqlink.unit.bridgehost.CompanionBridgeHost.status()
+                if (btStatus.pairedCount == 0 && !btStatus.isConnected) {
+                    com.headqlink.unit.bridgehost.CompanionBridgeHost.startPairing(requireContext())
+                    showBluetoothCompanionDialog(root)
+                    return
+                }
+                if (preferred != null) {
+                    val devName = preferred.name ?: preferred.address
+                    tryConnectSystemBluetoothDevice(preferred)
+                    if (btStatus.isConnected) {
+                        com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
+                        android.widget.Toast.makeText(
+                            requireContext(),
+                            "🔵 Sincronización Bluetooth enviada a $devName (Wi-Fi 5 GHz apagado).",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                        refreshHeroState(root)
+                    } else {
+                        beginConnectingUi(
+                            view = root,
+                            targetName = devName,
+                            protocol = "Solo Bluetooth",
+                            transportLabel = "🔵 Conectando solo por Bluetooth (sin 5 GHz)",
+                        )
+                    }
+                } else {
+                    showBluetoothCompanionDialog(root)
+                }
+                return
+            }
+
+            if (s.usbModeEnabled) {
+                beginConnectingUi(
+                    view = root,
+                    targetName = "móvil por Cable USB",
+                    protocol = "Android Auto",
+                    transportLabel = "🔗 Conectando por cable",
+                )
+                ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
+                    action = AapService.ACTION_CHECK_USB
+                })
+                return
+            }
+
+            android.widget.Toast.makeText(
+                requireContext(),
+                "Marca primero una casilla de conexión abajo (por ejemplo ☑ Bluetooth o ☑ Wi-Fi 5 GHz).",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            return
+        }
 
         if (preferred != null) {
             val devName = preferred.name ?: preferred.address
@@ -807,7 +1000,7 @@ class HomeFragment : Fragment() {
             )
             startWirelessScanOrDevice(preferred, devName)
         } else {
-            val target = savedName?.takeIf { it.isNotBlank() } ?: "tu móvil Android"
+            val target = savedName.takeIf { it.isNotBlank() } ?: "tu móvil Android"
             beginConnectingUi(
                 view = root,
                 targetName = target,
@@ -827,7 +1020,7 @@ class HomeFragment : Fragment() {
                 view = root,
                 targetName = devName,
                 protocol = "CarPlay",
-                transportLabel = if (app.settings.wifiConnectionMode == 0) "🔗 Conectando por cable" else "🔗 Conectando sin cables",
+                transportLabel = if (!app.settings.wifi5gEnabled && !app.settings.hotspotModeEnabled) "🔗 Conectando por cable / Bluetooth" else "🔗 Conectando sin cables",
             )
             carPlayLaunchJob?.cancel()
             carPlayLaunchJob = viewLifecycleOwner.lifecycleScope.launch {
@@ -839,25 +1032,42 @@ class HomeFragment : Fragment() {
             return
         }
 
-        // Si el usuario está en Modo 4 (Solo Bluetooth), conectamos el enlace Bluetooth sin forzar Wi-Fi Direct
-        if (app.settings.wifiConnectionMode == 4) {
-            val btConnected = com.headqlink.unit.bridgehost.CompanionBridgeHost.isConnected || isBtDeviceAclConnected(device)
+        val s = app.settings
+        val wirelessAaEnabled = s.wifi5gEnabled || s.hotspotModeEnabled
+
+        // Si Wi-Fi 5 GHz y Hotspot están desmarcados, NUNCA encendemos 5 GHz: conectamos solo Bluetooth limpio
+        if (!wirelessAaEnabled) {
+            if (!s.btCompanionEnabled) {
+                s.btCompanionEnabled = true
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.setBluetoothEnabled(requireContext(), true)
+            }
+            val btStatus = com.headqlink.unit.bridgehost.CompanionBridgeHost.status()
+            if (btStatus.pairedCount == 0 && !btStatus.isConnected) {
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.startPairing(requireContext())
+                updateConnectionModeButtons(root)
+                refreshHeroState(root)
+                rebuildRecentDevicesRow(root)
+                showBluetoothCompanionDialog(root)
+                return
+            }
+            val btConnected = btStatus.isConnected || isBtDeviceAclConnected(device)
             if (btConnected) {
                 manualConnectingActive = false
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
                 updateConnectionModeButtons(root)
                 refreshHeroState(root)
                 rebuildRecentDevicesRow(root)
                 android.widget.Toast.makeText(
                     requireContext(),
-                    "🔵 Conectado por Solo Bluetooth a $devName. Toca «Proyectar Android Auto» arriba si quieres pantalla completa.",
-                    android.widget.Toast.LENGTH_LONG,
+                    "🔵 Conectado solo por Bluetooth a $devName (sin Wi-Fi 5 GHz).",
+                    android.widget.Toast.LENGTH_SHORT,
                 ).show()
             } else {
                 beginConnectingUi(
                     view = root,
                     targetName = devName,
                     protocol = "Solo Bluetooth",
-                    transportLabel = "🔵 Modo 4 · Conectando Bluetooth",
+                    transportLabel = "🔵 Conectando solo por Bluetooth (sin 5 GHz)",
                 )
             }
             return
@@ -873,21 +1083,17 @@ class HomeFragment : Fragment() {
     }
 
     private fun startWirelessScanOrDevice(device: BluetoothDevice?, devName: String) {
-        app.settings.autoStartBluetoothDeviceName = devName
-        if (app.settings.wifiConnectionMode == 0 || app.settings.wifiConnectionMode == 4) {
-            app.settings.wifiConnectionMode = 3
-        }
+        val s = app.settings
+        s.autoStartBluetoothDeviceName = devName
+        if (!s.wifi5gEnabled && !s.hotspotModeEnabled) return
         ensureCarWifiEnabled()
-        if (!WirelessScopePolicy.allowsWireless(app.settings.connectionModes)) {
-            app.settings.connectionModes = app.settings.connectionModes + Settings.ConnectionMode.WIFI
-        }
         com.andrerinas.openheadunit.cluster.ClusterMapController.notifyConnecting(
             requireContext(),
             devName,
             "Android Auto Inalámbrico",
             com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.ANDROID_AUTO,
         )
-        if (app.settings.wifiConnectionMode == 1 || device == null) {
+        if (s.hotspotModeEnabled || device == null) {
             ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
                 action = AapService.ACTION_START_WIRELESS_SCAN
             })
@@ -943,72 +1149,93 @@ class HomeFragment : Fragment() {
 
     private fun updateConnectionModeButtons(view: View) {
         val s = app.settings
-        val mode = s.wifiConnectionMode
+        val btOn = s.btCompanionEnabled
+        val wifi5gOn = s.wifi5gEnabled
+        val hotspotOn = s.hotspotModeEnabled
+        val usbOn = s.usbModeEnabled
+
         val wm = requireContext().applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
         val wifiEnabled = wm?.isWifiEnabled == true
         val wifiBanner = view.findViewById<View>(R.id.wifi_conflict_banner)
-        val needsWifi = (mode == 3 || mode == 1 || mode == 2)
+        val needsWifi = wifi5gOn || hotspotOn
         wifiBanner?.visibility = if (needsWifi && !wifiEnabled) View.VISIBLE else View.GONE
 
         val themeAccent = com.headqlink.unit.extended.QonectaTheme.accent
         val themeOnAccent = com.headqlink.unit.extended.QonectaTheme.onAccent
         val surfaceTop = 0xFF17202C.toInt()
-        val textNormal = 0xFFEAF2F7.toInt()
+        val textDim = 0xFFAEC0D2.toInt()
         val outline = 0xFF243140.toInt()
         val okGreen = 0xFF3AD29F.toInt()
 
-        fun styleModeBtn(btn: MaterialButton?, active: Boolean, activeColor: Int = themeAccent, activeText: Int = themeOnAccent) {
+        fun styleCheckBtn(btn: MaterialButton?, checked: Boolean, activeColor: Int = themeAccent, activeText: Int = themeOnAccent) {
             btn ?: return
-            if (active) {
+            if (checked) {
                 btn.backgroundTintList = android.content.res.ColorStateList.valueOf(activeColor)
                 btn.setTextColor(activeText)
                 btn.strokeColor = android.content.res.ColorStateList.valueOf(activeColor)
             } else {
                 btn.backgroundTintList = android.content.res.ColorStateList.valueOf(surfaceTop)
-                btn.setTextColor(textNormal)
+                btn.setTextColor(textDim)
                 btn.strokeColor = android.content.res.ColorStateList.valueOf(outline)
             }
         }
 
-        val isWifiDirect = mode == 3
-        val isHotspot = mode == 1 || mode == 2
-        val isUsb = mode == 0
-        val isBtOnly = mode == 4
-
-        styleModeBtn(view.findViewById(R.id.mode_btn_wifi_direct), isWifiDirect)
-        styleModeBtn(view.findViewById(R.id.mode_btn_hotspot), isHotspot)
-        styleModeBtn(view.findViewById(R.id.mode_btn_usb), isUsb)
-
         val btStatus = com.headqlink.unit.bridgehost.CompanionBridgeHost.status()
         val btConnected = btStatus.isConnected
         val btDataOn = com.headqlink.unit.bridgehost.CompanionBridgeHost.useBluetoothDataBridge
+
         val btBtn = view.findViewById<MaterialButton>(R.id.mode_btn_bt_companion)
-        if (btConnected) {
-            val devName = btStatus.connectedDevices.firstOrNull()?.first?.take(12) ?: "Móvil"
-            btBtn?.text = "🔵 4. BT: $devName\nViajes, Tarifas y Rutas"
-            styleModeBtn(btBtn, true, activeColor = okGreen, activeText = 0xFF06131A.toInt())
+        if (btOn) {
+            if (btConnected) {
+                val devName = btStatus.connectedDevices.firstOrNull()?.first?.take(11) ?: "Móvil"
+                btBtn?.text = "☑ 🔵 BT: $devName\nDatos y Viajes activo"
+                styleCheckBtn(btBtn, true, activeColor = okGreen, activeText = 0xFF06131A.toInt())
+            } else {
+                btBtn?.text = if (btStatus.pairedCount > 0) "☑ 🔵 Bluetooth\nEn espera de móvil" else "☑ 🔵 Bluetooth\nToca «Vincular» arriba"
+                styleCheckBtn(btBtn, true)
+            }
         } else {
-            btBtn?.text = if (btStatus.pairedCount > 0) "🔵 4. BT (En espera)\nViajes, Tarifas y Rutas" else "🔵 4. BT Companion\nViajes, Tarifas y Rutas"
-            styleModeBtn(btBtn, isBtOnly)
+            btBtn?.text = "☐ 🔵 Bluetooth\nDesactivado"
+            styleCheckBtn(btBtn, false)
         }
 
-        val btSuffix = if (btConnected) {
-            " · Companion BT conectado (${if (btDataOn) "Datos BT ACTIVO" else "Rutas Maps"})"
-        } else {
-            " · Companion BT en espera"
+        val wifiBtn = view.findViewById<MaterialButton>(R.id.mode_btn_wifi_direct)
+        wifiBtn?.text = if (wifi5gOn) "☑ 📡 Wi-Fi 5 GHz\nAndroid Auto sin cables" else "☐ 📡 Wi-Fi 5 GHz\nApagado (sin 5 GHz)"
+        styleCheckBtn(wifiBtn, wifi5gOn)
+
+        val hotspotBtn = view.findViewById<MaterialButton>(R.id.mode_btn_hotspot)
+        hotspotBtn?.text = if (hotspotOn) "☑ 📲 Hotspot Móvil\nInternet al coche + AA" else "☐ 📲 Hotspot Móvil\nDesactivado"
+        styleCheckBtn(hotspotBtn, hotspotOn)
+
+        val usbBtn = view.findViewById<MaterialButton>(R.id.mode_btn_usb)
+        usbBtn?.text = if (usbOn) "☑ 🔌 Cable USB\nAA / CarPlay + Carga" else "☐ 🔌 Cable USB\nSolo carga batería"
+        styleCheckBtn(usbBtn, usbOn)
+
+        val activeList = mutableListOf<String>()
+        if (btOn) {
+            activeList.add(
+                if (btConnected) "🔵 Bluetooth Companion conectado (${if (btDataOn) "Datos BT ON" else "Rutas"})"
+                else "🔵 Bluetooth Companion listo"
+            )
         }
+        if (wifi5gOn) activeList.add("📡 Wi-Fi 5 GHz (Android Auto)")
+        if (hotspotOn) activeList.add("📲 Hotspot Móvil")
+        if (usbOn) activeList.add("🔌 Cable USB")
 
         val expView = view.findViewById<TextView>(R.id.mode_active_explanation)
         expView?.text = when {
-            isWifiDirect -> "📡 Modo 1 activo (Wi-Fi Direct 5 GHz): proyecta Android Auto sin cables entre el coche y el móvil$btSuffix."
-            isHotspot -> "📲 Modo 2 activo (Hotspot del Móvil): usa el Punto de Acceso Wi-Fi del móvil para dar internet al coche y Android Auto$btSuffix."
-            isBtOnly -> "🔵 Modo 4 activo (Solo Bluetooth Companion): sin Wi-Fi Direct; sincroniza viajes, tarifas, rutas y datos por Bluetooth$btSuffix."
-            else -> "🔌 Modo 3 activo (Cable USB): proyección directa por cable USB con carga simultánea del móvil$btSuffix."
+            btOn && !wifi5gOn && !hotspotOn ->
+                "✅ Modo Solo Bluetooth limpio activo: Wi-Fi 5 GHz está totalmente apagado (${activeList.joinToString(" + ")})."
+            activeList.isEmpty() ->
+                "⏸ Todas las opciones desmarcadas: el coche no iniciará ninguna conexión automática hasta que marques una casilla."
+            else ->
+                "Activas ahora: ${activeList.joinToString("  ·  ")}. (Toca cualquier casilla para marcar o desmarcar)."
         }
     }
 
     private fun showUsbSwitchDialog(deviceName: String) {
         activeDialog?.dismiss()
+        isBtCompanionDialogOpen = false
         val ctx = requireContext()
         val accent = com.headqlink.unit.extended.QonectaTheme.accent
         val onAccent = com.headqlink.unit.extended.QonectaTheme.onAccent
@@ -1033,7 +1260,7 @@ class HomeFragment : Fragment() {
         })
 
         root.addView(TextView(ctx).apply {
-            text = "Para usar la conexión por cable sin interferencias, ¿quieres cerrar la conexión Wi-Fi actual y cambiar directamente a Cable USB?"
+            text = "Para usar la conexión por cable sin interferencias, ¿quieres desmarcar Wi-Fi y cambiar directamente a Cable USB?"
             textSize = 20.5f
             setTextColor(0xFFBFD0E0.toInt())
             setLineSpacing(0f, 1.18f)
@@ -1075,7 +1302,7 @@ class HomeFragment : Fragment() {
         })
 
         val switchUsbBtn = TextView(ctx).apply {
-            text = "🔌 Cerrar Wi-Fi y usar Cable USB"
+            text = "🔌 Apagar Wi-Fi y usar Cable USB"
             textSize = 20f
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             setTextColor(onAccent)
@@ -1089,7 +1316,9 @@ class HomeFragment : Fragment() {
             setOnClickListener {
                 AapService.usbSwitchPrompt.value = null
                 dialog.dismiss()
-                app.settings.wifiConnectionMode = 0
+                app.settings.wifi5gEnabled = false
+                app.settings.hotspotModeEnabled = false
+                app.settings.usbModeEnabled = true
                 view?.let {
                     updateConnectionModeButtons(it)
                     beginConnectingUi(
@@ -1115,9 +1344,14 @@ class HomeFragment : Fragment() {
 
     private fun showBluetoothCompanionDialog(rootView: View) {
         activeDialog?.dismiss()
+        isBtCompanionDialogOpen = true
         val ctx = requireContext()
-        com.headqlink.unit.bridgehost.CompanionBridgeHost.start(ctx)
+        if (!app.settings.btCompanionEnabled) {
+            app.settings.btCompanionEnabled = true
+        }
+        com.headqlink.unit.bridgehost.CompanionBridgeHost.setBluetoothEnabled(ctx, true)
         val st = com.headqlink.unit.bridgehost.CompanionBridgeHost.status()
+        lastCompanionConnectedState = st.isConnected
         val dataEnabled = com.headqlink.unit.bridgehost.CompanionBridgeHost.useBluetoothDataBridge
         val accent = com.headqlink.unit.extended.QonectaTheme.accent
         val onAccent = com.headqlink.unit.extended.QonectaTheme.onAccent
@@ -1134,7 +1368,7 @@ class HomeFragment : Fragment() {
         }
 
         root.addView(TextView(ctx).apply {
-            text = "🔵 4. Bluetooth Companion (Datos + Viajes + Rutas)"
+            text = "🔵 Qonecta Companion · Enlace y Código Bluetooth"
             textSize = 27f
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             setTextColor(0xFFEAF2F7.toInt())
@@ -1143,16 +1377,16 @@ class HomeFragment : Fragment() {
 
         val aclPair = firstConnectedBondedPhone()
         val devSummary = when {
-            st.isConnected -> "● COMPANION CONECTADO: " + st.connectedDevices.joinToString { "${it.first} (${it.second})" }
-            aclPair != null -> "● BLUETOOTH DEL COCHE CONECTADO: ${aclPair.second} (Abre Companion en el móvil para sincronizar)"
-            st.pairedCount > 0 -> "● En espera de reconexión automática (${st.pairedCount} móvil emparejado)"
-            else -> "● Sin emparejar aún — Pulsa «Generar código (6 cifras)» e introdúcelo en la app Companion del móvil"
+            st.isConnected -> "● ¡COMPANION SINCRONIZADO!: " + st.connectedDevices.joinToString { "${it.first} (${it.second})" }
+            aclPair != null -> "● BLUETOOTH DEL COCHE CONECTADO: ${aclPair.second} (Abre Companion en tu móvil)"
+            st.pairedCount > 0 -> "● Listo para reconectar automáticamente (${st.pairedCount} móvil vinculado)"
+            else -> "● Pulsa «Generar código (6 cifras)» e introdúcelo en Qonecta Companion (o en su Modo Tutorial)"
         }
         val anyBtOk = st.isConnected || aclPair != null
 
         root.addView(TextView(ctx).apply {
             text = devSummary
-            textSize = 21f
+            textSize = 20.5f
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             setTextColor(if (anyBtOk) 0xFF3AD29F.toInt() else accent)
             setPadding(dp(16), dp(10), dp(16), dp(10))
@@ -1195,14 +1429,20 @@ class HomeFragment : Fragment() {
             })
         }
 
-        val bullets = "• Servidor de Datos Bluetooth (Planificador e Internet): ${if (dataEnabled) "ACTIVO ✓" else "DESACTIVADO"}\n" +
-            "• Sincronización de Viajes, Privacidad y Tarifas (Casa, Rápida, Gasolina y Diésel): ACTIVO ✓\n" +
-            "• Envío de rutas con paradas de carga a Google Maps del móvil: ACTIVO ✓\n\n" +
-            "Nota: Qonecta Unit Companion es para móviles Android. En iPhone (iOS) puedes compartir datos por Punto de Acceso Personal (Hotspot o Bluetooth PAN)."
+        val wifiOffNote = if (!app.settings.wifi5gEnabled && !app.settings.hotspotModeEnabled) {
+            "✅ Wi-Fi 5 GHz desmarcado: este enlace funciona 100% por Bluetooth limpio sin encender redes Wi-Fi."
+        } else {
+            "💡 Consejo: si quieres usar SOLO Bluetooth sin Wi-Fi 5 GHz, desmarca la casilla «📡 Wi-Fi 5 GHz» en la pantalla principal."
+        }
+
+        val bullets = "$wifiOffNote\n" +
+            "• Servidor de Datos Bluetooth (Planificador, Mapas, Tiempo y OTA): ${if (dataEnabled) "ACTIVO ✓" else "DESACTIVADO"}\n" +
+            "• Sincronización en tiempo real de Viajes, Privacidad y Tarifas con el móvil: ACTIVO ✓\n" +
+            "• Envío de rutas con paradas de carga a Google Maps del móvil: ACTIVO ✓"
 
         root.addView(TextView(ctx).apply {
             text = bullets
-            textSize = 18.5f
+            textSize = 18f
             setTextColor(0xFFD2DFEC.toInt())
             setLineSpacing(0f, 1.22f)
             setPadding(0, 0, 0, dp(20))
@@ -1210,6 +1450,7 @@ class HomeFragment : Fragment() {
 
         val dialog = MaterialAlertDialogBuilder(ctx, R.style.DarkAlertDialog)
             .setView(root)
+            .setOnDismissListener { isBtCompanionDialogOpen = false }
             .create()
 
         val btnRow = LinearLayout(ctx).apply {
@@ -1259,6 +1500,7 @@ class HomeFragment : Fragment() {
                     if (adapter != null && adapter.isEnabled) adapter.bondedDevices.orEmpty() else emptySet()
                 }.getOrDefault(emptySet())
                 bonded.forEach { dev -> tryConnectSystemBluetoothDevice(dev) }
+                com.headqlink.unit.bridgehost.CompanionBridgeHost.wakeNow()
                 com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
                 updateConnectionModeButtons(rootView)
                 refreshHeroState(rootView)
@@ -1318,6 +1560,145 @@ class HomeFragment : Fragment() {
         activeDialog = dialog
     }
 
+    /**
+     * Diálogo de apoyo al proyecto (Ko-fi + PayPal con códigos QR escaneables desde el móvil),
+     * idéntico en espíritu al de Qonecta+ y accesible desde el botón superior «☕ Apoyar».
+     */
+    private fun showSupportCreditsDialog() {
+        activeDialog?.dismiss()
+        isBtCompanionDialogOpen = false
+        val ctx = requireContext()
+        val accent = com.headqlink.unit.extended.QonectaTheme.accent
+        val kofiUrl = "https://ko-fi.com/charlysev"
+        val paypalUrl = "https://www.paypal.me/CharlysEV"
+
+        val root = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(30), dp(24), dp(30), dp(22))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(26).toFloat()
+                setColor(0xFF101924.toInt())
+                setStroke(dp(2), 0xFFFFB547.toInt())
+            }
+        }
+
+        root.addView(TextView(ctx).apply {
+            text = "☕ Apoyar el proyecto · Qonecta Unit & Qonecta+"
+            textSize = 26f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setTextColor(0xFFFFB547.toInt())
+        })
+
+        root.addView(TextView(ctx).apply {
+            text = "Desarrollado de forma independiente por CharlysEV para la comunidad Leapmotor C10.\n" +
+                "Si Qonecta Unit y Qonecta Companion mejoran tus viajes diarios, puedes invitar a un café escaneando con tu móvil cualquiera de estos dos códigos QR (o directamente desde Qonecta Companion en el teléfono):"
+            textSize = 18f
+            setTextColor(0xFFD2DFEC.toInt())
+            setLineSpacing(0f, 1.2f)
+            setPadding(0, dp(8), 0, dp(18))
+        })
+
+        val cardsRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+
+        fun buildQrCard(titleText: String, subText: String, url: String, badgeColor: Int): View {
+            val card = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(dp(18), dp(16), dp(18), dp(16))
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(20).toFloat()
+                    setColor(0xFF152231.toInt())
+                    setStroke(dp(2), badgeColor)
+                }
+            }
+            card.addView(TextView(ctx).apply {
+                text = titleText
+                textSize = 21f
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setTextColor(badgeColor)
+                gravity = Gravity.CENTER
+            })
+            val qrBmp = runCatching {
+                com.andrerinas.openheadunit.utils.QrCodeGenerator.generateQrCode(url, dp(175))
+            }.getOrNull()
+            if (qrBmp != null) {
+                card.addView(android.widget.ImageView(ctx).apply {
+                    setImageBitmap(qrBmp)
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = dp(12).toFloat()
+                        setColor(Color.WHITE)
+                    }
+                    setPadding(dp(8), dp(8), dp(8), dp(8))
+                }, LinearLayout.LayoutParams(dp(185), dp(185)).apply {
+                    topMargin = dp(10)
+                    bottomMargin = dp(10)
+                })
+            }
+            card.addView(TextView(ctx).apply {
+                text = subText
+                textSize = 16.5f
+                typeface = Typeface.create("monospace", Typeface.BOLD)
+                setTextColor(0xFFEAF2F7.toInt())
+                gravity = Gravity.CENTER
+            })
+            return card
+        }
+
+        cardsRow.addView(
+            buildQrCard("☕ Invitar a un café en Ko-fi", "ko-fi.com/charlysev", kofiUrl, 0xFFFFB547.toInt()),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(14) }
+        )
+        cardsRow.addView(
+            buildQrCard("💙 Donar por PayPal", "paypal.me/CharlysEV", paypalUrl, accent),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        root.addView(cardsRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        val dialog = MaterialAlertDialogBuilder(ctx, R.style.DarkAlertDialog)
+            .setView(root)
+            .create()
+
+        val footerRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(16), 0, 0)
+        }
+        footerRow.addView(TextView(ctx).apply {
+            text = "❤️ ¡Muchísimas gracias por apoyar el desarrollo libre para el Leapmotor C10! — github.com/CharlysEV/qonecta"
+            textSize = 16.5f
+            setTextColor(0xFF93A4B7.toInt())
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        footerRow.addView(TextView(ctx).apply {
+            text = "Cerrar"
+            textSize = 19f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setTextColor(0xFFEAF2F7.toInt())
+            gravity = Gravity.CENTER
+            setPadding(dp(26), dp(12), dp(26), dp(12))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(18).toFloat()
+                setColor(0xFF1A2636.toInt())
+                setStroke(dp(2), 0xFF2D3F54.toInt())
+            }
+            setOnClickListener { dialog.dismiss() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(56)))
+
+        root.addView(footerRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.80f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        activeDialog = dialog
+    }
+
     private fun openProjection() {
         startActivity(AapProjectionActivity.intent(requireContext()).apply {
             putExtra(AapProjectionActivity.EXTRA_FOCUS, true)
@@ -1326,6 +1707,7 @@ class HomeFragment : Fragment() {
 
     private fun showBluetoothHelp(message: Int) {
         activeDialog?.dismiss()
+        isBtCompanionDialogOpen = false
         activeDialog = MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
             .setTitle(R.string.da_pair).setMessage(message)
             .setPositiveButton(R.string.da_system_settings) { _, _ -> openBluetoothSettings() }
@@ -1342,7 +1724,14 @@ class HomeFragment : Fragment() {
     override fun onPause() {
         activeDialog?.dismiss()
         activeDialog = null
+        isBtCompanionDialogOpen = false
         super.onPause()
+    }
+
+    override fun onDestroyView() {
+        companionStatusListener?.let { com.headqlink.unit.bridgehost.CompanionBridgeHost.removeListener(it) }
+        companionStatusListener = null
+        super.onDestroyView()
     }
 
     companion object {

@@ -706,6 +706,7 @@ object QonectaMediaEngine {
             mp.setOnErrorListener { _, what, extra ->
                 isRadioBuffering = false
                 isRadioPlaying = false
+                abandonAudioFocus(appCtx)
                 radioError = "Señal temporalmente no disponible ($what/$extra)"
                 notifyRadioChanged(appCtx)
                 // Reintento automático tras 3 s si no fue parado por el usuario (como RadioPlayer.java)
@@ -729,6 +730,7 @@ object QonectaMediaEngine {
                 } else {
                     isRadioBuffering = false
                     isRadioPlaying = false
+                    abandonAudioFocus(appCtx)
                     notifyRadioChanged(appCtx)
                 }
             }
@@ -742,6 +744,7 @@ object QonectaMediaEngine {
         } catch (e: Exception) {
             isRadioBuffering = false
             isRadioPlaying = false
+            abandonAudioFocus(appCtx)
             radioError = "Error al abrir: ${e.message ?: "red"}"
             notifyRadioChanged(appCtx)
         }
@@ -891,7 +894,9 @@ object QonectaMediaEngine {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             abandonAudioFocus(context)
-            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            // Usamos AUDIOFOCUS_GAIN_TRANSIENT para que la radio nativa FM/DAB del Leapmotor C10
+            // solo pause temporalmente y nunca quede bloqueada ni silenciada de forma permanente.
+            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                 .setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -899,14 +904,23 @@ object QonectaMediaEngine {
                         .build()
                 )
                 .setOnAudioFocusChangeListener { change ->
-                    if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-                        runCatching {
-                            if (radioPlayer?.isPlaying == true) {
-                                radioPlayer?.pause()
-                                isRadioPlaying = false
+                    when (change) {
+                        AudioManager.AUDIOFOCUS_LOSS,
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                            runCatching {
+                                if (radioPlayer?.isPlaying == true) {
+                                    radioPlayer?.pause()
+                                    isRadioPlaying = false
+                                }
+                                abandonAudioFocus(context.applicationContext)
+                                notifyRadioChanged(context)
                             }
-                            abandonAudioFocus(context.applicationContext)
-                            notifyRadioChanged(context)
+                        }
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                            runCatching { radioPlayer?.setVolume(0.25f, 0.25f) }
+                        }
+                        AudioManager.AUDIOFOCUS_GAIN -> {
+                            runCatching { radioPlayer?.setVolume(1.0f, 1.0f) }
                         }
                     }
                 }

@@ -34,10 +34,8 @@
     <usb-device vendor-id="3725" />  <!-- MediaTek (0x0E8D) -->
     <usb-device vendor-id="1478" />  <!-- Qualcomm (0x05C6) -->
 
-    <!-- Apple iPhone (CarPlay USB) & Carlinkit -->
+    <!-- Apple iPhone (CarPlay USB) -->
     <usb-device vendor-id="1452" />  <!-- Apple (0x05AC) -->
-    <usb-device vendor-id="4884" product-id="5408" />
-    <usb-device vendor-id="4884" product-id="5409" />
     <usb-device vendor-id="2276" product-id="260" />
 
 </resources>

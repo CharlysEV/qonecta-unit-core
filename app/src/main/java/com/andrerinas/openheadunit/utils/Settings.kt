@@ -563,7 +563,7 @@ class Settings(private val context: Context) {
         get() = prefs.getString("head-unit-model", "Desktop Head Unit")!!
         set(value) { prefs.edit().putString("head-unit-model", value).apply() }
 
-    // 0 = Manual, 1 = Auto (Headunit Server), 2 = Helper (Wifi Launcher), 3 = Native AA
+    // 0 = Manual/Off, 1 = Auto (Hotspot/Headunit Server), 2 = Helper (Wifi Launcher), 3 = Native AA 5G, 4 = Solo Bluetooth Companion
     var wifiConnectionMode: Int
         get() {
             // Migration: Check if old helper boolean exists
@@ -580,7 +580,87 @@ class Settings(private val context: Context) {
             }
             return prefs.getInt("wifi-connection-mode", 3) // Native Android Auto; no companion app
         }
-        set(value) { prefs.edit().putInt("wifi-connection-mode", value).apply() }
+        set(value) {
+            val edit = prefs.edit().putInt("wifi-connection-mode", value)
+            when (value) {
+                3 -> edit.putBoolean(KEY_CONN_WIFI_5G, true).putBoolean(KEY_CONN_HOTSPOT, false)
+                1, 2 -> edit.putBoolean(KEY_CONN_WIFI_5G, false).putBoolean(KEY_CONN_HOTSPOT, true)
+                4 -> edit.putBoolean(KEY_CONN_WIFI_5G, false).putBoolean(KEY_CONN_HOTSPOT, false).putBoolean(KEY_CONN_BT_COMPANION, true)
+                0 -> edit.putBoolean(KEY_CONN_WIFI_5G, false).putBoolean(KEY_CONN_HOTSPOT, false)
+            }
+            edit.apply()
+            syncConnectionModesFromFlags(
+                wifiOn = value in 1..3,
+                usbOn = usbModeEnabled
+            )
+        }
+
+    /** Opción independiente: puente Bluetooth con Qonecta Companion (viajes, tarifas, rutas y datos sin Wi-Fi). */
+    var btCompanionEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CONN_BT_COMPANION, true)
+        set(value) {
+            val edit = prefs.edit().putBoolean(KEY_CONN_BT_COMPANION, value)
+            if (!wifi5gEnabled && !hotspotModeEnabled) {
+                edit.putInt("wifi-connection-mode", if (value) 4 else 0)
+            }
+            edit.apply()
+        }
+
+    /** Opción independiente: Wi-Fi Direct 5 GHz (Android Auto sin cables). Desmarcar apaga 5 GHz de verdad. */
+    var wifi5gEnabled: Boolean
+        get() {
+            if (prefs.contains(KEY_CONN_WIFI_5G)) return prefs.getBoolean(KEY_CONN_WIFI_5G, false)
+            return wifiConnectionMode == 3
+        }
+        set(value) {
+            val edit = prefs.edit().putBoolean(KEY_CONN_WIFI_5G, value)
+            if (value) {
+                edit.putBoolean(KEY_CONN_HOTSPOT, false)
+                edit.putInt("wifi-connection-mode", 3)
+            } else if (!hotspotModeEnabled) {
+                edit.putInt("wifi-connection-mode", if (btCompanionEnabled) 4 else 0)
+            }
+            edit.apply()
+            syncConnectionModesFromFlags(wifiOn = value || hotspotModeEnabled, usbOn = usbModeEnabled)
+        }
+
+    /** Opción independiente: Hotspot del móvil (da Internet al coche + Android Auto sobre red común). */
+    var hotspotModeEnabled: Boolean
+        get() {
+            if (prefs.contains(KEY_CONN_HOTSPOT)) return prefs.getBoolean(KEY_CONN_HOTSPOT, false)
+            val m = wifiConnectionMode
+            return m == 1 || m == 2
+        }
+        set(value) {
+            val currentMode = wifiConnectionMode
+            val edit = prefs.edit().putBoolean(KEY_CONN_HOTSPOT, value)
+            if (value) {
+                edit.putBoolean(KEY_CONN_WIFI_5G, false)
+                edit.putInt("wifi-connection-mode", if (currentMode == 2) 2 else 1)
+            } else if (!wifi5gEnabled) {
+                edit.putInt("wifi-connection-mode", if (btCompanionEnabled) 4 else 0)
+            }
+            edit.apply()
+            syncConnectionModesFromFlags(wifiOn = value || wifi5gEnabled, usbOn = usbModeEnabled)
+        }
+
+    /** Opción independiente: Cable USB (Android Auto / CarPlay por cable). Si se desmarca, el cable solo carga. */
+    var usbModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CONN_USB, true)
+        set(value) {
+            prefs.edit()
+                .putBoolean(KEY_CONN_USB, value)
+                .putBoolean("listen-for-usb-devices", value)
+                .apply()
+            syncConnectionModesFromFlags(wifiOn = wifi5gEnabled || hotspotModeEnabled, usbOn = value)
+        }
+
+    private fun syncConnectionModesFromFlags(wifiOn: Boolean, usbOn: Boolean) {
+        val current = connectionModes.toMutableSet()
+        if (wifiOn) current.add(ConnectionMode.WIFI) else current.remove(ConnectionMode.WIFI)
+        if (usbOn) current.add(ConnectionMode.USB) else current.remove(ConnectionMode.USB)
+        connectionModes = current
+    }
 
     var videoCodec: String
         get() = prefs.getString("video-codec", "Auto")!!
@@ -633,12 +713,15 @@ class Settings(private val context: Context) {
     var connectionModes: Set<ConnectionMode>
         get() {
             if (!prefs.getBoolean("qonecta-both-conn-modes-v1", false)) {
-                val both = setOf(ConnectionMode.WIFI, ConnectionMode.USB)
+                val initial = buildSet {
+                    if (wifi5gEnabled || hotspotModeEnabled) add(ConnectionMode.WIFI)
+                    if (usbModeEnabled) add(ConnectionMode.USB)
+                }
                 prefs.edit()
-                    .putStringSet(KEY_CONNECTION_MODES, both.map { it.key }.toSet())
+                    .putStringSet(KEY_CONNECTION_MODES, initial.map { it.key }.toSet())
                     .putBoolean("qonecta-both-conn-modes-v1", true)
                     .apply()
-                return both
+                return initial
             }
             val stored = prefs.getStringSet(KEY_CONNECTION_MODES, null)
             if (stored != null) return stored.mapNotNull { ConnectionMode.fromKey(it) }.toSet()
@@ -1128,6 +1211,10 @@ class Settings(private val context: Context) {
         const val KEY_NAVIGATION_VOLUME_OFFSET = "navigation-volume-offset"
 
         const val KEY_CONNECTION_MODES = "connection-modes"
+        const val KEY_CONN_BT_COMPANION = "qu-conn-bt-companion"
+        const val KEY_CONN_WIFI_5G = "qu-conn-wifi-5g"
+        const val KEY_CONN_HOTSPOT = "qu-conn-hotspot"
+        const val KEY_CONN_USB = "qu-conn-usb"
 
         // Qonecta Unit (ver extendedMode)
         const val KEY_EXTENDED_MODE = "qu-extended-mode"

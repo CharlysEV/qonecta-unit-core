@@ -105,6 +105,36 @@ object GitHubReleaseUpdater {
         private set
 
     @Volatile
+    var portalOpenedByCarAtMs: Long = 0L
+        private set
+
+    @Volatile
+    var portalOpenedClientApp: String = ""
+        private set
+
+    @Volatile
+    var portalOpenedClientIp: String = ""
+        private set
+
+    @Volatile
+    var apkSentToCarAtMs: Long = 0L
+        private set
+
+    private val portalListeners = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
+
+    fun addPortalListener(l: () -> Unit) {
+        portalListeners.add(l)
+    }
+
+    fun removePortalListener(l: () -> Unit) {
+        portalListeners.remove(l)
+    }
+
+    private fun notifyPortalListeners() {
+        mainHandler.post { portalListeners.forEach { runCatching { it() } } }
+    }
+
+    @Volatile
     private var wifiLock: WifiManager.WifiLock? = null
 
     @Volatile
@@ -619,10 +649,16 @@ object GitHubReleaseUpdater {
                             }
                         }
                         out.flush()
+                        apkSentToCarAtMs = System.currentTimeMillis()
+                        notifyPortalListeners()
                         onEvent("✅ ${apkFile.name} enviado al 100% a $clientAppLabel ($clientIp).")
                     }
 
                     else -> {
+                        portalOpenedByCarAtMs = System.currentTimeMillis()
+                        portalOpenedClientApp = clientAppLabel
+                        portalOpenedClientIp = clientIp
+                        notifyPortalListeners()
                         onEvent("🌐 Coche ($clientIp) abrió el Portal desde $clientAppLabel")
                         val htmlBytes = buildCaptivePortalHtml(localSocketIp, listenPort, apkFile, isVivaldi, clientAppLabel).toByteArray(Charsets.UTF_8)
                         val header = buildString {
@@ -839,6 +875,39 @@ object GitHubReleaseUpdater {
     }
 
     /**
+     * Detecta específicamente si el Punto de Acceso (Hotspot / Tethering) del móvil está encendido,
+     * devolviendo su IP (p. ej. `192.168.43.1`, `192.168.187.x` o interfaces `swlan0` / `ap0` / `wlan1`),
+     * o `null` si el móvil solo está en el Wi-Fi de casa o datos móviles.
+     */
+    fun findDedicatedHotspotIp(): String? {
+        return runCatching {
+            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
+            val candidates = mutableListOf<Pair<String, String>>()
+            for (nif in interfaces) {
+                if (!nif.isUp || nif.isLoopback) continue
+                val name = nif.name.lowercase(Locale.ROOT)
+                if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("p2p") || name.startsWith("tun") || name.startsWith("dummy")) {
+                    continue
+                }
+                for (addr in nif.inetAddresses) {
+                    if (addr is Inet4Address && !addr.isLoopbackAddress) {
+                        val ip = addr.hostAddress ?: continue
+                        if (ip.startsWith("192.168.") || ip.startsWith("172.") || ip.startsWith("10.")) {
+                            candidates.add(name to ip)
+                        }
+                    }
+                }
+            }
+            candidates.firstOrNull { (name, _) ->
+                name.contains("swlan") || name.contains("ap") || name == "wlan1" || name.contains("rndis")
+            }?.second
+                ?: candidates.firstOrNull { (_, ip) ->
+                    ip.startsWith("192.168.43.") || ip.startsWith("192.168.187.") || ip.startsWith("172.20.10.")
+                }?.second
+        }.getOrNull()
+    }
+
+    /**
      * Devuelve todas las interfaces Wi-Fi / Hotspot activas para mostrarlas claramente al usuario.
      */
     fun describeActiveNetworkIps(): String {
@@ -933,7 +1002,7 @@ object GitHubReleaseUpdater {
      * de Scoped Storage en Android 14/15 (`getExternalFilesDir(null)`, `cacheDir/gh_releases`, `filesDir`)
      * y también en `/sdcard/Download`.
      */
-    fun findBestLocalCarApk(context: Context, fallbackVer: String = "0.1.17"): File? {
+    fun findBestLocalCarApk(context: Context, fallbackVer: String = "0.1.18"): File? {
         val searchDirs = listOfNotNull(
             context.getExternalFilesDir(null),
             File(context.filesDir, "apk_updates"),

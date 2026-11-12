@@ -98,6 +98,16 @@ class UsbAttachedActivity : Activity() {
 
         AppLog.i("USB Intent: $intent")
 
+        val isLocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+            !(getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
+
+        val settings = if (!isLocked) Settings(this) else null
+        if (settings != null && !settings.usbModeEnabled) {
+            AppLog.i("USB mode is unchecked in Qonecta Unit — leaving cable for charging only.")
+            finish()
+            return
+        }
+
         resolveAppleDevice(intent)?.let { appleDevice ->
             forwardAppleUsbToCarPlay(appleDevice)
             finish()
@@ -112,11 +122,6 @@ class UsbAttachedActivity : Activity() {
             finish()
             return
         }
-
-        val isLocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
-            !(getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
-
-        val settings = if (!isLocked) Settings(this) else null
 
         if (!isLocked) {
             if (App.provide(this).commManager.connectionState.value is CommManager.ConnectionState.TransportStarted) {
@@ -203,6 +208,13 @@ class UsbAttachedActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
 
+        val isLocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+            !(getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
+        if (!isLocked && !Settings(this).usbModeEnabled) {
+            finish()
+            return
+        }
+
         resolveAppleDevice(intent)?.let { appleDevice ->
             forwardAppleUsbToCarPlay(appleDevice)
             finish()
@@ -219,9 +231,6 @@ class UsbAttachedActivity : Activity() {
         }
 
         AppLog.i(UsbDeviceCompat.getUniqueName(device))
-
-        val isLocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
-            !(getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
 
         if (!isLocked && App.provide(this).commManager.connectionState.value !is CommManager.ConnectionState.TransportStarted) {
             if (UsbDeviceCompat.isInAccessoryMode(device)) {

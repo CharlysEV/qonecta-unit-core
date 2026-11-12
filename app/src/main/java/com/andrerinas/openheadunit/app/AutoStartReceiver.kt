@@ -34,29 +34,29 @@ class AutoStartReceiver : BroadcastReceiver() {
             }
 
             AppLog.i("BT Device connected: ${device?.name} (${device?.address})")
-            runCatching {
-                com.headqlink.unit.bridgehost.CompanionBridgeHost.start(context.applicationContext)
-                com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
+            val settingsObj = runCatching { if (!isLocked) Settings(context) else null }.getOrNull()
+            if (settingsObj?.btCompanionEnabled != false) {
+                runCatching {
+                    com.headqlink.unit.bridgehost.CompanionBridgeHost.start(context.applicationContext)
+                    com.headqlink.unit.bridgehost.CompanionBridgeHost.wakeNow()
+                    com.headqlink.unit.bridgehost.CompanionBridgeHost.pushImmediateSync()
+                }
             }
 
-            val settingsObj = runCatching { if (!isLocked) Settings(context) else null }.getOrNull()
-            var wifiMode = settingsObj?.wifiConnectionMode ?: 3
-            if (wifiMode == 4) {
-                AppLog.i("AutoStartReceiver: Mode 4 active (Solo Bluetooth) — Companion BT active, skipping Wi-Fi Direct auto-start.")
+            if (settingsObj != null && !settingsObj.wifi5gEnabled && !settingsObj.hotspotModeEnabled) {
+                AppLog.i("AutoStartReceiver: Wireless options are unchecked (Bluetooth Companion / USB only) — never forcing Wi-Fi 5 GHz.")
                 return
             }
-            if (wifiMode == 0 && settingsObj != null) {
-                val usbMgr = context.getSystemService(Context.USB_SERVICE) as? android.hardware.usb.UsbManager
-                val hasAndroidUsb = usbMgr?.deviceList?.values?.any {
-                    com.andrerinas.openheadunit.connection.UsbDeviceCompat.isAndroidDevice(it)
-                } == true
-                if (!hasAndroidUsb) {
-                    AppLog.i("AutoStartReceiver: No USB phone attached on BT connect; switching mode 0 -> 3 for wireless Android Auto.")
-                    settingsObj.wifiConnectionMode = 3
-                    wifiMode = 3
-                } else {
-                    return
-                }
+
+            val effectiveWifiMode = if (settingsObj != null) {
+                com.andrerinas.openheadunit.aap.WirelessScopePolicy.effectiveMode(
+                    settingsObj.wifiConnectionMode,
+                    settingsObj.connectionModes
+                )
+            } else 3
+            if (effectiveWifiMode == 0) {
+                AppLog.i("AutoStartReceiver: Effective wireless mode is OFF — skipping wireless auto-start.")
+                return
             }
 
             // [FIX] Don't trigger auto-start if we are already connected!

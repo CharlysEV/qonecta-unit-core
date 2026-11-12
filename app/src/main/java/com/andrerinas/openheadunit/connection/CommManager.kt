@@ -623,20 +623,20 @@ class CommManager(
      *                 a user's log readable.
      */
     fun sendKey(keyCode: Int, isPress: Boolean, downTime: Long? = null, source: String = "unknown") {
+        if (_connectionState.value !is ConnectionState.TransportStarted) {
+            return
+        }
+
         // 1. Remapping (Physical -> Logical)
         // Check if the physical keyCode is mapped to a logical action in settings.
         // If not mapped, we use the original keyCode as the logical code.
         var logicalCode = settings.keyCodes.entries.find { it.value == keyCode }?.key ?: keyCode
 
-        if (isPress && isPlayPauseKey(logicalCode)) {
+        if (isPress && isPlayPauseKey(logicalCode) && !isExternalAudioFocusLost()) {
             if (com.andrerinas.openheadunit.cluster.ClusterMapController.onSteeringPlayPausePressed(context, downTime)) {
                 AppLog.i("CommManager: Steering wheel Play/Pause double-click -> cycled ClusterMap page")
                 return
             }
-        }
-
-        if (_connectionState.value !is ConnectionState.TransportStarted) {
-            return
         }
 
         // 2. Proprietary Key Filtering

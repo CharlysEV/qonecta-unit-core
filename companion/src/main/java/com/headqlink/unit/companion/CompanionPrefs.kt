@@ -55,6 +55,24 @@ class CompanionPrefs(context: Context) {
         get() = p.getBoolean("cold_install_expanded", false)
         set(v) = p.edit().putBoolean("cold_install_expanded", v).apply()
 
+    /** Casilla independiente en el móvil: conectar por Bluetooth RFCOMM (viajes, tarifas, rutas y datos sin Wi-Fi). */
+    var useBluetooth: Boolean
+        get() = p.getBoolean("use_bluetooth", true)
+        set(v) = p.edit().putBoolean("use_bluetooth", v).apply()
+
+    /** Casilla independiente en el móvil: usar enlace Wi-Fi rápido cuando haya Android Auto o Hotspot. Desmárcala para Solo Bluetooth puro. */
+    var useWifi: Boolean
+        get() = p.getBoolean("use_wifi", true)
+        set(v) = p.edit().putBoolean("use_wifi", v).apply()
+
+    var tutorialStep: Int
+        get() = p.getInt("install_tutorial_step", 0).coerceIn(0, 4)
+        set(v) = p.edit().putInt("install_tutorial_step", v.coerceIn(0, 4)).apply()
+
+    var usbExportDoneAtMs: Long
+        get() = p.getLong("usb_export_done_at_ms", 0L)
+        set(v) = p.edit().putLong("usb_export_done_at_ms", v).apply()
+
     val isPaired: Boolean
         get() = !token.isNullOrBlank()
 

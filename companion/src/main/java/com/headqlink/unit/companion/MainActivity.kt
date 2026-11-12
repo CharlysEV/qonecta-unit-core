@@ -65,6 +65,7 @@ class MainActivity : Activity() {
     private var pendingUsbExportApk: java.io.File? = null
     private var draftPairCode: String = ""
     private var activeTab: Int = 0 // Pestaña principal simplificada de Conexión y Actualización en 1 toque
+    private var activeTutorialDialog: InstallTutorialDialog? = null
     private val stateListener: (BridgeState.Snapshot) -> Unit = { s ->
         // Quién manda: conectado a Qonecta Unit → el coche; desconectado → la cuenta Leapmotor.
         com.headqlink.unit.companion.cloud.CompanionCloud.setConnectedToUnit(s.phase == BridgeState.Phase.CONNECTED)
@@ -80,7 +81,7 @@ class MainActivity : Activity() {
         if (activeTab == 3) render()
     }
     private val unitListener: (UnitTelemetry.Data?) -> Unit = {
-        if (activeTab in setOf(1, 3, 4)) render()
+        if (activeTab in setOf(0, 1, 3, 4)) render()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -214,7 +215,7 @@ class MainActivity : Activity() {
             }
         }
         val s = BridgeState.current
-        val appVer = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "0.1.17"
+        val appVer = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "0.1.18"
         val isExpert = prefs.expertMode
         val localCarApk = GitHubReleaseUpdater.findBestLocalCarApk(this, appVer)
         val apkName = localCarApk?.name ?: "QonectaUnit_${appVer}-unit.apk"
@@ -225,7 +226,7 @@ class MainActivity : Activity() {
         }
         val bestIp = GitHubReleaseUpdater.findBestHotspotOrLocalIp() ?: "192.168.43.1"
 
-        // --- Cabecera limpia + Interruptor Modo Experto ---
+        // --- Cabecera limpia + mención por CharlysEV + Café/PayPal + Interruptor Modo Experto ---
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -233,19 +234,33 @@ class MainActivity : Activity() {
         headerRow.addView(
             LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                addView(text("Qonecta Companion", 23f, TEXT, bold = true))
-                addView(text("v$appVer · Leapmotor C10", 13f, FAINT))
+                addView(text("Qonecta Companion", 22f, TEXT, bold = true))
+                addView(text("v$appVer · por CharlysEV · Leapmotor C10", 12.5f, FAINT))
             },
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
         )
+        val supportHeaderBtn = TextView(this).apply {
+            text = "☕ Apoyar"
+            gravity = Gravity.CENTER
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setTextColor(WARN)
+            background = rounded(SURFACE_TOP, dp(20), WARN)
+            setPadding(dp(11), dp(8), dp(11), dp(8))
+            isClickable = true
+            setOnClickListener { showSupportDialog() }
+        }
+        headerRow.addView(supportHeaderBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            rightMargin = dp(6)
+        })
         val expertBtn = TextView(this).apply {
             text = if (isExpert) "🛠️ Experto: ON" else "🛠️ Experto"
             gravity = Gravity.CENTER
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             setTextColor(if (isExpert) ON_ACCENT else DIM)
             background = if (isExpert) rounded(WARN, dp(20)) else rounded(SURFACE_TOP, dp(20), OUTLINE)
-            setPadding(dp(14), dp(8), dp(14), dp(8))
+            setPadding(dp(11), dp(8), dp(11), dp(8))
             isClickable = true
             setOnClickListener {
                 prefs.expertMode = !prefs.expertMode
@@ -255,8 +270,23 @@ class MainActivity : Activity() {
         headerRow.addView(expertBtn)
         root.addView(headerRow)
 
+        // Si aún no está vinculado, mostramos arriba del todo el acceso directo al Modo Tutorial guiado del C10
+        if (!prefs.isPaired) {
+            root.addView(card().apply {
+                background = rounded(0xFF0E2229.toInt(), dp(20), ACCENT)
+                addView(text("🎓 ¿Primera vez instalando en tu Leapmotor C10?", 17f, ACCENT, bold = true))
+                addView(text(
+                    "Sigue el Modo Tutorial paso a paso y sincronizado en vivo para instalar Qonecta Unit en la pantalla del C10 y vincularlo a la primera.",
+                    13.5f, TEXT,
+                ).apply { setPadding(0, dp(4), 0, dp(10)) })
+                addView(pill("🎓 Abrir Modo Tutorial paso a paso (C10)", primary = true) {
+                    openTutorialDialog()
+                })
+            })
+        }
+
         // ======================================================================================
-        // TARJETA 1 · ESTADO DE CONEXIÓN CON TU COCHE (Y ASISTENTE SOLO SI NO ESTÁ EMPAREJADO)
+        // TARJETA 1 · ESTADO DE CONEXIÓN Y OPCIONES MARCABLES (SOLO BLUETOOTH / WI-FI)
         // ======================================================================================
         root.addView(card().apply {
             val carDisplay = s.carName.ifBlank { prefs.carName ?: prefs.carBtName ?: "tu Leapmotor C10" }
@@ -271,6 +301,10 @@ class MainActivity : Activity() {
 
             val subInfo = buildString {
                 if (s.transport.isNotBlank()) append("Vía ${s.transport}")
+                if (prefs.useBluetooth && !prefs.useWifi) {
+                    if (isNotEmpty()) append("  ·  ")
+                    append("Modo Solo Bluetooth (sin Wi-Fi)")
+                }
                 if (s.carAppVersion.isNotBlank()) {
                     if (isNotEmpty()) append("  ·  ")
                     append("Coche en v${s.carAppVersion}")
@@ -282,6 +316,110 @@ class MainActivity : Activity() {
             if (s.detail.isNotBlank()) {
                 addView(text(s.detail, 14f, DIM).apply { setPadding(0, dp(6), 0, 0) })
             }
+
+            // Sincronización en tiempo real de las casillas marcadas en la pantalla del C10 (Qonecta Unit)
+            val unitTel = UnitTelemetry.current
+            if (s.phase == BridgeState.Phase.CONNECTED && unitTel != null && unitTel.hasUnitConnInfo) {
+                val carSyncText = buildString {
+                    append("🔄 Coche sincronizado: ")
+                    append(if (unitTel.unitBtCompanion) "☑ BT" else "☐ BT")
+                    append(" · ")
+                    append(if (unitTel.unitWifi5g) "☑ Wi-Fi 5G" else "☐ Wi-Fi 5G apagado")
+                    append(" · ")
+                    append(if (unitTel.unitHotspot) "☑ Hotspot" else "☐ Hotspot")
+                    append(" · ")
+                    append(if (unitTel.unitUsb) "☑ USB" else "☐ USB")
+                }
+                addView(
+                    LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        background = rounded(0xFF0D2B1E.toInt(), dp(12), OK)
+                        setPadding(dp(12), dp(8), dp(12), dp(8))
+                        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                            topMargin = dp(8)
+                        }
+                        addView(text(carSyncText, 12.5f, OK, bold = true))
+                    }
+                )
+            }
+
+            // --- Casillas independientes para marcar y desmarcar Bluetooth y Wi-Fi ---
+            val transportBox = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                background = rounded(BG, dp(14), OUTLINE)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    topMargin = dp(10)
+                }
+            }
+            transportBox.addView(text("Opciones de conexión (marca o desmarca libremente):", 13f, FAINT, bold = true))
+
+            transportBox.addView(
+                buildTransportToggleRow(
+                    checked = prefs.useBluetooth,
+                    title = "🔵 Bluetooth (Datos, Viajes, Tarifas y Rutas)",
+                    subtitle = if (prefs.useBluetooth && !prefs.useWifi) {
+                        "Activo en solitario · Cero Wi-Fi 5 GHz y cero cortes de radio"
+                    } else {
+                        "Conecta con Qonecta Unit usando solo el Bluetooth del coche"
+                    },
+                ) {
+                    prefs.useBluetooth = !prefs.useBluetooth
+                    applyTransportToggleChange()
+                }.apply {
+                    (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8)
+                }
+            )
+
+            transportBox.addView(
+                buildTransportToggleRow(
+                    checked = prefs.useWifi,
+                    title = "📡 Wi-Fi rápido (Android Auto 5 GHz / Hotspot)",
+                    subtitle = if (!prefs.useWifi) {
+                        "Desmarcado: nunca buscará redes Wi-Fi, todo irá limpio por Bluetooth"
+                    } else {
+                        "Aprovecha el Wi-Fi cuando ya llevas Android Auto o Hotspot activo"
+                    },
+                ) {
+                    prefs.useWifi = !prefs.useWifi
+                    applyTransportToggleChange()
+                }.apply {
+                    (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8)
+                }
+            )
+
+            // Selector directo del Bluetooth del coche siempre a mano cuando Bluetooth está marcado
+            if (prefs.useBluetooth && prefs.isPaired) {
+                val chosenBt = prefs.carBtName ?: prefs.carBtAddress
+                val btPickerRow = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(4), dp(10), dp(4), dp(2))
+                }
+                btPickerRow.addView(
+                    text(
+                        if (chosenBt != null) "🚗 BT del C10: $chosenBt" else "🚗 BT del C10: Automático (elige tu coche si tarda)",
+                        13f,
+                        if (chosenBt != null) OK else WARN,
+                        bold = true,
+                    ),
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                )
+                val pickSmallBtn = TextView(this@MainActivity).apply {
+                    text = if (chosenBt != null) "Cambiar BT" else "Elegir BT"
+                    gravity = Gravity.CENTER
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                    setTextColor(if (chosenBt == null) ON_ACCENT else TEXT)
+                    background = if (chosenBt == null) rounded(ACCENT, dp(16)) else rounded(SURFACE_TOP, dp(16), OUTLINE)
+                    setPadding(dp(12), dp(6), dp(12), dp(6))
+                    isClickable = true
+                    setOnClickListener { pickBondedDevice() }
+                }
+                btPickerRow.addView(pickSmallBtn)
+                transportBox.addView(btPickerRow)
+            }
+            addView(transportBox)
 
             // Comprobación silenciosa de permisos esenciales: solo molesta si falta alguno
             val missingNotif = Build.VERSION.SDK_INT >= 33 && !has(Manifest.permission.POST_NOTIFICATIONS)
@@ -370,12 +508,17 @@ class MainActivity : Activity() {
             } else {
                 addView(row(
                     pill(if (s.phase == BridgeState.Phase.STOPPED) "Conectar ahora" else "Reconectar", primary = s.phase != BridgeState.Phase.CONNECTED) {
+                        if (!prefs.useBluetooth && !prefs.useWifi) {
+                            prefs.useBluetooth = true
+                        }
                         prefs.enabled = true
-                        BridgeService.start(this@MainActivity)
+                        BridgeService.reconnectNow(this@MainActivity)
+                        render()
                     },
                     pill("Pausar") {
                         prefs.enabled = false
                         BridgeService.stop(this@MainActivity)
+                        render()
                     },
                 ).apply { setPadding(0, dp(12), 0, 0) })
             }
@@ -530,10 +673,10 @@ class MainActivity : Activity() {
         })
 
         // ======================================================================================
-        // TARJETA 3 (PLEGABLE) · INSTALAR DESDE CERO (SOLO SI DESINSTALASTE LA APP DEL COCHE)
+        // TARJETA 3 · MODO TUTORIAL INTERACTIVO C10 + INSTALACIÓN DESDE CERO
         // ======================================================================================
         root.addView(card().apply {
-            val expanded = prefs.coldInstallExpanded || !prefs.isPaired
+            val expanded = prefs.coldInstallExpanded
             val headerToggle = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -544,29 +687,36 @@ class MainActivity : Activity() {
                 }
             }
             headerToggle.addView(
-                text("🆘 Instalar desde cero (si borraste la app del coche)", 16.5f, TEXT, bold = true),
+                text("🎓 Tutorial instalar Qonecta Unit en el C10", 17f, TEXT, bold = true),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
-            headerToggle.addView(text(if (expanded) "▲ Ocultar" else "▼ Ver pasos", 13.5f, ACCENT, bold = true))
+            headerToggle.addView(text(if (expanded) "▲ Ocultar" else "▼ Pasos rápidos", 13f, ACCENT, bold = true))
             addView(headerToggle)
 
-            if (expanded) {
-                addView(text(
-                    "Cuando Qonecta Unit NO está instalada en el coche (o tienes una versión anterior a v0.1.17), instálala con este método probado en el Leapmotor C10 (sin Proxy y sin DNS):",
-                    13.5f, DIM,
-                ).apply { setPadding(0, dp(8), 0, dp(10)) })
+            addView(text(
+                "Asistente paso a paso y sincronizado en tiempo real (detecta tu APK, el USB, el Hotspot y te avisa en directo cuando Vivaldi del C10 abre el portal):",
+                13.5f, DIM,
+            ).apply { setPadding(0, dp(6), 0, dp(10)) })
 
+            addView(pill("🎓 Abrir Modo Tutorial interactivo (5 pasos en vivo)", primary = true) {
+                openTutorialDialog()
+            })
+
+            if (expanded) {
                 val stepsBox = LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     background = rounded(BG, dp(14), OUTLINE)
                     setPadding(dp(14), dp(12), dp(14), dp(12))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                        topMargin = dp(12)
+                    }
                 }
                 stepsBox.addView(text(
-                    "1️⃣ Conecta un Pendrive USB-C a tu móvil, pulsa abajo «💾 1. Guardar APK en Pendrive USB» y enchufa ese pendrive al coche.\n\n" +
-                        "2️⃣ Pulsa «📶 2. Encender Hotspot» en tu móvil y conecta el Wi-Fi del coche a tu móvil normalmente (no hace falta Proxy ni DNS).\n\n" +
-                        "3️⃣ Abre Vivaldi en el coche y escribe esta dirección exacta:\n" +
-                        "   👉  http://$bestIp:8788/portal\n\n" +
-                        "4️⃣ En la página que se abre, toca el Botón 2 Amarillo («📁 ABRIR ARCHIVOS DEL COCHE»), entra en tu USB a la izquierda y toca el icono pequeño de dos flechas ⤢ en la esquina del APK.",
+                    "Resumen rápido sin asistente:\n" +
+                        "1️⃣ Guarda el APK en un Pendrive USB-C y enchúfalo al C10.\n" +
+                        "2️⃣ Enciende el Hotspot del móvil y conecta el Wi-Fi del C10 (sin Proxy ni DNS).\n" +
+                        "3️⃣ En Vivaldi del coche abre:  http://$bestIp:8788/portal\n" +
+                        "4️⃣ Toca el Botón Amarillo «ABRIR ARCHIVOS DEL COCHE» y pulsa las dos flechas ⤢ de la esquina del APK.",
                     13.5f, TEXT,
                 ))
                 addView(stepsBox)
@@ -580,7 +730,7 @@ class MainActivity : Activity() {
                 ).apply { setPadding(0, dp(10), 0, dp(8)) }
                 addView(coldStatusTv)
 
-                addView(pill("💾 1. Guardar APK en Pendrive USB ($apkName)", primary = true) {
+                addView(pill("💾 1. Guardar APK en Pendrive USB ($apkName)", primary = false) {
                     val target = GitHubReleaseUpdater.findBestLocalCarApk(this@MainActivity, appVer)
                     if (target == null) {
                         toast("Primero pulsa «☁️ Buscar nueva versión en Internet» arriba")
@@ -601,6 +751,25 @@ class MainActivity : Activity() {
                     },
                 ).apply { setPadding(0, dp(8), 0, 0) })
             }
+        })
+
+        // ======================================================================================
+        // TARJETA 4 · APOYAR EL PROYECTO (CAFÉ KO-FI Y PAYPAL · IGUAL QUE EN QONECTA+)
+        // ======================================================================================
+        root.addView(card().apply {
+            addView(text("☕ Apoyar el proyecto · por CharlysEV", 17f, WARN, bold = true))
+            addView(text(
+                "Qonecta Unit y Qonecta Companion son proyectos creados para la comunidad Leapmotor. Si te hacen más cómodos tus viajes, puedes invitar a un café o apoyar su desarrollo:",
+                13.5f, DIM,
+            ).apply { setPadding(0, dp(4), 0, dp(12)) })
+            addView(row(
+                pill("☕ Invitar a un café", primary = true) {
+                    openExternalUrl("https://ko-fi.com/charlysev")
+                },
+                pill("💙 PayPal") {
+                    openExternalUrl("https://www.paypal.me/CharlysEV")
+                },
+            ))
         })
 
         // ======================================================================================
@@ -970,8 +1139,11 @@ class MainActivity : Activity() {
                             out.flush()
                         } ?: error("No se pudo abrir el destino")
                     }.onSuccess {
+                        prefs.usbExportDoneAtMs = System.currentTimeMillis()
                         runOnUiThread {
                             toast("✅ ${src.name} guardado correctamente en el USB / carpeta")
+                            render()
+                            activeTutorialDialog?.refresh()
                         }
                     }.onFailure { e ->
                         runOnUiThread {
@@ -1031,7 +1203,116 @@ class MainActivity : Activity() {
         prefs.carBtAddress = address
         prefs.carBtName = name
         render()
-        if (prefs.isPaired) BridgeService.start(this)
+        activeTutorialDialog?.refresh()
+        if (prefs.isPaired && prefs.enabled) BridgeService.reconnectNow(this)
+    }
+
+    private fun applyTransportToggleChange() {
+        if (!prefs.useBluetooth && !prefs.useWifi) {
+            BridgeService.stop(this)
+            BridgeState.update {
+                it.copy(
+                    phase = BridgeState.Phase.STOPPED,
+                    transport = "",
+                    detail = "Opciones desmarcadas. Marca Bluetooth o Wi-Fi cuando quieras conectar.",
+                )
+            }
+        } else if (prefs.isPaired && prefs.enabled) {
+            BridgeService.reconnectNow(this)
+        }
+        render()
+    }
+
+    private fun buildTransportToggleRow(
+        checked: Boolean,
+        title: String,
+        subtitle: String,
+        onToggle: () -> Unit,
+    ): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = if (checked) rounded(SURFACE_TOP, dp(14), ACCENT) else rounded(SURFACE, dp(14), OUTLINE)
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        isClickable = true
+        setOnClickListener { onToggle() }
+
+        val checkBadge = TextView(this@MainActivity).apply {
+            text = if (checked) "☑" else "☐"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(if (checked) ACCENT else FAINT)
+            setPadding(0, 0, dp(10), 0)
+        }
+        addView(checkBadge)
+
+        val col = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        col.addView(text(title, 14.5f, if (checked) TEXT else DIM, bold = true))
+        col.addView(text(subtitle, 12f, if (checked) ACCENT else FAINT).apply {
+            setPadding(0, dp(2), 0, 0)
+        })
+        addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+    }
+
+    private fun openTutorialDialog() {
+        activeTutorialDialog?.dismiss()
+        val dlg = InstallTutorialDialog(
+            activity = this,
+            prefs = prefs,
+            onExportUsb = { apk -> exportApkToUsbDrive(apk) },
+            onOpenHotspot = { openTetherSettings() },
+            onPickBluetooth = { pickBondedDevice() },
+            onAssociateBluetooth = { associateCar() },
+        )
+        dlg.setOnDismissListener {
+            if (activeTutorialDialog === dlg) activeTutorialDialog = null
+            render()
+        }
+        activeTutorialDialog = dlg
+        dlg.show()
+    }
+
+    private fun showSupportDialog() {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(SURFACE, dp(20), OUTLINE)
+            setPadding(dp(20), dp(18), dp(20), dp(18))
+        }
+        box.addView(text("☕ Apoyar Qonecta · por CharlysEV", 19f, WARN, bold = true))
+        box.addView(text(
+            "Qonecta Unit, Qonecta Companion y Qonecta+ se desarrollan de forma independiente para que disfrutes al máximo tu Leapmotor C10 sin suscripciones ni bloqueos.\n\n" +
+                "Si te gusta el proyecto y quieres invitar a un café o echar una mano:",
+            14f, TEXT,
+        ).apply { setPadding(0, dp(8), 0, dp(14)) })
+
+        box.addView(pill("☕ Invitar a un café en Ko-fi", primary = true) {
+            openExternalUrl("https://ko-fi.com/charlysev")
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)))
+
+        box.addView(pill("💙 Apoyar por PayPal") {
+            openExternalUrl("https://www.paypal.me/CharlysEV")
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(8) })
+
+        box.addView(pill("🐙 Ver proyecto en GitHub (CharlysEV)") {
+            openExternalUrl("https://github.com/CharlysEV/qonecta")
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)).apply { topMargin = dp(8) })
+
+        val dlg = AlertDialog.Builder(this)
+            .setView(box)
+            .setNegativeButton("Cerrar", null)
+            .create()
+        dlg.window?.setBackgroundDrawable(rounded(SURFACE, dp(20), OUTLINE))
+        dlg.show()
+    }
+
+    private fun openExternalUrl(url: String) {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure {
+            toast("Enlace: $url")
+        }
     }
 
     private fun testMaps() {

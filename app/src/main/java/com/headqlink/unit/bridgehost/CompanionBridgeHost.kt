@@ -71,6 +71,9 @@ object CompanionBridgeHost {
     @Volatile private var tcpListening = false
     @Volatile private var btListening = false
     @Volatile private var btProblem: String? = null
+    @Volatile private var btEnabled = true
+    @Volatile private var activeBtServer: BluetoothServerSocket? = null
+    private val btWakeLock = Object()
     private lateinit var appContext: Context
     private lateinit var registry: PairingRegistry
 
@@ -79,6 +82,7 @@ object CompanionBridgeHost {
         if (started) return
         started = true
         appContext = context.applicationContext
+        btEnabled = runCatching { com.andrerinas.openheadunit.utils.Settings(appContext).btCompanionEnabled }.getOrDefault(true)
         runCatching { com.headqlink.unit.extended.LeapVehicleDataSource.start(appContext) }
         registry = PairingRegistry(PrefsTokenStore(appContext))
         thread(name = "companion-tcp", isDaemon = true) { tcpLoop() }
@@ -86,7 +90,35 @@ object CompanionBridgeHost {
         pingExecutor.scheduleWithFixedDelay({ pingAll() }, BridgeConstants.PING_INTERVAL_MS, BridgeConstants.PING_INTERVAL_MS, TimeUnit.MILLISECONDS)
         // Con el móvil conectado, Qonecta Unit manda: el estado en vivo del coche al Companion cada 5 s.
         pingExecutor.scheduleWithFixedDelay({ runCatching { pushTelemetry() } }, 5_000L, 5_000L, TimeUnit.MILLISECONDS)
-        AppLog.i("[Companion] Puente arrancado (TCP ${BridgeConstants.TCP_PORT} + Bluetooth RFCOMM)")
+        AppLog.i("[Companion] Puente arrancado (TCP ${BridgeConstants.TCP_PORT} + Bluetooth RFCOMM enabled=$btEnabled)")
+    }
+
+    /** Activa o pausa la escucha Bluetooth RFCOMM en caliente cuando el usuario marca/desmarca la opción. */
+    fun setBluetoothEnabled(context: Context, enabled: Boolean) {
+        start(context)
+        btEnabled = enabled
+        if (!enabled) {
+            btListening = false
+            btProblem = "Desactivado por el usuario"
+            runCatching { activeBtServer?.close() }
+            activeBtServer = null
+            sessions.filter { it.transport == "Bluetooth" }.forEach {
+                it.channel.close()
+                sessions.remove(it)
+            }
+            notifyListeners()
+        } else {
+            btProblem = null
+            wakeNow()
+            notifyListeners()
+        }
+    }
+
+    /** Despierta de inmediato el hilo RFCOMM si estaba esperando reintento o reconexión. */
+    fun wakeNow() {
+        synchronized(btWakeLock) {
+            btWakeLock.notifyAll()
+        }
     }
 
     // ------------------------------------------------------------------------------------------
@@ -244,6 +276,15 @@ object CompanionBridgeHost {
     @SuppressLint("MissingPermission")
     private fun bluetoothLoop() {
         while (true) {
+            if (!btEnabled) {
+                btListening = false
+                btProblem = "Desactivado por el usuario"
+                notifyListeners()
+                synchronized(btWakeLock) {
+                    runCatching { btWakeLock.wait(30_000L) }
+                }
+                continue
+            }
             var server: BluetoothServerSocket? = null
             try {
                 val missingPerm = Build.VERSION.SDK_INT >= 31 &&
@@ -255,10 +296,11 @@ object CompanionBridgeHost {
                     !adapter.isEnabled -> throw IllegalStateException("Bluetooth apagado")
                 }
                 server = adapter!!.listenUsingRfcommWithServiceRecord(BridgeConstants.RFCOMM_NAME, BridgeConstants.RFCOMM_UUID)
+                activeBtServer = server
                 btListening = true
                 btProblem = null
                 notifyListeners()
-                while (true) {
+                while (btEnabled) {
                     val sock = server.accept()
                     thread(isDaemon = true, name = "companion-rfcomm-conn") {
                         val channel = LineChannel(sock.inputStream, sock.outputStream) { runCatching { sock.close() } }
@@ -275,13 +317,21 @@ object CompanionBridgeHost {
                 }
             } catch (e: Exception) {
                 runCatching { server?.close() }
+                if (activeBtServer === server) activeBtServer = null
                 btListening = false
+                if (!btEnabled) {
+                    btProblem = "Desactivado por el usuario"
+                    notifyListeners()
+                    continue
+                }
                 if (btProblem != e.message) {
                     btProblem = e.message
-                    AppLog.w("[Companion] Bluetooth RFCOMM no disponible: ${e.message}; reintento en 15 s")
+                    AppLog.w("[Companion] Bluetooth RFCOMM no disponible: ${e.message}; reintento en 8 s")
                     notifyListeners()
                 }
-                Thread.sleep(15_000L)
+                synchronized(btWakeLock) {
+                    runCatching { btWakeLock.wait(8_000L) }
+                }
             }
         }
     }
@@ -440,10 +490,26 @@ object CompanionBridgeHost {
                 }
             }
         }
+        var unitConnObj = org.json.JSONObject()
+        if (::appContext.isInitialized) {
+            runCatching {
+                val us = com.andrerinas.openheadunit.utils.Settings(appContext)
+                val aaUp = runCatching { com.andrerinas.openheadunit.App.provide(appContext).commManager.isConnected }.getOrDefault(false)
+                val aaWireless = runCatching { com.andrerinas.openheadunit.App.provide(appContext).commManager.isWirelessSession }.getOrDefault(false)
+                unitConnObj = org.json.JSONObject()
+                    .put("btCompanion", us.btCompanionEnabled)
+                    .put("wifi5g", us.wifi5gEnabled)
+                    .put("hotspot", us.hotspotModeEnabled)
+                    .put("usb", us.usbModeEnabled)
+                    .put("aaConnected", aaUp)
+                    .put("aaWireless", aaWireless)
+            }
+        }
         val o = org.json.JSONObject()
             .put("ts", System.currentTimeMillis())
             .put("variantId", variantId)
             .put("isReev", isReev)
+            .put("unitConn", unitConnObj)
             .put("pricing", pricingObj)
             .put("deletedTripIds", deletedArr)
             .put("hiddenTripIds", hiddenArr)

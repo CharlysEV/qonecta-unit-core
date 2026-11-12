@@ -31,16 +31,41 @@ class CarLink(private val context: Context) {
         @Volatile var lastWifiNetwork: android.net.Network? = null
     }
 
-    data class Opened(val channel: LineChannel, val transport: String)
+    data class Opened(
+        val channel: LineChannel,
+        val transport: String,
+        val btAddress: String? = null,
+        val btName: String? = null,
+    )
 
     fun hasBluetoothPermission(): Boolean =
         Build.VERSION.SDK_INT < 31 ||
             context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
-    /** Intenta Wi-Fi primero (rápido si no está el coche) y luego Bluetooth. */
-    fun open(carBtAddress: String?): Opened? {
-        openWifi()?.let { return it }
-        if (!carBtAddress.isNullOrBlank()) openBluetooth(carBtAddress)?.let { return it }
+    /**
+     * Abre canal con el coche respetando estrictamente las casillas marcadas por el usuario en Qonecta Companion:
+     * - Si `useWifi == false` (Modo Solo Bluetooth), omite por completo cualquier sondeo Wi-Fi y conecta directo por RFCOMM.
+     * - Si `carBtAddress` aún no estaba fijado manualmente (p. ej. emparejó antes por Wi-Fi), autodetecta el C10 entre
+     *   los dispositivos Bluetooth vinculados probando el UUID exclusivo de Qonecta Unit.
+     */
+    fun open(
+        carBtAddress: String?,
+        useWifi: Boolean = true,
+        useBluetooth: Boolean = true,
+    ): Opened? {
+        if (useWifi) {
+            openWifi()?.let { return it }
+        } else {
+            lastWifiAddr = null
+            lastWifiNetwork = null
+        }
+        if (useBluetooth) {
+            if (!carBtAddress.isNullOrBlank()) {
+                openBluetooth(carBtAddress)?.let { return it }
+            } else {
+                openAutoDiscoveredCarBluetooth()?.let { return it }
+            }
+        }
         return null
     }
 
@@ -51,13 +76,15 @@ class CarLink(private val context: Context) {
             val caps = cm.getNetworkCapabilities(network) ?: continue
             if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue
             val lp = cm.getLinkProperties(network) ?: continue
+            val ifName = lp.interfaceName.orEmpty().lowercase()
             val isP2pOrHotspotSubnet = lp.linkAddresses.any {
                 val h = it.address.hostAddress.orEmpty()
-                h.startsWith("192.168.49.") || h.startsWith("192.168.43.")
-            }
+                h.startsWith("192.168.49.") || h.startsWith("192.168.43.") || h.startsWith("192.168.187.")
+            } || ifName.contains("p2p") || ifName.contains("swlan") || ifName.contains("ap")
             val hasValidatedInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-            // Si es una Wi-Fi doméstica con Internet normal (y no subred de Android Auto P2P/Hotspot), no bloqueamos Bluetooth
+            // Solo sondeamos TCP :5299 en redes de coche (Wi-Fi Direct 5G / Hotspot) o sin internet validado en subred local conocida
             if (hasValidatedInternet && !isP2pOrHotspotSubnet) continue
+            if (!isP2pOrHotspotSubnet && lastWifiAddr == null) continue
 
             val candidates = LinkedHashSet<InetAddress>()
             if (Build.VERSION.SDK_INT >= 30) lp.dhcpServerAddress?.let { candidates.add(it) }
@@ -98,11 +125,51 @@ class CarLink(private val context: Context) {
             socket = device.createRfcommSocketToServiceRecord(BridgeConstants.RFCOMM_UUID)
             socket.connect()
             val s = socket
-            Opened(LineChannel(s.inputStream, s.outputStream) { runCatching { s.close() } }, "Bluetooth")
+            val devName = runCatching { device.name }.getOrNull()
+            Opened(
+                channel = LineChannel(s.inputStream, s.outputStream) { runCatching { s.close() } },
+                transport = "Bluetooth",
+                btAddress = device.address,
+                btName = devName,
+            )
         } catch (_: Exception) {
             runCatching { socket?.close() }
             null
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun openAutoDiscoveredCarBluetooth(): Opened? {
+        if (!hasBluetoothPermission()) return null
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return null
+        if (!adapter.isEnabled) return null
+        val bonded = runCatching { adapter.bondedDevices?.toList().orEmpty() }.getOrDefault(emptyList())
+        if (bonded.isEmpty()) return null
+
+        val prioritized = bonded.sortedByDescending { d ->
+            val n = runCatching { d.name.orEmpty().lowercase() }.getOrDefault("")
+            val devClass = runCatching { d.bluetoothClass?.deviceClass ?: 0 }.getOrDefault(0)
+            when {
+                n.contains("leap") || n.contains("c10") || n.contains("c16") || n.contains("b10") || n.contains("t03") || n.contains("qonecta") -> 3
+                devClass == android.bluetooth.BluetoothClass.Device.AUDIO_VIDEO_CAR_AUDIO ||
+                    devClass == android.bluetooth.BluetoothClass.Device.AUDIO_VIDEO_HANDSFREE -> 2
+                n.contains("car") || n.contains("auto") || n.contains("my ") -> 1
+                else -> 0
+            }
+        }.filter { d ->
+            val n = runCatching { d.name.orEmpty().lowercase() }.getOrDefault("")
+            val devClass = runCatching { d.bluetoothClass?.deviceClass ?: 0 }.getOrDefault(0)
+            n.contains("leap") || n.contains("c10") || n.contains("c16") || n.contains("b10") || n.contains("t03") ||
+                n.contains("qonecta") || n.contains("car") ||
+                devClass == android.bluetooth.BluetoothClass.Device.AUDIO_VIDEO_CAR_AUDIO ||
+                devClass == android.bluetooth.BluetoothClass.Device.AUDIO_VIDEO_HANDSFREE ||
+                bonded.size <= 3
+        }
+
+        for (candidate in prioritized.take(4)) {
+            openBluetooth(candidate.address)?.let { return it }
+        }
+        return null
     }
 
     /**

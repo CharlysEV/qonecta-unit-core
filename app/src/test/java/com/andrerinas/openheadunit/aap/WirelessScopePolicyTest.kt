@@ -39,4 +39,11 @@ class WirelessScopePolicyTest {
         assertTrue(WirelessScopePolicy.allowsWireless(emptySet()))
         assertEquals(3, WirelessScopePolicy.effectiveMode(3, emptySet()))
     }
+
+    @Test
+    fun `bluetooth only mode 4 never starts wireless`() {
+        assertEquals(0, WirelessScopePolicy.effectiveMode(4, emptySet()))
+        assertEquals(0, WirelessScopePolicy.effectiveMode(4, setOf(ConnectionMode.WIFI)))
+        assertEquals(0, WirelessScopePolicy.effectiveMode(4, setOf(ConnectionMode.USB, ConnectionMode.WIFI)))
+    }
 }
