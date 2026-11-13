@@ -81,16 +81,41 @@ object MapsLauncher {
         val name = dest.name.ifBlank { String.format(java.util.Locale.US, "%.4f, %.4f", dest.lat, dest.lon) }
         return when {
             built.waypoints.isEmpty() -> name
-            built.reachesDestination -> "$name · ${built.waypoints.size} parada(s) de carga"
-            else -> "${built.target.name.ifBlank { "Parada" }} (siguiente tramo hacia $name)"
+            built.reachesDestination -> CompanionI18n.tr(
+                "$name · ${built.waypoints.size} parada(s) de carga",
+                "$name · ${built.waypoints.size} charging stop(s)",
+                "$name · ${built.waypoints.size} Ladestopp(s)",
+                "$name · ${built.waypoints.size} paragem(ns) de carregamento",
+            )
+            else -> {
+                val stopLabel = built.target.name.ifBlank {
+                    CompanionI18n.tr("Parada", "Stop", "Stopp", "Paragem")
+                }
+                CompanionI18n.tr(
+                    "$stopLabel (siguiente tramo hacia $name)",
+                    "$stopLabel (next leg towards $name)",
+                    "$stopLabel (nächster Abschnitt Richtung $name)",
+                    "$stopLabel (próximo troço rumo a $name)",
+                )
+            }
         }
     }
 
     private fun postTapNotification(ctx: Context, intent: Intent, summary: String) {
+        CompanionI18n.init(ctx)
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ROUTE, "Rutas del coche", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Rutas que manda el planificador de Qonecta Unit"
+            NotificationChannel(
+                CHANNEL_ROUTE,
+                CompanionI18n.tr("Rutas del coche", "Car routes", "Fahrzeugrouten", "Rotas do carro"),
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = CompanionI18n.tr(
+                    "Rutas que manda el planificador de Qonecta Unit",
+                    "Routes sent by the Qonecta Unit planner",
+                    "Routen vom Qonecta Unit Routenplaner",
+                    "Rotas enviadas pelo planeador do Qonecta Unit",
+                )
             }
         )
         val pi = PendingIntent.getActivity(
@@ -98,7 +123,14 @@ object MapsLauncher {
         )
         val n = android.app.Notification.Builder(ctx, CHANNEL_ROUTE)
             .setSmallIcon(R.drawable.ic_stat_route)
-            .setContentTitle("Ruta del coche: toca para abrir Google Maps")
+            .setContentTitle(
+                CompanionI18n.tr(
+                    "Ruta del coche: toca para abrir Google Maps",
+                    "Car route: tap to open Google Maps",
+                    "Fahrzeugroute: Tippen zum Öffnen von Google Maps",
+                    "Rota do carro: toca para abrir o Google Maps",
+                )
+            )
             .setContentText(summary)
             .setContentIntent(pi)
             .setAutoCancel(true)

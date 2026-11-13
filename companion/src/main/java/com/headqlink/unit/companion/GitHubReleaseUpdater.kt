@@ -8,6 +8,8 @@ import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import com.headqlink.unit.companion.CompanionI18n.tr
+import com.headqlink.unit.companion.CompanionI18n.trFor
 import org.json.JSONArray
 import java.io.BufferedInputStream
 import java.io.File
@@ -171,7 +173,12 @@ object GitHubReleaseUpdater {
 
             val unitStatus = fetchRepoReleasesInternal(
                 repoSlug = cleanUnit,
-                projectLabel = "🚗 Qonecta Unit (Coche)",
+                projectLabel = tr(
+                    "🚗 Qonecta Unit (Coche)",
+                    "🚗 Qonecta Unit (Car)",
+                    "🚗 Qonecta Unit (Fahrzeug)",
+                    "🚗 Qonecta Unit (Carro)",
+                ),
                 githubToken = cleanToken,
             )
             statuses.add(unitStatus)
@@ -180,7 +187,12 @@ object GitHubReleaseUpdater {
             if (!cleanComp.equals(cleanUnit, ignoreCase = true)) {
                 val compStatus = fetchRepoReleasesInternal(
                     repoSlug = cleanComp,
-                    projectLabel = "📱 Qonecta Companion (Móvil)",
+                    projectLabel = tr(
+                        "📱 Qonecta Companion (Móvil)",
+                        "📱 Qonecta Companion (Phone)",
+                        "📱 Qonecta Companion (Smartphone)",
+                        "📱 Qonecta Companion (Telemóvel)",
+                    ),
                     githubToken = cleanToken,
                 )
                 statuses.add(compStatus)
@@ -216,12 +228,32 @@ object GitHubReleaseUpdater {
             if (code !in 200..299) {
                 val msg = when (code) {
                     404 -> if (githubToken.isNullOrBlank()) {
-                        "Repositorio privado o sin acceso público (HTTP 404). Añade tu Token PAT de GitHub arriba."
+                        tr(
+                            "Repositorio privado o sin acceso público (HTTP 404). Añade tu Token PAT de GitHub arriba.",
+                            "Private repository or no public access (HTTP 404). Add your GitHub PAT token above.",
+                            "Privates Repository oder kein öffentlicher Zugriff (HTTP 404). Füge oben dein GitHub-PAT-Token hinzu.",
+                            "Repositório privado ou sem acesso público (HTTP 404). Adiciona o teu Token PAT do GitHub acima.",
+                        )
                     } else {
-                        "No encontrado (HTTP 404). Verifica el nombre $repoSlug o que el Token tenga permiso 'repo' / 'Contents: Read'."
+                        tr(
+                            "No encontrado (HTTP 404). Verifica el nombre $repoSlug o que el Token tenga permiso 'repo' / 'Contents: Read'.",
+                            "Not found (HTTP 404). Check $repoSlug or verify the token has 'repo' / 'Contents: Read' permission.",
+                            "Nicht gefunden (HTTP 404). Prüfe $repoSlug oder ob das Token die Berechtigung 'repo' / 'Contents: Read' hat.",
+                            "Não encontrado (HTTP 404). Verifica o nome $repoSlug ou se o Token tem permissão 'repo' / 'Contents: Read'.",
+                        )
                     }
-                    401, 403 -> "Acceso denegado (HTTP $code). Verifica que el Token PAT de GitHub sea válido."
-                    else -> "GitHub devolvió HTTP $code"
+                    401, 403 -> tr(
+                        "Acceso denegado (HTTP $code). Verifica que el Token PAT de GitHub sea válido.",
+                        "Access denied (HTTP $code). Verify that your GitHub PAT token is valid.",
+                        "Zugriff verweigert (HTTP $code). Prüfe, ob dein GitHub-PAT-Token gültig ist.",
+                        "Acesso negado (HTTP $code). Verifica se o teu Token PAT do GitHub é válido.",
+                    )
+                    else -> tr(
+                        "GitHub devolvió HTTP $code",
+                        "GitHub returned HTTP $code",
+                        "GitHub antwortete mit HTTP $code",
+                        "O GitHub devolveu HTTP $code",
+                    )
                 }
                 return RepoStatus(repoSlug, projectLabel, emptyList(), msg)
             }
@@ -257,12 +289,27 @@ object GitHubReleaseUpdater {
                 }
             }
             if (assets.isEmpty()) {
-                RepoStatus(repoSlug, projectLabel, emptyList(), "Sin archivos .apk publicados todavía en Releases.")
+                RepoStatus(
+                    repoSlug,
+                    projectLabel,
+                    emptyList(),
+                    tr(
+                        "Sin archivos .apk publicados todavía en Releases.",
+                        "No .apk files published in Releases yet.",
+                        "Noch keine .apk-Dateien in Releases veröffentlicht.",
+                        "Ainda sem ficheiros .apk publicados em Releases.",
+                    ),
+                )
             } else {
                 RepoStatus(repoSlug, projectLabel, assets, null)
             }
         }.getOrElse { e ->
-            RepoStatus(repoSlug, projectLabel, emptyList(), e.message ?: "Error de red")
+            RepoStatus(
+                repoSlug,
+                projectLabel,
+                emptyList(),
+                e.message ?: tr("Error de red", "Network error", "Netzwerkfehler", "Erro de rede"),
+            )
         }
     }
 
@@ -313,7 +360,14 @@ object GitHubReleaseUpdater {
                                 if (pct != lastPct && pct % 5 == 0) {
                                     lastPct = pct
                                     mainHandler.post {
-                                        onProgress("Descargando ${asset.assetName}: $pct%")
+                                        onProgress(
+                                            tr(
+                                                "Descargando ${asset.assetName}: $pct%",
+                                                "Downloading ${asset.assetName}: $pct%",
+                                                "Lade ${asset.assetName} herunter: $pct%",
+                                                "A transferir ${asset.assetName}: $pct%",
+                                            )
+                                        )
                                     }
                                 }
                             }
@@ -358,11 +412,25 @@ object GitHubReleaseUpdater {
                     session.commit(pending.intentSender)
                 }
                 mainHandler.post {
-                    onStatus("Instalador de Android abierto para ${apkFile.name}")
+                    onStatus(
+                        tr(
+                            "Instalador de Android abierto para ${apkFile.name}",
+                            "Android installer opened for ${apkFile.name}",
+                            "Android-Installer für ${apkFile.name} geöffnet",
+                            "Instalador do Android aberto para ${apkFile.name}",
+                        )
+                    )
                 }
             }.onFailure { e ->
                 mainHandler.post {
-                    onStatus("Error al iniciar instalación: ${e.message}")
+                    onStatus(
+                        tr(
+                            "Error al iniciar instalación: ${e.message}",
+                            "Failed to start installation: ${e.message}",
+                            "Fehler beim Starten der Installation: ${e.message}",
+                            "Erro ao iniciar a instalação: ${e.message}",
+                        )
+                    )
                 }
             }
         }
@@ -485,6 +553,7 @@ object GitHubReleaseUpdater {
                 var hostHeader = ""
                 var userAgent = ""
                 var rangeHeader = ""
+                var acceptLangHeader = ""
                 while (true) {
                     val h = reader.readLine()
                     if (h.isNullOrEmpty()) break
@@ -495,6 +564,8 @@ object GitHubReleaseUpdater {
                             userAgent = h.substringAfter(":").trim()
                         h.startsWith("Range:", ignoreCase = true) ->
                             rangeHeader = h.substringAfter(":").trim()
+                        h.startsWith("Accept-Language:", ignoreCase = true) ->
+                            acceptLangHeader = h.substringAfter(":").trim()
                     }
                 }
 
@@ -660,7 +731,9 @@ object GitHubReleaseUpdater {
                         portalOpenedClientIp = clientIp
                         notifyPortalListeners()
                         onEvent("🌐 Coche ($clientIp) abrió el Portal desde $clientAppLabel")
-                        val htmlBytes = buildCaptivePortalHtml(localSocketIp, listenPort, apkFile, isVivaldi, clientAppLabel).toByteArray(Charsets.UTF_8)
+                        val queryLang = Regex("[?&]lang=([a-zA-Z]{2})").find(rawTarget)?.groupValues?.getOrNull(1)
+                        val portalLang = CompanionI18n.fromAcceptLanguageOrCurrent(acceptLangHeader, queryLang)
+                        val htmlBytes = buildCaptivePortalHtml(localSocketIp, listenPort, apkFile, isVivaldi, clientAppLabel, portalLang).toByteArray(Charsets.UTF_8)
                         val header = buildString {
                             append("HTTP/1.1 200 OK\r\n")
                             append("Content-Type: text/html; charset=utf-8\r\n")
@@ -685,34 +758,118 @@ object GitHubReleaseUpdater {
         apkFile: File,
         isVivaldi: Boolean,
         clientAppLabel: String,
+        lang: CompanionI18n.Lang = CompanionI18n.currentLang(),
     ): String {
         val sizeMb = String.format(Locale.US, "%.1f MB", apkFile.length() / (1024.0 * 1024.0))
         val dlUrl = "http://$serverIp:$serverPort/download/com.tencent.qqmusiccar.apk"
         val altUrl = "http://$serverIp:$serverPort/${apkFile.name}"
 
         val bannerHtml = if (isVivaldi) {
-            """
-            <div class="banner banner-warn">
-                ⚠️ <b>Abierto desde Vivaldi Automotive:</b> Vivaldi bloquea las descargas directas de APK.<br>
-                👉 <b>Usa el Botón 2 (Amarillo)</b> con el APK en tu Pendrive USB y pulsa el icono pequeño <b>&#x2922; (vista previa)</b> en la esquina del archivo dentro de «Archivos».
-            </div>
-            """.trimIndent()
+            val bText = trFor(
+                lang,
+                "⚠️ <b>Abierto desde Vivaldi Automotive:</b> Vivaldi bloquea las descargas directas de APK.<br>👉 <b>Usa el Botón 2 (Amarillo)</b> con el APK en tu Pendrive USB y pulsa el icono pequeño <b>&#x2922; (vista previa)</b> en la esquina del archivo dentro de «Archivos».",
+                "⚠️ <b>Opened in Vivaldi Automotive:</b> Vivaldi blocks direct APK downloads.<br>👉 <b>Tap Button 2 (Yellow)</b> with the APK on your USB drive, then tap the tiny <b>&#x2922; (preview)</b> icon in the corner of the file inside «Files».",
+                "⚠️ <b>Geöffnet in Vivaldi Automotive:</b> Vivaldi blockiert direkte APK-Downloads.<br>👉 <b>Nutze Button 2 (Gelb)</b> mit der APK auf deinem USB-Stick und tippe in «Dateien» auf das kleine <b>&#x2922; (Vorschau)</b>-Symbol in der Dateiecke.",
+                "⚠️ <b>Aberto no Vivaldi Automotive:</b> O Vivaldi bloqueia transferências diretas de APK.<br>👉 <b>Usa o Botão 2 (Amarelo)</b> com o APK na tua Pen USB e toca no pequeno ícone <b>&#x2922; (pré-visualização)</b> no canto do ficheiro dentro de «Ficheiros».",
+            )
+            """<div class="banner banner-warn">$bText</div>"""
         } else {
+            val bText = trFor(
+                lang,
+                "🟢 <b>Abierto desde $clientAppLabel:</b> Descarga e instalación directa habilitada.<br>👉 Pulsa el <b>Botón 1 (Verde)</b> para descargar e instalar Qonecta Unit, o el <b>Botón 2 (Amarillo)</b> si tienes el APK en un Pendrive USB.",
+                "🟢 <b>Opened in $clientAppLabel:</b> Direct download and installation enabled.<br>👉 Tap <b>Button 1 (Green)</b> to download and install Qonecta Unit, or <b>Button 2 (Yellow)</b> if the APK is on a USB drive.",
+                "🟢 <b>Geöffnet in $clientAppLabel:</b> Direkter Download und Installation aktiviert.<br>👉 Tippe auf <b>Button 1 (Grün)</b> zum Herunterladen & Installieren von Qonecta Unit, oder <b>Button 2 (Gelb)</b> mit USB-Stick.",
+                "🟢 <b>Aberto em $clientAppLabel:</b> Transferência e instalação direta ativada.<br>👉 Toca no <b>Botão 1 (Verde)</b> para transferir e instalar o Qonecta Unit, ou no <b>Botão 2 (Amarelo)</b> se tiveres o APK numa Pen USB.",
+            )
+            """<div class="banner banner-ok">$bText</div>"""
+        }
+
+        val pageTitle = trFor(
+            lang,
+            "Instalador Qonecta Unit · C10",
+            "Qonecta Unit Installer · C10",
+            "Qonecta Unit Installer · C10",
+            "Instalador Qonecta Unit · C10",
+        )
+        val h1Title = trFor(
+            lang,
+            "🚗 Instalador Qonecta Unit · $sizeMb",
+            "🚗 Qonecta Unit Installer · $sizeMb",
+            "🚗 Qonecta Unit Installer · $sizeMb",
+            "🚗 Instalador Qonecta Unit · $sizeMb",
+        )
+        val subText = trFor(
+            lang,
+            "Conectado a <b>$serverIp:$serverPort</b> · Paquete: <b>${apkFile.name}</b>",
+            "Connected to <b>$serverIp:$serverPort</b> · Package: <b>${apkFile.name}</b>",
+            "Verbunden mit <b>$serverIp:$serverPort</b> · Paket: <b>${apkFile.name}</b>",
+            "Ligado a <b>$serverIp:$serverPort</b> · Pacote: <b>${apkFile.name}</b>",
+        )
+        val btn1Label = trFor(
+            lang,
+            "📲 1. DESCARGAR E INSTALAR QONECTA UNIT (.APK)",
+            "📲 1. DOWNLOAD & INSTALL QONECTA UNIT (.APK)",
+            "📲 1. QONECTA UNIT HERUNTERLADEN & INSTALLIEREN (.APK)",
+            "📲 1. TRANSFERIR E INSTALAR QONECTA UNIT (.APK)",
+        )
+        val btn2Label = trFor(
+            lang,
+            "📁 2. ABRIR «ARCHIVOS DEL COCHE» (INSTALAR DESDE USB)",
+            "📁 2. OPEN «CAR FILES» (INSTALL FROM USB DRIVE)",
+            "📁 2. «FAHRZEUG-DATEIEN» ÖFFNEN (VOM USB-STICK INSTALLIEREN)",
+            "📁 2. ABRIR «FICHEIROS DO CARRO» (INSTALAR PELA PEN USB)",
+        )
+        val btn3Label = trFor(
+            lang,
+            "📦 3. Enlace Directo Alternativo (${apkFile.name})",
+            "📦 3. Alternative Direct Link (${apkFile.name})",
+            "📦 3. Alternativer Direktlink (${apkFile.name})",
+            "📦 3. Ligação Direta Alternativa (${apkFile.name})",
+        )
+        val guideHtml = trFor(
+            lang,
             """
-            <div class="banner banner-ok">
-                🟢 <b>Abierto desde $clientAppLabel:</b> Descarga e instalación directa habilitada.<br>
-                👉 Pulsa el <b>Botón 1 (Verde)</b> para descargar e instalar Qonecta Unit, o el <b>Botón 2 (Amarillo)</b> si tienes el APK en un Pendrive USB.
-            </div>
-            """.trimIndent()
+            <b>💡 Cómo instalar desde Pendrive USB con el Botón 2 (Amarillo):</b><br>
+            1️⃣ Guarda <code>${apkFile.name}</code> en tu pendrive USB y conéctalo al puerto USB bajo el reposabrazos.<br>
+            2️⃣ Pulsa el botón amarillo <b>«📁 2. ABRIR ARCHIVOS DEL COCHE»</b>.<br>
+            3️⃣ En la ventana de Archivos del coche, entra en tu <b>Unidad USB</b> a la izquierda.<br>
+            4️⃣ <span class="hl">TRUCO CLAVE: NO toques el centro del archivo.</span> Toca el <b>icono pequeño de vista previa (dos flechas en diagonal &#x2922; en la esquina del icono del APK)</b> para abrir el Instalador del Sistema.
+            """.trimIndent(),
+            """
+            <b>💡 How to install from a USB Drive using Button 2 (Yellow):</b><br>
+            1️⃣ Copy <code>${apkFile.name}</code> onto your USB drive and plug it into the USB data port under the center armrest.<br>
+            2️⃣ Tap the yellow button <b>«📁 2. OPEN CAR FILES»</b> above.<br>
+            3️⃣ In the car's Files window, select your <b>USB Drive</b> on the left.<br>
+            4️⃣ <span class="hl">KEY TRICK: DO NOT tap the center of the file.</span> Tap the <b>tiny preview icon (two diagonal arrows &#x2922; in the corner of the APK tile)</b> to launch the Android System Installer directly.
+            """.trimIndent(),
+            """
+            <b>💡 So installierst du vom USB-Stick über Button 2 (Gelb):</b><br>
+            1️⃣ Speichere <code>${apkFile.name}</code> auf deinem USB-Stick und stecke ihn in den USB-Datenport unter der Mittelarmlehne.<br>
+            2️⃣ Tippe oben auf den gelben Button <b>«📁 2. FAHRZEUG-DATEIEN ÖFFNEN»</b>.<br>
+            3️⃣ Wähle links im Dateifenster deinen <b>USB-Stick</b> aus.<br>
+            4️⃣ <span class="hl">WICHTIGER TRICK: NICHT die Mitte der Datei antippen!</span> Tippe auf das <b>kleine Vorschau-Symbol (zwei diagonale Pfeile &#x2922; in der Ecke des APK-Symbols)</b>, um den Android-Paketinstaller zu starten.
+            """.trimIndent(),
+            """
+            <b>💡 Como instalar a partir da Pen USB com o Botão 2 (Amarelo):</b><br>
+            1️⃣ Guarda <code>${apkFile.name}</code> na tua pen USB e liga-a à porta USB de dados por baixo do apoio de braço.<br>
+            2️⃣ Toca no botão amarelo <b>«📁 2. ABRIR FICHEIROS DO CARRO»</b> acima.<br>
+            3️⃣ Na janela de Ficheiros do carro, seleciona a tua <b>Unidade USB</b> à esquerda.<br>
+            4️⃣ <span class="hl">TRUQUE ESSENCIAL: NÃO toques no centro do ficheiro.</span> Toca no <b>pequeno ícone de pré-visualização (duas setas diagonais &#x2922; no canto do ícone do APK)</b> para abrir diretamente o Instalador do Sistema.
+            """.trimIndent(),
+        )
+
+        val langLinks = CompanionI18n.Lang.entries.joinToString(" ") { item ->
+            val cls = if (item == lang) "lang-pill active" else "lang-pill"
+            """<a class="$cls" href="/portal?lang=${item.code}">${item.flag} ${item.badge}</a>"""
         }
 
         return """
             <!DOCTYPE html>
-            <html lang="es">
+            <html lang="${lang.code}">
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Instalador Qonecta Unit · C10</title>
+                <title>$pageTitle</title>
                 <style>
                     body {
                         margin: 0;
@@ -729,6 +886,28 @@ object GitHubReleaseUpdater {
                         border-radius: 20px;
                         padding: 22px;
                         box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+                    }
+                    .lang-bar {
+                        display: flex;
+                        justify-content: center;
+                        gap: 8px;
+                        margin-bottom: 12px;
+                        flex-wrap: wrap;
+                    }
+                    .lang-pill {
+                        text-decoration: none;
+                        padding: 6px 12px;
+                        border-radius: 999px;
+                        font-size: 14px;
+                        font-weight: 700;
+                        background: #152C40;
+                        color: #CFE4EE;
+                        border: 1px solid #294B66;
+                    }
+                    .lang-pill.active {
+                        background: #00E676;
+                        color: #03170B;
+                        border-color: #00E676;
                     }
                     h1 {
                         margin: 0 0 6px 0;
@@ -804,32 +983,27 @@ object GitHubReleaseUpdater {
             </head>
             <body>
                 <div class="card">
-                    <h1>🚗 Instalador Qonecta Unit · $sizeMb</h1>
-                    <div class="sub">
-                        Conectado a <b>$serverIp:$serverPort</b> · Paquete: <b>${apkFile.name}</b>
-                    </div>
+                    <div class="lang-bar">$langLinks</div>
+                    <h1>$h1Title</h1>
+                    <div class="sub">$subText</div>
 
                     $bannerHtml
 
                     <a class="btn btn-green" href="$dlUrl" download="com.tencent.qqmusiccar.apk">
-                        📲 1. DESCARGAR E INSTALAR QONECTA UNIT (.APK)
+                        $btn1Label
                     </a>
 
                     <label class="btn btn-usb" for="usbFilePicker">
-                        📁 2. ABRIR «ARCHIVOS DEL COCHE» (INSTALAR DESDE USB)
+                        $btn2Label
                     </label>
                     <input id="usbFilePicker" type="file" accept="*/*" style="display:none;">
 
                     <a class="btn btn-alt" href="$altUrl">
-                        📦 3. Enlace Directo Alternativo (${apkFile.name})
+                        $btn3Label
                     </a>
 
                     <div class="guide">
-                        <b>💡 Cómo instalar desde Pendrive USB con el Botón 2 (Amarillo):</b><br>
-                        1️⃣ Guarda <code>${apkFile.name}</code> en tu pendrive USB (puedes pasarlo desde tu móvil con el botón «Guardar APK en USB» de Qonecta Unit Companion) y conéctalo al coche.<br>
-                        2️⃣ Pulsa el botón amarillo <b>«📁 2. ABRIR ARCHIVOS DEL COCHE»</b>.<br>
-                        3️⃣ En la ventana de Archivos del coche, entra en tu <b>Unidad USB</b> a la izquierda.<br>
-                        4️⃣ <span class="hl">TRUCO CLAVE: NO toques el centro del archivo.</span> Toca el <b>icono pequeño de vista previa (dos flechas en diagonal &#x2922; en la esquina del icono del APK)</b> para que «Archivos» abra directamente el Instalador del Sistema.
+                        $guideHtml
                     </div>
                 </div>
             </body>
@@ -934,7 +1108,16 @@ object GitHubReleaseUpdater {
                     }
                 }
             }
-            if (list.isEmpty()) "Sin IP local detectada (enciende el Punto de acceso / Hotspot)" else list.joinToString("  |  ")
+            if (list.isEmpty()) {
+                tr(
+                    "Sin IP local detectada (enciende el Punto de acceso / Hotspot)",
+                    "No local IP detected (turn on Wi-Fi Hotspot)",
+                    "Keine lokale IP erkannt (bitte WLAN-Hotspot einschalten)",
+                    "Sem IP local detetado (liga o Ponto de Acesso / Hotspot)",
+                )
+            } else {
+                list.joinToString("  |  ")
+            }
         }.getOrDefault("192.168.43.1")
     }
 

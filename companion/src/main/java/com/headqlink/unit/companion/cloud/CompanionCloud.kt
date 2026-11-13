@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import com.headqlink.unit.companion.CompanionI18n
+import com.headqlink.unit.companion.CompanionI18n.tr
 import java.util.concurrent.Executors
 
 /**
@@ -75,6 +77,7 @@ object CompanionCloud {
 
     fun init(ctx: Context) {
         appCtx = ctx.applicationContext
+        CompanionI18n.init(ctx)
         CarCloud.setListener { refreshMeta() }
         refreshMeta()
     }
@@ -114,11 +117,36 @@ object CompanionCloud {
                 maskedEmail = st.maskedEmail(),
                 hasPin = st.hasPin(),
                 message = when (state) {
-                    State.NO_CERT -> "Importa el certificado de cliente (.crt + .key o .p12) de Qonecta+."
-                    State.NO_ACCOUNT -> "Entra con tu correo y contraseña de Leapmotor."
-                    State.EXPIRED -> "La sesión de Leapmotor caducó: vuelve a entrar."
-                    State.NEEDS_VEHICLE -> "Elige tu coche."
-                    State.PAUSED_BY_UNIT -> "Conectado a Qonecta Unit: los datos vienen del coche. Las órdenes siguen yendo por tu cuenta."
+                    State.NO_CERT -> tr(
+                        "Importa el certificado de cliente (.crt + .key o .p12) de Qonecta+.",
+                        "Import your client certificate (.crt + .key or .p12) from Qonecta+.",
+                        "Importiere dein Client-Zertifikat (.crt + .key oder .p12) aus Qonecta+.",
+                        "Importa o teu certificado de cliente (.crt + .key ou .p12) do Qonecta+.",
+                    )
+                    State.NO_ACCOUNT -> tr(
+                        "Entra con tu correo y contraseña de Leapmotor.",
+                        "Sign in with your Leapmotor email and password.",
+                        "Melde dich mit deiner Leapmotor-E-Mail und deinem Passwort an.",
+                        "Inicia sessão com o teu e-mail e palavra-passe da Leapmotor.",
+                    )
+                    State.EXPIRED -> tr(
+                        "La sesión de Leapmotor caducó: vuelve a entrar.",
+                        "Your Leapmotor session expired: please sign in again.",
+                        "Die Leapmotor-Sitzung ist abgelaufen: bitte neu anmelden.",
+                        "A sessão da Leapmotor expirou: volta a iniciar sessão.",
+                    )
+                    State.NEEDS_VEHICLE -> tr(
+                        "Elige tu coche.",
+                        "Select your vehicle.",
+                        "Wähle dein Fahrzeug.",
+                        "Escolhe o teu carro.",
+                    )
+                    State.PAUSED_BY_UNIT -> tr(
+                        "Conectado a Qonecta Unit: los datos vienen del coche. Las órdenes siguen yendo por tu cuenta.",
+                        "Connected to Qonecta Unit: live data comes from the car. Remote commands still go through your account.",
+                        "Mit Qonecta Unit verbunden: Live-Daten kommen vom Fahrzeug. Fernbefehle laufen weiter über dein Konto.",
+                        "Ligado ao Qonecta Unit: os dados vêm do carro. Os comandos remotos continuam a ir pela tua conta.",
+                    )
                     else -> base.message
                 },
             ),
@@ -219,21 +247,63 @@ object CompanionCloud {
                     state = State.SERVER_KEY,
                     serverKeyFingerprint = e.detail.fingerprint,
                     serverKeyPin = e.detail.pin,
-                    message = "El servidor de Leapmotor presenta una clave nueva (huella ${e.detail.fingerprint}). Acéptala solo si te fías.",
+                    message = tr(
+                        "El servidor de Leapmotor presenta una clave nueva (huella ${e.detail.fingerprint}). Acéptala solo si te fías.",
+                        "Leapmotor server presented a new key (fingerprint ${e.detail.fingerprint}). Accept it only if you trust it.",
+                        "Der Leapmotor-Server präsentiert einen neuen Schlüssel (Fingerabdruck ${e.detail.fingerprint}). Nur akzeptieren, wenn vertrauenswürdig.",
+                        "O servidor da Leapmotor apresenta uma chave nova (impressão ${e.detail.fingerprint}). Aceita-a apenas se confiares.",
+                    ),
                 ),
             )
-            is LeapApi.SessionExpiredException -> publish(current.copy(state = State.EXPIRED, message = "La sesión de Leapmotor caducó: vuelve a entrar."))
+            is LeapApi.SessionExpiredException -> publish(
+                current.copy(
+                    state = State.EXPIRED,
+                    message = tr(
+                        "La sesión de Leapmotor caducó: vuelve a entrar.",
+                        "Your Leapmotor session expired: please sign in again.",
+                        "Die Leapmotor-Sitzung ist abgelaufen: bitte neu anmelden.",
+                        "A sessão da Leapmotor expirou: volta a iniciar sessão.",
+                    ),
+                )
+            )
             is CarCloudSession.NotConfiguredException -> refreshMeta()
             else -> publish(current.copy(state = State.ERROR, message = describe(e)))
         }
     }
 
     fun describe(e: Throwable): String = when (e) {
-        is LeapApi.SessionExpiredException -> "Sesión caducada: vuelve a entrar."
-        is CarCloudSession.NotConfiguredException -> "Falta configurar: ${e.message}"
-        is LeapApi.ApiException -> e.serverMessage.ifBlank { "Error de la nube de Leapmotor" }
-        is java.security.GeneralSecurityException -> "Certificado o clave no válidos (${e.javaClass.simpleName})"
-        is java.io.IOException -> "Sin conexión con la nube de Leapmotor"
+        is LeapApi.SessionExpiredException -> tr(
+            "Sesión caducada: vuelve a entrar.",
+            "Session expired: please sign in again.",
+            "Sitzung abgelaufen: bitte neu anmelden.",
+            "Sessão expirada: volta a iniciar sessão.",
+        )
+        is CarCloudSession.NotConfiguredException -> {
+            val raw = e.message.orEmpty()
+            val detail = when {
+                raw.contains("PIN") -> tr("sin PIN del coche", "no vehicle PIN", "keine Fahrzeug-PIN", "sem PIN do carro")
+                raw.contains("coche") -> tr("sin coche elegido", "no vehicle selected", "kein Fahrzeug gewählt", "sem carro escolhido")
+                raw.contains("sesión") -> tr("sin sesión", "not signed in", "nicht angemeldet", "sem sessão")
+                raw.contains("certificado") -> tr("sin certificado de cliente", "no client certificate", "kein Client-Zertifikat", "sem certificado de cliente")
+                else -> raw
+            }
+            tr("Falta configurar: $detail", "Setup required: $detail", "Einrichtung fehlt: $detail", "Falta configurar: $detail")
+        }
+        is LeapApi.ApiException -> e.serverMessage.ifBlank {
+            tr("Error de la nube de Leapmotor", "Leapmotor Cloud error", "Leapmotor-Cloud-Fehler", "Erro da nuvem Leapmotor")
+        }
+        is java.security.GeneralSecurityException -> tr(
+            "Certificado o clave no válidos (${e.javaClass.simpleName})",
+            "Invalid certificate or key (${e.javaClass.simpleName})",
+            "Ungültiges Zertifikat oder ungültiger Schlüssel (${e.javaClass.simpleName})",
+            "Certificado ou chave inválidos (${e.javaClass.simpleName})",
+        )
+        is java.io.IOException -> tr(
+            "Sin conexión con la nube de Leapmotor",
+            "No connection to Leapmotor Cloud",
+            "Keine Verbindung zur Leapmotor-Cloud",
+            "Sem ligação à nuvem da Leapmotor",
+        )
         else -> e.javaClass.simpleName
     }
 
@@ -252,18 +322,53 @@ object CompanionCloud {
             val result = try {
                 val picked = files.map { LeapTls.Picked(it.first, it.second) }
                 val id = LeapTls.parse(picked, password)
-                store()?.saveIdentity(id) ?: throw IllegalStateException("sin contexto")
+                store()?.saveIdentity(id) ?: throw IllegalStateException("no context")
                 CarCloud.settingsChanged()
                 ImportResult.Ok
             } catch (e: LeapTls.ImportException) {
                 when (e.kind) {
                     LeapTls.ImportException.Kind.NEEDS_PASSWORD -> ImportResult.NeedsPassword
                     LeapTls.ImportException.Kind.WRONG_PASSWORD -> ImportResult.WrongPassword
-                    LeapTls.ImportException.Kind.NO_KEY -> ImportResult.Failed("Falta la clave privada (.key). Elige el .crt y el .key a la vez.")
-                    LeapTls.ImportException.Kind.NO_CERT -> ImportResult.Failed("Falta el certificado (.crt). Elige el .crt y el .key a la vez.")
-                    LeapTls.ImportException.Kind.MISMATCH -> ImportResult.Failed("El certificado y la clave no son pareja.")
-                    LeapTls.ImportException.Kind.TOO_BIG -> ImportResult.Failed("El fichero es demasiado grande para ser un certificado.")
-                    else -> ImportResult.Failed("Formato no reconocido (${e.kind}).")
+                    LeapTls.ImportException.Kind.NO_KEY -> ImportResult.Failed(
+                        tr(
+                            "Falta la clave privada (.key). Elige el .crt y el .key a la vez.",
+                            "Private key (.key) is missing. Select both .crt and .key together.",
+                            "Privater Schlüssel (.key) fehlt. Bitte .crt und .key gleichzeitig auswählen.",
+                            "Falta a chave privada (.key). Seleciona o .crt e o .key ao mesmo tempo.",
+                        )
+                    )
+                    LeapTls.ImportException.Kind.NO_CERT -> ImportResult.Failed(
+                        tr(
+                            "Falta el certificado (.crt). Elige el .crt y el .key a la vez.",
+                            "Certificate (.crt) is missing. Select both .crt and .key together.",
+                            "Zertifikat (.crt) fehlt. Bitte .crt und .key gleichzeitig auswählen.",
+                            "Falta o certificado (.crt). Seleciona o .crt e o .key ao mesmo tempo.",
+                        )
+                    )
+                    LeapTls.ImportException.Kind.MISMATCH -> ImportResult.Failed(
+                        tr(
+                            "El certificado y la clave no son pareja.",
+                            "The certificate and private key do not match.",
+                            "Zertifikat und privater Schlüssel passen nicht zusammen.",
+                            "O certificado e a chave privada não correspondem.",
+                        )
+                    )
+                    LeapTls.ImportException.Kind.TOO_BIG -> ImportResult.Failed(
+                        tr(
+                            "El fichero es demasiado grande para ser un certificado.",
+                            "File is too large to be a certificate.",
+                            "Datei ist zu groß für ein Zertifikat.",
+                            "O ficheiro é demasiado grande para ser um certificado.",
+                        )
+                    )
+                    else -> ImportResult.Failed(
+                        tr(
+                            "Formato no reconocido (${e.kind}).",
+                            "Unrecognized format (${e.kind}).",
+                            "Unbekanntes Format (${e.kind}).",
+                            "Formato não reconhecido (${e.kind}).",
+                        )
+                    )
                 }
             } catch (e: Exception) {
                 ImportResult.Failed(describe(e))

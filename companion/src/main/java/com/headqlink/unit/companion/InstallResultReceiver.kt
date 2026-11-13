@@ -26,12 +26,32 @@ class InstallResultReceiver : BroadcastReceiver() {
                 }
             }
             PackageInstaller.STATUS_SUCCESS -> {
-                Toast.makeText(context, "✓ Actualización instalada correctamente", Toast.LENGTH_LONG).show()
+                CompanionI18n.init(context)
+                Toast.makeText(
+                    context,
+                    CompanionI18n.tr(
+                        "✓ Actualización instalada correctamente",
+                        "✓ Update installed successfully",
+                        "✓ Update erfolgreich installiert",
+                        "✓ Atualização instalada com sucesso",
+                    ),
+                    Toast.LENGTH_LONG,
+                ).show()
             }
             else -> {
                 val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).orEmpty()
                 if (status != PackageInstaller.STATUS_FAILURE_ABORTED) {
-                    Toast.makeText(context, "No se completó la instalación ($msg)", Toast.LENGTH_LONG).show()
+                    CompanionI18n.init(context)
+                    Toast.makeText(
+                        context,
+                        CompanionI18n.tr(
+                            "No se completó la instalación ($msg)",
+                            "Installation was not completed ($msg)",
+                            "Installation wurde nicht abgeschlossen ($msg)",
+                            "A instalação não foi concluída ($msg)",
+                        ),
+                        Toast.LENGTH_LONG,
+                    ).show()
                 }
             }
         }

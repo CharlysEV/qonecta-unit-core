@@ -1,9 +1,10 @@
-# 🚗📱 Manual Paso a Paso · Qonecta Unit & Qonecta Companion (`v0.1.18`)
+# 🚗📱 Manual Paso a Paso · Qonecta Unit & Qonecta Companion (`v0.1.19`)
 
 <p align="center">
   🇪🇸 <b>Español</b> ·
   <a href="MANUAL_INSTALLATION_QONECTA_UNIT_C10.en.md">🇬🇧 English</a> ·
-  <a href="INSTALLATIONSANLEITUNG_QONECTA_UNIT_C10.de.md">🇩🇪 Deutsch</a>
+  <a href="INSTALLATIONSANLEITUNG_QONECTA_UNIT_C10.de.md">🇩🇪 Deutsch</a> ·
+  <a href="MANUAL_INSTALACAO_QONECTA_UNIT_C10.pt.md">🇵🇹 Português</a>
 </p>
 
 Guía clara paso a paso para instalar, vincular y actualizar **Qonecta Unit** (la app que va en la pantalla del **Leapmotor C10**) y **Qonecta Companion** (la app compañera que va en tu **móvil Android**), creadas por **[CharlysEV](https://github.com/CharlysEV)**.
@@ -16,8 +17,8 @@ Guía clara paso a paso para instalar, vincular y actualizar **Qonecta Unit** (l
 
 1. **🚗 `Qonecta Unit` (`QonectaUnit_0.1.18-unit.apk` · Se instala EN EL COCHE):**
    Convierte la pantalla original del Leapmotor C10 en un receptor nativo de **Android Auto** (inalámbrico o por cable USB) y **Apple CarPlay**, con **Panel Extendido C10** (batería, autonomía, potencia, viajes, consumos REEV/BEV y **Planificador de Rutas EV con paradas de carga**), casillas independientes de conexión (**Modo Solo Bluetooth sin Wi‑Fi 5 GHz**) y respeto al 100 % de la Radio FM/DAB original y los mandos del volante.
-2. **📱 `Qonecta Companion` (`QonectaUnitCompanion_0.1.18.apk` · Se instala EN TU MÓVIL ANDROID):**
-   Se sincroniza en vivo con `Qonecta Unit` al subir al coche para:
+2. **📱 `Qonecta Companion` (`QonectaUnitCompanion_0.1.19.apk` · Se instala EN TU MÓVIL ANDROID):**
+   Disponible en **4 idiomas (`🇪🇸 ES · 🇬🇧 EN · 🇩🇪 DE · 🇵🇹 PT`)** con detección automática o selector manual instantáneo en la barra superior. Se sincroniza en vivo con `Qonecta Unit` al subir al coche para:
    - Guiarte en tu primera instalación con el **🎓 Modo Tutorial interactivo de 5 pasos en vivo**.
    - Conectar **solo por Bluetooth** (desmarcando Wi‑Fi si no quieres levantar redes de 5 GHz) o por Wi‑Fi rápido.
    - Recibir las rutas con paradas de carga del Planificador del coche y **abrirlas solas en Google Maps**.
@@ -35,7 +36,7 @@ Guía clara paso a paso para instalar, vincular y actualizar **Qonecta Unit** (l
 
 ## 📱 PARTE 1 · Instalar `Qonecta Companion` en tu móvil Android
 
-1. Descarga e instala **`QonectaUnitCompanion_0.1.18.apk`** desde [GitHub Releases](https://github.com/CharlysEV/qonecta-unit-companion/releases/latest) en tu móvil Android.
+1. Descarga e instala **`QonectaUnitCompanion_0.1.19.apk`** desde [GitHub Releases](https://github.com/CharlysEV/qonecta-unit-companion/releases/latest) en tu móvil Android.
 2. Abre **Qonecta Companion** y concede en la primera tarjeta los permisos recomendados pulsando **`Dar`**:
    - **Bluetooth (Dispositivos cercanos):** para detectar y conectar con tu C10 automáticamente.
    - **Notificaciones:** para mantener el puente activo en segundo plano.

@@ -21,6 +21,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import com.headqlink.unit.companion.CompanionI18n.tr
 import com.headqlink.unit.companion.cloud.CompanionCloud
 import org.json.JSONArray
 import org.json.JSONObject
@@ -29,11 +30,10 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Pestaña «Mi coche» con datos de verdad:
- * - Conectado a Qonecta Unit → batería, autonomía, potencia y clima vienen del coche (manda Unit); la nube no se lee.
- * - Desconectado → todo viene de la cuenta Leapmotor (sondeo cada 2 min con la app abierta).
- * - Órdenes remotas → siempre por la cuenta Leapmotor (también nada más bajarte del coche).
- * Puertas, maletero, cierre y presiones solo los da la nube: Qonecta Unit todavía no los lee del coche.
+ * Pestaña «Mi coche» con datos reales multi-idioma (ES / EN / DE / PT):
+ * - Conectado a Qonecta Unit -> batería, autonomía, potencia y clima vienen del coche (manda Unit); la nube no se lee.
+ * - Desconectado -> todo viene de la cuenta Leapmotor (sondeo cada 2 min con la app abierta).
+ * - Órdenes remotas -> siempre por la cuenta Leapmotor (también nada más bajarte del coche).
  */
 object MyCarTab {
 
@@ -69,13 +69,46 @@ object MyCarTab {
         val connected = bridge.phase == BridgeState.Phase.CONNECTED
 
         // ---------------- Cabecera + quién manda
-        val appVer = runCatching { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName }.getOrNull() ?: "0.1.7"
+        val appVer = runCatching { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName }.getOrNull() ?: "0.1.19"
         root.addView(text(activity, "Leapmotor C10  ·  v$appVer", 25f, TEXT, bold = true))
         val sourceLine = when {
-            connected && unit != null -> "● Manda Qonecta Unit · datos en vivo del coche (${bridge.transport})" to OK
-            connected -> "● Conectado a Qonecta Unit · esperando datos del coche…" to ACCENT
-            cloud.state == CompanionCloud.State.OK -> "● Manda tu cuenta Leapmotor · dato del coche ${ago(cd?.carTimeMs ?: cloud.fetchedAtMs)}" to OK
-            else -> "● Sin conexión con el coche · ${cloud.message.ifBlank { "configura tu cuenta Leapmotor" }}" to WARN
+            connected && unit != null -> tr(
+                "● Manda Qonecta Unit · datos en vivo del coche (${bridge.transport})",
+                "● Driven by Qonecta Unit · live car data (${bridge.transport})",
+                "● Qonecta Unit aktiv · Live-Daten vom Fahrzeug (${bridge.transport})",
+                "● Qonecta Unit ativo · dados em direto do carro (${bridge.transport})",
+            ) to OK
+            connected -> tr(
+                "● Conectado a Qonecta Unit · esperando datos del coche…",
+                "● Connected to Qonecta Unit · waiting for car data…",
+                "● Mit Qonecta Unit verbunden · warte auf Fahrzeugdaten…",
+                "● Ligado ao Qonecta Unit · a aguardar dados do carro…",
+            ) to ACCENT
+            cloud.state == CompanionCloud.State.OK -> {
+                val rel = ago(cd?.carTimeMs ?: cloud.fetchedAtMs)
+                tr(
+                    "● Manda tu cuenta Leapmotor · dato del coche $rel",
+                    "● Driven by your Leapmotor account · car update $rel",
+                    "● Über dein Leapmotor-Konto · Fahrzeugdaten $rel",
+                    "● Conta Leapmotor ativa · dados do carro $rel",
+                ) to OK
+            }
+            else -> {
+                val fallback = cloud.message.ifBlank {
+                    tr(
+                        "configura tu cuenta Leapmotor",
+                        "set up your Leapmotor account",
+                        "richte dein Leapmotor-Konto ein",
+                        "configura a tua conta Leapmotor",
+                    )
+                }
+                tr(
+                    "● Sin conexión con el coche · $fallback",
+                    "● Not connected to the car · $fallback",
+                    "● Keine Verbindung zum Fahrzeug · $fallback",
+                    "● Sem ligação ao carro · $fallback",
+                ) to WARN
+            }
         }
         root.addView(text(activity, sourceLine.first, 13f, sourceLine.second, bold = true).apply { setPadding(0, dp(activity, 2), 0, 0) })
 
@@ -93,31 +126,60 @@ object MyCarTab {
             addView(text(activity, lockLine.first, 13.5f, lockLine.second, bold = true))
             if (unit != null) {
                 val p = unit.powerKw
-                val clima = if (unit.acOn && !unit.hvacKw.isNaN()) String.format(Locale.getDefault(), " · clima %.2f kW", unit.hvacKw) else ""
-                addView(text(
-                    activity,
-                    (if (!p.isNaN()) String.format(Locale.getDefault(), "Potencia %+.1f kW", p) else "Potencia —") + clima +
-                        (if (!unit.cabinC.isNaN()) String.format(Locale.getDefault(), " · interior %.1f °C", unit.cabinC) else ""),
-                    13f, DIM,
-                ).apply { setPadding(0, dp(activity, 4), 0, 0) })
+                val clima = if (unit.acOn && !unit.hvacKw.isNaN()) {
+                    val hw = String.format(Locale.getDefault(), "%.2f", unit.hvacKw)
+                    tr(" · clima $hw kW", " · HVAC $hw kW", " · Klima $hw kW", " · clima $hw kW")
+                } else ""
+                val pLabel = if (!p.isNaN()) {
+                    val pv = String.format(Locale.getDefault(), "%+.1f", p)
+                    tr("Potencia $pv kW", "Power $pv kW", "Leistung $pv kW", "Potência $pv kW")
+                } else {
+                    tr("Potencia —", "Power —", "Leistung —", "Potência —")
+                }
+                val cab = if (!unit.cabinC.isNaN()) {
+                    val cv = String.format(Locale.getDefault(), "%.1f", unit.cabinC)
+                    tr(" · interior $cv °C", " · cabin $cv °C", " · Innenraum $cv °C", " · habitáculo $cv °C")
+                } else ""
+                addView(text(activity, pLabel + clima + cab, 13f, DIM).apply { setPadding(0, dp(activity, 4), 0, 0) })
             } else if (cd != null && (cd.charging || cd.pluggedIn)) {
-                addView(text(
-                    activity,
-                    if (cd.charging) "⚡ Cargando" + (if (!cd.chargePowerKw.isNaN()) String.format(Locale.getDefault(), " a %.1f kW", cd.chargePowerKw) else "") else "🔌 Enchufado",
-                    13f, OK, bold = true,
-                ).apply { setPadding(0, dp(activity, 4), 0, 0) })
+                val chgTxt = if (cd.charging) {
+                    val kwSuffix = if (!cd.chargePowerKw.isNaN()) {
+                        val kw = String.format(Locale.getDefault(), "%.1f", cd.chargePowerKw)
+                        tr(" a $kw kW", " at $kw kW", " mit $kw kW", " a $kw kW")
+                    } else ""
+                    tr("⚡ Cargando", "⚡ Charging", "⚡ Lädt", "⚡ A carregar") + kwSuffix
+                } else {
+                    tr("🔌 Enchufado", "🔌 Plugged in", "🔌 Angesteckt", "🔌 Ligado à tomada")
+                }
+                addView(text(activity, chgTxt, 13f, OK, bold = true).apply { setPadding(0, dp(activity, 4), 0, 0) })
             }
         })
 
         // ---------------- Modelo 3D con puertas y presiones reales (de la nube)
         root.addView(card(activity).apply {
             setPadding(dp(activity, 12), dp(activity, 12), dp(activity, 12), dp(activity, 12))
-            addView(text(activity, "PUERTAS Y PRESIONES", 12.5f, ACCENT, bold = true))
             addView(text(
                 activity,
-                if (cd != null) "Según tu cuenta Leapmotor · ${ago(cd.carTimeMs.takeIf { it > 0 } ?: cloud.fetchedAtMs)}" else "Sin datos: aparecerán al configurar la cuenta Leapmotor",
-                12f, if (cd != null) DIM else WARN,
-            ).apply { setPadding(0, dp(activity, 2), 0, 0) })
+                tr("PUERTAS Y PRESIONES", "DOORS & TYRE PRESSURES", "TÜREN & REIFENDRUCK", "PORTAS E PRESSÕES"),
+                12.5f, ACCENT, bold = true,
+            ))
+            val sub3d = if (cd != null) {
+                val rel = ago(cd.carTimeMs.takeIf { it > 0 } ?: cloud.fetchedAtMs)
+                tr(
+                    "Según tu cuenta Leapmotor · $rel",
+                    "From your Leapmotor account · $rel",
+                    "Laut deinem Leapmotor-Konto · $rel",
+                    "Segundo a tua conta Leapmotor · $rel",
+                )
+            } else {
+                tr(
+                    "Sin datos: aparecerán al configurar la cuenta Leapmotor",
+                    "No data yet: set up your Leapmotor account below",
+                    "Keine Daten: erscheinen nach Einrichtung des Leapmotor-Kontos",
+                    "Sem dados: aparecerão ao configurar a conta Leapmotor",
+                )
+            }
+            addView(text(activity, sub3d, 12f, if (cd != null) DIM else WARN).apply { setPadding(0, dp(activity, 2), 0, 0) })
             val wv = obtainWebView(activity)
             (wv.parent as? ViewGroup)?.removeView(wv)
             val frame = FrameLayout(activity).apply { background = rounded(activity, BG, dp(activity, 16), OUTLINE) }
@@ -128,7 +190,16 @@ object MyCarTab {
 
         // ---------------- Órdenes remotas (siempre por la cuenta)
         root.addView(card(activity).apply {
-            addView(text(activity, "CONTROL REMOTO · CUENTA LEAPMOTOR", 12.5f, ACCENT, bold = true))
+            addView(text(
+                activity,
+                tr(
+                    "CONTROL REMOTO · CUENTA LEAPMOTOR",
+                    "REMOTE CONTROL · LEAPMOTOR ACCOUNT",
+                    "FERNSTEUERUNG · LEAPMOTOR-KONTO",
+                    "CONTROLO REMOTO · CONTA LEAPMOTOR",
+                ),
+                12.5f, ACCENT, bold = true,
+            ))
             val ready = cloud.state !in setOf(
                 CompanionCloud.State.NO_CERT, CompanionCloud.State.NO_ACCOUNT,
                 CompanionCloud.State.NEEDS_VEHICLE, CompanionCloud.State.EXPIRED,
@@ -137,10 +208,30 @@ object MyCarTab {
             addView(text(
                 activity,
                 when {
-                    !ready -> "Configura la cuenta abajo para poder abrir y cerrar el coche desde el móvil."
-                    !cloud.hasPin -> "Guarda el PIN del coche (abajo) para enviar órdenes."
-                    busy -> "Enviando orden al coche…"
-                    else -> "Las órdenes van por la nube de Leapmotor, estés o no conectado a Qonecta Unit."
+                    !ready -> tr(
+                        "Configura la cuenta abajo para poder abrir y cerrar el coche desde el móvil.",
+                        "Set up your account below to lock, unlock and control climate from your phone.",
+                        "Richte unten dein Konto ein, um das Fahrzeug vom Smartphone aus zu steuern.",
+                        "Configura a conta abaixo para poderes abrir e fechar o carro a partir do telemóvel.",
+                    )
+                    !cloud.hasPin -> tr(
+                        "Guarda el PIN del coche (abajo) para enviar órdenes.",
+                        "Save your vehicle PIN (below) to send remote commands.",
+                        "Speichere unten die Fahrzeug-PIN, um Fernbefehle zu senden.",
+                        "Guarda o PIN do carro (abaixo) para enviar comandos.",
+                    )
+                    busy -> tr(
+                        "Enviando orden al coche…",
+                        "Sending command to the car…",
+                        "Sende Befehl ans Fahrzeug…",
+                        "A enviar comando para o carro…",
+                    )
+                    else -> tr(
+                        "Las órdenes van por la nube de Leapmotor, estés o no conectado a Qonecta Unit.",
+                        "Commands are sent via Leapmotor Cloud whether or not you are connected to Qonecta Unit.",
+                        "Befehle laufen über die Leapmotor-Cloud – egal ob mit Qonecta Unit verbunden oder nicht.",
+                        "Os comandos vão pela nuvem da Leapmotor, estejas ou não ligado ao Qonecta Unit.",
+                    )
                 },
                 13f, if (canSend) DIM else WARN,
             ).apply { setPadding(0, dp(activity, 4), 0, dp(activity, 10)) })
@@ -151,17 +242,38 @@ object MyCarTab {
                     if (confirm) {
                         AlertDialog.Builder(activity)
                             .setTitle(CompanionCloud.orderLabel(o, temp))
-                            .setMessage("¿Seguro? La orden se envía al coche por la nube de Leapmotor.")
-                            .setPositiveButton("Enviar") { _, _ -> go() }
-                            .setNegativeButton("Cancelar", null)
+                            .setMessage(tr(
+                                "¿Seguro? La orden se envía al coche por la nube de Leapmotor.",
+                                "Are you sure? This command will be sent to the car via Leapmotor Cloud.",
+                                "Sicher? Der Befehl wird über die Leapmotor-Cloud ans Fahrzeug gesendet.",
+                                "Tens a certeza? O comando será enviado ao carro pela nuvem da Leapmotor.",
+                            ))
+                            .setPositiveButton(tr("Enviar", "Send", "Senden", "Enviar")) { _, _ -> go() }
+                            .setNegativeButton(tr("Cancelar", "Cancel", "Abbrechen", "Cancelar"), null)
                             .show()
                     } else go()
                 }
 
-            addView(row(activity, order("🔒 Cerrar", CompanionCloud.Order.LOCK, primary = true), order("🔓 Abrir", CompanionCloud.Order.UNLOCK, confirm = true)))
-            addView(row(activity, order("🧳 Abrir maletero", CompanionCloud.Order.TRUNK_OPEN, confirm = true), order("❄️ Clima 22 °C", CompanionCloud.Order.CLIMATE_ON)).apply { setPadding(0, dp(activity, 8), 0, 0) })
-            addView(row(activity, order("⛔ Apagar clima", CompanionCloud.Order.CLIMATE_OFF), order("🌫️ Desempañar", CompanionCloud.Order.DEFROST)).apply { setPadding(0, dp(activity, 8), 0, 0) })
-            addView(row(activity, order("📍 Localizar", CompanionCloud.Order.FIND), order("🔌 Soltar cable", CompanionCloud.Order.CABLE_UNLOCK, confirm = true)).apply { setPadding(0, dp(activity, 8), 0, 0) })
+            addView(row(
+                activity,
+                order(tr("🔒 Cerrar", "🔒 Lock", "🔒 Verriegeln", "🔒 Trancar"), CompanionCloud.Order.LOCK, primary = true),
+                order(tr("🔓 Abrir", "🔓 Unlock", "🔓 Entriegeln", "🔓 Destrancar"), CompanionCloud.Order.UNLOCK, confirm = true),
+            ))
+            addView(row(
+                activity,
+                order(tr("🧳 Abrir maletero", "🧳 Open trunk", "🧳 Kofferraum", "🧳 Abrir bagageira"), CompanionCloud.Order.TRUNK_OPEN, confirm = true),
+                order(tr("❄️ Clima 22 °C", "❄️ Climate 22 °C", "❄️ Klima 22 °C", "❄️ Clima 22 °C"), CompanionCloud.Order.CLIMATE_ON),
+            ).apply { setPadding(0, dp(activity, 8), 0, 0) })
+            addView(row(
+                activity,
+                order(tr("⛔ Apagar clima", "⛔ Climate off", "⛔ Klima aus", "⛔ Desligar clima"), CompanionCloud.Order.CLIMATE_OFF),
+                order(tr("🌫️ Desempañar", "🌫️ Defrost", "🌫️ Entfrosten", "🌫️ Desembaciar"), CompanionCloud.Order.DEFROST),
+            ).apply { setPadding(0, dp(activity, 8), 0, 0) })
+            addView(row(
+                activity,
+                order(tr("📍 Localizar", "📍 Locate", "📍 Orten", "📍 Localizar"), CompanionCloud.Order.FIND),
+                order(tr("🔌 Soltar cable", "🔌 Unlock cable", "🔌 Kabel lösen", "🔌 Soltar cabo"), CompanionCloud.Order.CABLE_UNLOCK, confirm = true),
+            ).apply { setPadding(0, dp(activity, 8), 0, 0) })
         })
 
         // ---------------- Tarifas de energía y combustible (Casa CA · Rápida CC · Gasolina · Diésel · REEV)
@@ -172,14 +284,31 @@ object MyCarTab {
     }
 
     private fun lockSummary(cd: CompanionCloud.CarData?): Pair<String, Int> {
-        if (cd == null) return "Cierre y puertas: sin dato (necesita la cuenta Leapmotor)" to FAINT
+        if (cd == null) {
+            return tr(
+                "Cierre y puertas: sin dato (necesita la cuenta Leapmotor)",
+                "Locks & doors: no data (requires Leapmotor account)",
+                "Schloss & Türen: keine Daten (Leapmotor-Konto erforderlich)",
+                "Fecho e portas: sem dados (requer conta Leapmotor)",
+            ) to FAINT
+        }
         val anyDoor = cd.doorsOpen.any { it == true }
         val boot = cd.bootOpen == true
         return when {
-            anyDoor || boot -> "🔓 " + listOfNotNull(if (anyDoor) "puerta abierta" else null, if (boot) "maletero abierto" else null).joinToString(" y ") to WARN
-            cd.locked == true -> "🔒 Cerrado" + (if (!cd.odometerKm.isNaN()) String.format(Locale.getDefault(), " · %,.0f km", cd.odometerKm) else "") to OK
-            cd.locked == false -> "🔓 Abierto (sin cerrar)" to WARN
-            else -> "Cierre: sin dato" to FAINT
+            anyDoor || boot -> {
+                val parts = listOfNotNull(
+                    if (anyDoor) tr("puerta abierta", "door open", "Tür offen", "porta aberta") else null,
+                    if (boot) tr("maletero abierto", "trunk open", "Kofferraum offen", "bagageira aberta") else null,
+                )
+                val joiner = tr(" y ", " & ", " & ", " e ")
+                "🔓 " + parts.joinToString(joiner) to WARN
+            }
+            cd.locked == true -> {
+                val odo = if (!cd.odometerKm.isNaN()) String.format(Locale.getDefault(), " · %,.0f km", cd.odometerKm) else ""
+                tr("🔒 Cerrado", "🔒 Locked", "🔒 Verriegelt", "🔒 Trancado") + odo to OK
+            }
+            cd.locked == false -> tr("🔓 Abierto (sin cerrar)", "🔓 Unlocked", "🔓 Entriegelt (offen)", "🔓 Destrancado (aberto)") to WARN
+            else -> tr("Cierre: sin dato", "Lock: no data", "Schloss: keine Daten", "Fecho: sem dados") to FAINT
         }
     }
 
@@ -190,7 +319,23 @@ object MyCarTab {
             busy = false
             val label = CompanionCloud.orderLabel(o, temp)
             val msg = r.fold(
-                onSuccess = { ok -> if (ok) "✓ $label: confirmado por el coche" else "$label: enviada, pero el coche no la confirmó a tiempo" },
+                onSuccess = { ok ->
+                    if (ok) {
+                        tr(
+                            "✓ $label: confirmado por el coche",
+                            "✓ $label: confirmed by the car",
+                            "✓ $label: vom Fahrzeug bestätigt",
+                            "✓ $label: confirmado pelo carro",
+                        )
+                    } else {
+                        tr(
+                            "$label: enviada, pero el coche no la confirmó a tiempo",
+                            "$label: sent, but the car did not confirm in time",
+                            "$label: gesendet, aber das Fahrzeug hat nicht rechtzeitig bestätigt",
+                            "$label: enviado, mas o carro não confirmou a tempo",
+                        )
+                    }
+                },
                 onFailure = { e -> "✗ $label: ${CompanionCloud.describe(e)}" },
             )
             Toast.makeText(activity, msg, Toast.LENGTH_LONG).show()
@@ -202,69 +347,192 @@ object MyCarTab {
 
     private fun accountCard(activity: Activity, onRefresh: () -> Unit) = card(activity).apply {
         val c = CompanionCloud.current
-        addView(text(activity, "CUENTA LEAPMOTOR", 12.5f, ACCENT, bold = true))
+        addView(text(
+            activity,
+            tr("CUENTA LEAPMOTOR", "LEAPMOTOR ACCOUNT", "LEAPMOTOR-KONTO", "CONTA LEAPMOTOR"),
+            12.5f, ACCENT, bold = true,
+        ))
         val (statusText, color) = when (c.state) {
-            CompanionCloud.State.NO_CERT -> "Paso 1 de 3: importa el certificado de cliente" to WARN
-            CompanionCloud.State.NO_ACCOUNT -> "Paso 2 de 3: entra con tu cuenta" to WARN
-            CompanionCloud.State.NEEDS_VEHICLE -> "Paso 3 de 3: elige tu coche" to WARN
-            CompanionCloud.State.EXPIRED -> "Sesión caducada: vuelve a entrar" to BAD
-            CompanionCloud.State.SERVER_KEY -> "Clave del servidor desconocida" to BAD
-            CompanionCloud.State.ERROR -> "Último intento fallido" to WARN
-            CompanionCloud.State.PAUSED_BY_UNIT -> "Activa · en pausa mientras manda Qonecta Unit" to OK
-            CompanionCloud.State.WAITING -> "Activa · leyendo…" to ACCENT
-            CompanionCloud.State.OK -> "Activa · ${c.maskedEmail}" to OK
+            CompanionCloud.State.NO_CERT -> tr(
+                "Paso 1 de 3: importa el certificado de cliente",
+                "Step 1 of 3: import client certificate",
+                "Schritt 1 von 3: Client-Zertifikat importieren",
+                "Passo 1 de 3: importa o certificado de cliente",
+            ) to WARN
+            CompanionCloud.State.NO_ACCOUNT -> tr(
+                "Paso 2 de 3: entra con tu cuenta",
+                "Step 2 of 3: sign in to your account",
+                "Schritt 2 von 3: mit deinem Konto anmelden",
+                "Passo 2 de 3: entra com a tua conta",
+            ) to WARN
+            CompanionCloud.State.NEEDS_VEHICLE -> tr(
+                "Paso 3 de 3: elige tu coche",
+                "Step 3 of 3: select your car",
+                "Schritt 3 von 3: Fahrzeug auswählen",
+                "Passo 3 de 3: escolhe o teu carro",
+            ) to WARN
+            CompanionCloud.State.EXPIRED -> tr(
+                "Sesión caducada: vuelve a entrar",
+                "Session expired: sign in again",
+                "Sitzung abgelaufen: neu anmelden",
+                "Sessão expirada: volta a iniciar sessão",
+            ) to BAD
+            CompanionCloud.State.SERVER_KEY -> tr(
+                "Clave del servidor desconocida",
+                "Unknown server key",
+                "Unbekannter Serverschlüssel",
+                "Chave do servidor desconhecida",
+            ) to BAD
+            CompanionCloud.State.ERROR -> tr(
+                "Último intento fallido",
+                "Last attempt failed",
+                "Letzter Versuch fehlgeschlagen",
+                "Última tentativa falhou",
+            ) to WARN
+            CompanionCloud.State.PAUSED_BY_UNIT -> tr(
+                "Activa · en pausa mientras manda Qonecta Unit",
+                "Active · paused while Qonecta Unit is live",
+                "Aktiv · pausiert solange Qonecta Unit verbunden ist",
+                "Ativa · em pausa enquanto o Qonecta Unit está ligado",
+            ) to OK
+            CompanionCloud.State.WAITING -> tr(
+                "Activa · leyendo…",
+                "Active · reading…",
+                "Aktiv · lese Daten…",
+                "Ativa · a ler…",
+            ) to ACCENT
+            CompanionCloud.State.OK -> tr(
+                "Activa · ${c.maskedEmail}",
+                "Active · ${c.maskedEmail}",
+                "Aktiv · ${c.maskedEmail}",
+                "Ativa · ${c.maskedEmail}",
+            ) to OK
         }
         addView(text(activity, statusText, 15f, color, bold = true).apply { setPadding(0, dp(activity, 4), 0, 0) })
         if (c.message.isNotBlank()) addView(text(activity, c.message, 13f, DIM).apply { setPadding(0, dp(activity, 2), 0, dp(activity, 8)) })
 
         when (c.state) {
             CompanionCloud.State.NO_CERT -> {
-                addView(text(activity, "Es el mismo certificado que usas en Qonecta+. Elige el .crt y el .key a la vez, o un único .p12/.pfx.", 12.5f, FAINT).apply { setPadding(0, 0, 0, dp(activity, 8)) })
-                addView(pill(activity, "📄 Importar certificado", primary = true) { pickCertificate(activity) })
+                addView(text(
+                    activity,
+                    tr(
+                        "Es el mismo certificado que usas en Qonecta+. Elige el .crt y el .key a la vez, o un único .p12/.pfx.",
+                        "Same client certificate used in Qonecta+. Select both .crt and .key together, or a single .p12/.pfx file.",
+                        "Dasselbe Zertifikat wie in Qonecta+. Wähle .crt und .key gleichzeitig oder eine einzelne .p12/.pfx-Datei.",
+                        "É o mesmo certificado que usas no Qonecta+. Seleciona o .crt e o .key ao mesmo tempo, ou um único .p12/.pfx.",
+                    ),
+                    12.5f, FAINT,
+                ).apply { setPadding(0, 0, 0, dp(activity, 8)) })
+                addView(pill(
+                    activity,
+                    tr("📄 Importar certificado", "📄 Import certificate", "📄 Zertifikat importieren", "📄 Importar certificado"),
+                    primary = true,
+                ) { pickCertificate(activity) })
             }
             CompanionCloud.State.NO_ACCOUNT, CompanionCloud.State.EXPIRED -> {
-                addView(pill(activity, "🔑 Entrar con mi cuenta Leapmotor", primary = true) { showLogin(activity, onRefresh) })
-                addView(pill(activity, "📄 Cambiar certificado") { pickCertificate(activity) }, lp(activity, top = 8))
+                addView(pill(
+                    activity,
+                    tr("🔑 Entrar con mi cuenta Leapmotor", "🔑 Sign in to Leapmotor", "🔑 Mit Leapmotor-Konto anmelden", "🔑 Entrar na conta Leapmotor"),
+                    primary = true,
+                ) { showLogin(activity, onRefresh) })
+                addView(pill(
+                    activity,
+                    tr("📄 Cambiar certificado", "📄 Change certificate", "📄 Zertifikat ändern", "📄 Alterar certificado"),
+                ) { pickCertificate(activity) }, lp(activity, top = 8))
             }
-            CompanionCloud.State.NEEDS_VEHICLE -> addView(pill(activity, "🚗 Elegir coche", primary = true) { pickVehicle(activity, onRefresh) })
-            CompanionCloud.State.SERVER_KEY -> addView(pill(activity, "Confiar en la clave nueva (${c.serverKeyFingerprint.take(17)}…)", primary = true) {
+            CompanionCloud.State.NEEDS_VEHICLE -> addView(pill(
+                activity,
+                tr("🚗 Elegir coche", "🚗 Select car", "🚗 Fahrzeug wählen", "🚗 Escolher carro"),
+                primary = true,
+            ) { pickVehicle(activity, onRefresh) })
+            CompanionCloud.State.SERVER_KEY -> addView(pill(
+                activity,
+                tr(
+                    "Confiar en la clave nueva (${c.serverKeyFingerprint.take(17)}…)",
+                    "Trust new server key (${c.serverKeyFingerprint.take(17)}…)",
+                    "Neuem Schlüssel vertrauen (${c.serverKeyFingerprint.take(17)}…)",
+                    "Confiar na chave nova (${c.serverKeyFingerprint.take(17)}…)",
+                ),
+                primary = true,
+            ) {
                 AlertDialog.Builder(activity)
-                    .setTitle("Clave del servidor de Leapmotor")
-                    .setMessage("El servidor presenta otra clave (huella ${c.serverKeyFingerprint}). Acéptala solo si sabes que Leapmotor ha cambiado su certificado.")
-                    .setPositiveButton("Confiar") { _, _ -> CompanionCloud.acceptServerKey { onRefresh() } }
-                    .setNegativeButton("Cancelar", null)
+                    .setTitle(tr("Clave del servidor de Leapmotor", "Leapmotor server key", "Leapmotor-Serverschlüssel", "Chave do servidor da Leapmotor"))
+                    .setMessage(tr(
+                        "El servidor presenta otra clave (huella ${c.serverKeyFingerprint}). Acéptala solo si sabes que Leapmotor ha cambiado su certificado.",
+                        "The server presented a different key (fingerprint ${c.serverKeyFingerprint}). Accept it only if you know Leapmotor rotated its certificate.",
+                        "Der Server präsentiert einen anderen Schlüssel (Fingerabdruck ${c.serverKeyFingerprint}). Nur akzeptieren, wenn Leapmotor sein Zertifikat erneuert hat.",
+                        "O servidor apresenta outra chave (impressão ${c.serverKeyFingerprint}). Aceita-a apenas se souberes que a Leapmotor alterou o certificado.",
+                    ))
+                    .setPositiveButton(tr("Confiar", "Trust", "Vertrauen", "Confiar")) { _, _ -> CompanionCloud.acceptServerKey { onRefresh() } }
+                    .setNegativeButton(tr("Cancelar", "Cancel", "Abbrechen", "Cancelar"), null)
                     .show()
             })
             else -> {
                 addView(row(
                     activity,
-                    pill(activity, if (c.hasPin) "🔢 Cambiar PIN" else "🔢 Guardar PIN", primary = !c.hasPin) { showPin(activity, onRefresh) },
-                    pill(activity, "🔄 Leer ahora", enabled = !CompanionCloud.unitIsMaster) {
-                        CompanionCloud.readNow { ok -> Toast.makeText(activity, if (ok) "Estado leído" else CompanionCloud.current.message, Toast.LENGTH_SHORT).show(); onRefresh() }
+                    pill(
+                        activity,
+                        if (c.hasPin) tr("🔢 Cambiar PIN", "🔢 Change PIN", "🔢 PIN ändern", "🔢 Alterar PIN")
+                        else tr("🔢 Guardar PIN", "🔢 Save PIN", "🔢 PIN speichern", "🔢 Guardar PIN"),
+                        primary = !c.hasPin,
+                    ) { showPin(activity, onRefresh) },
+                    pill(
+                        activity,
+                        tr("🔄 Leer ahora", "🔄 Refresh now", "🔄 Jetzt abrufen", "🔄 Ler agora"),
+                        enabled = !CompanionCloud.unitIsMaster,
+                    ) {
+                        CompanionCloud.readNow { ok ->
+                            Toast.makeText(
+                                activity,
+                                if (ok) tr("Estado leído", "Status updated", "Status aktualisiert", "Estado atualizado") else CompanionCloud.current.message,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            onRefresh()
+                        }
                     },
                 ))
                 addView(row(
                     activity,
-                    pill(activity, "🚗 Cambiar coche") { pickVehicle(activity, onRefresh) },
-                    pill(activity, "Cerrar sesión") {
+                    pill(activity, tr("🚗 Cambiar coche", "🚗 Change car", "🚗 Fahrzeug wechseln", "🚗 Mudar de carro")) { pickVehicle(activity, onRefresh) },
+                    pill(activity, tr("Cerrar sesión", "Sign out", "Abmelden", "Terminar sessão")) {
                         AlertDialog.Builder(activity)
-                            .setTitle("¿Cerrar la sesión de Leapmotor?")
-                            .setMessage("El certificado se queda guardado. Tendrás que volver a poner tu contraseña.")
-                            .setPositiveButton("Cerrar sesión") { _, _ -> CompanionCloud.logout() }
-                            .setNegativeButton("Cancelar", null)
+                            .setTitle(tr("¿Cerrar la sesión de Leapmotor?", "Sign out of Leapmotor?", "Bei Leapmotor abmelden?", "Terminar sessão da Leapmotor?"))
+                            .setMessage(tr(
+                                "El certificado se queda guardado. Tendrás que volver a poner tu contraseña.",
+                                "Your client certificate stays saved. You will need to enter your password again next time.",
+                                "Das Zertifikat bleibt gespeichert. Du musst beim nächsten Mal dein Passwort erneut eingeben.",
+                                "O certificado fica guardado. Terás de voltar a introduzir a tua palavra-passe.",
+                            ))
+                            .setPositiveButton(tr("Cerrar sesión", "Sign out", "Abmelden", "Terminar sessão")) { _, _ -> CompanionCloud.logout() }
+                            .setNegativeButton(tr("Cancelar", "Cancel", "Abbrechen", "Cancelar"), null)
                             .show()
                     },
                 ).apply { setPadding(0, dp(activity, 8), 0, 0) })
             }
         }
-        addView(text(activity, "La contraseña no se guarda. El certificado, la sesión y el PIN se guardan cifrados con el Keystore del móvil.", 11.5f, FAINT).apply { setPadding(0, dp(activity, 10), 0, 0) })
+        addView(text(
+            activity,
+            tr(
+                "La contraseña no se guarda. El certificado, la sesión y el PIN se guardan cifrados con el Keystore del móvil.",
+                "Your password is never stored. Certificate, session and PIN are encrypted with Android Keystore.",
+                "Das Passwort wird nicht gespeichert. Zertifikat, Sitzung und PIN werden verschlüsselt im Android-Keystore gesichert.",
+                "A palavra-passe não é guardada. O certificado, a sessão e o PIN são guardados cifrados no Keystore do telemóvel.",
+            ),
+            11.5f, FAINT,
+        ).apply { setPadding(0, dp(activity, 10), 0, 0) })
     }
 
     private fun pickCertificate(activity: Activity) {
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
             .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         runCatching { activity.startActivityForResult(i, REQ_CERT) }
-            .onFailure { Toast.makeText(activity, "No hay selector de archivos en este móvil", Toast.LENGTH_LONG).show() }
+            .onFailure {
+                Toast.makeText(
+                    activity,
+                    tr("No hay selector de archivos en este móvil", "No file picker found on this phone", "Kein Dateimanager auf diesem Smartphone gefunden", "Não existe seletor de ficheiros neste telemóvel"),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
     }
 
     fun onCertPicked(activity: Activity, data: Intent?, onRefresh: () -> Unit) {
@@ -274,7 +542,11 @@ object MyCarTab {
         if (uris.isEmpty()) return
         val files = uris.mapNotNull { u -> runCatching { displayName(activity, u) to readUri(activity, u) }.getOrNull() }
         if (files.isEmpty()) {
-            Toast.makeText(activity, "No se pudo leer el archivo", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                activity,
+                tr("No se pudo leer el archivo", "Could not read file", "Datei konnte nicht gelesen werden", "Não foi possível ler o ficheiro"),
+                Toast.LENGTH_LONG,
+            ).show()
             return
         }
         importWith(activity, files, null, onRefresh)
@@ -283,14 +555,27 @@ object MyCarTab {
     private fun importWith(activity: Activity, files: List<Pair<String, ByteArray>>, pw: CharArray?, onRefresh: () -> Unit) {
         CompanionCloud.importCertificate(files, pw) { r ->
             when (r) {
-                CompanionCloud.ImportResult.Ok -> Toast.makeText(activity, "✓ Certificado guardado", Toast.LENGTH_SHORT).show()
+                CompanionCloud.ImportResult.Ok -> Toast.makeText(
+                    activity,
+                    tr("✓ Certificado guardado", "✓ Certificate saved", "✓ Zertifikat gespeichert", "✓ Certificado guardado"),
+                    Toast.LENGTH_SHORT,
+                ).show()
                 CompanionCloud.ImportResult.NeedsPassword, CompanionCloud.ImportResult.WrongPassword -> {
-                    val et = EditText(activity).apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD; hint = "Contraseña del certificado" }
+                    val et = EditText(activity).apply {
+                        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                        hint = tr("Contraseña del certificado", "Certificate password", "Zertifikatspasswort", "Palavra-passe do certificado")
+                    }
                     AlertDialog.Builder(activity)
-                        .setTitle(if (r == CompanionCloud.ImportResult.WrongPassword) "Contraseña incorrecta" else "El certificado tiene contraseña")
+                        .setTitle(
+                            if (r == CompanionCloud.ImportResult.WrongPassword) {
+                                tr("Contraseña incorrecta", "Incorrect password", "Falsches Passwort", "Palavra-passe incorreta")
+                            } else {
+                                tr("El certificado tiene contraseña", "Certificate is password-protected", "Zertifikat ist passwortgeschützt", "O certificado tem palavra-passe")
+                            }
+                        )
                         .setView(et)
-                        .setPositiveButton("Probar") { _, _ -> importWith(activity, files, et.text.toString().toCharArray(), onRefresh) }
-                        .setNegativeButton("Cancelar", null)
+                        .setPositiveButton(tr("Probar", "Try", "Prüfen", "Tentar")) { _, _ -> importWith(activity, files, et.text.toString().toCharArray(), onRefresh) }
+                        .setNegativeButton(tr("Cancelar", "Cancel", "Abbrechen", "Cancelar"), null)
                         .show()
                 }
                 is CompanionCloud.ImportResult.Failed -> Toast.makeText(activity, r.why, Toast.LENGTH_LONG).show()
@@ -301,33 +586,71 @@ object MyCarTab {
 
     private fun showLogin(activity: Activity, onRefresh: () -> Unit) {
         val box = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(activity, 20), dp(activity, 8), dp(activity, 20), 0) }
-        val email = EditText(activity).apply { hint = "Correo de Leapmotor"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS }
-        val pass = EditText(activity).apply { hint = "Contraseña"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD }
+        val email = EditText(activity).apply {
+            hint = tr("Correo de Leapmotor", "Leapmotor email", "Leapmotor-E-Mail", "E-mail da Leapmotor")
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+        }
+        val pass = EditText(activity).apply {
+            hint = tr("Contraseña", "Password", "Passwort", "Palavra-passe")
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
         box.addView(email)
         box.addView(pass)
         AlertDialog.Builder(activity)
-            .setTitle("Entrar en Leapmotor")
+            .setTitle(tr("Entrar en Leapmotor", "Sign in to Leapmotor", "Bei Leapmotor anmelden", "Iniciar sessão na Leapmotor"))
             .setView(box)
-            .setPositiveButton("Entrar") { _, _ ->
+            .setPositiveButton(tr("Entrar", "Sign in", "Anmelden", "Entrar")) { _, _ ->
                 val m = email.text.toString().trim()
                 val p = pass.text.toString()
                 if (m.isEmpty() || p.isEmpty()) {
-                    Toast.makeText(activity, "Escribe correo y contraseña", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        activity,
+                        tr("Escribe correo y contraseña", "Enter email and password", "Bitte E-Mail und Passwort eingeben", "Introduz e-mail e palavra-passe"),
+                        Toast.LENGTH_SHORT,
+                    ).show()
                     return@setPositiveButton
                 }
-                Toast.makeText(activity, "Entrando…", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    activity,
+                    tr("Entrando…", "Signing in…", "Anmeldung läuft…", "A iniciar sessão…"),
+                    Toast.LENGTH_SHORT,
+                ).show()
                 CompanionCloud.login(m, p) { r ->
                     r.onSuccess { cars ->
                         when {
-                            cars.isEmpty() -> Toast.makeText(activity, "La cuenta no tiene coches", Toast.LENGTH_LONG).show()
+                            cars.isEmpty() -> Toast.makeText(
+                                activity,
+                                tr("La cuenta no tiene coches", "No vehicles found on this account", "Keine Fahrzeuge in diesem Konto gefunden", "A conta não tem veículos"),
+                                Toast.LENGTH_LONG,
+                            ).show()
                             cars.size > 1 -> pickFrom(activity, cars, onRefresh)
-                            else -> Toast.makeText(activity, "✓ Sesión iniciada · ${cars[0].label}", Toast.LENGTH_LONG).show()
+                            else -> Toast.makeText(
+                                activity,
+                                tr(
+                                    "✓ Sesión iniciada · ${cars[0].label}",
+                                    "✓ Signed in · ${cars[0].label}",
+                                    "✓ Angemeldet · ${cars[0].label}",
+                                    "✓ Sessão iniciada · ${cars[0].label}",
+                                ),
+                                Toast.LENGTH_LONG,
+                            ).show()
                         }
-                    }.onFailure { e -> Toast.makeText(activity, "No se pudo entrar: ${CompanionCloud.describe(e)}", Toast.LENGTH_LONG).show() }
+                    }.onFailure { e ->
+                        Toast.makeText(
+                            activity,
+                            tr(
+                                "No se pudo entrar: ${CompanionCloud.describe(e)}",
+                                "Could not sign in: ${CompanionCloud.describe(e)}",
+                                "Anmeldung fehlgeschlagen: ${CompanionCloud.describe(e)}",
+                                "Não foi possível entrar: ${CompanionCloud.describe(e)}",
+                            ),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
                     onRefresh()
                 }
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(tr("Cancelar", "Cancel", "Abbrechen", "Cancelar"), null)
             .show()
     }
 
@@ -340,7 +663,7 @@ object MyCarTab {
 
     private fun pickFrom(activity: Activity, cars: List<CompanionCloud.Vehicle>, onRefresh: () -> Unit) {
         AlertDialog.Builder(activity)
-            .setTitle("¿Cuál es tu coche?")
+            .setTitle(tr("¿Cuál es tu coche?", "Which car is yours?", "Welches ist dein Fahrzeug?", "Qual é o teu carro?"))
             .setItems(cars.map { it.label }.toTypedArray()) { _, i ->
                 CompanionCloud.chooseVehicle(cars[i]) { r ->
                     r.onFailure { e -> Toast.makeText(activity, CompanionCloud.describe(e), Toast.LENGTH_LONG).show() }
@@ -351,17 +674,30 @@ object MyCarTab {
     }
 
     private fun showPin(activity: Activity, onRefresh: () -> Unit) {
-        val et = EditText(activity).apply { hint = "PIN del coche (app Leapmotor)"; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD }
+        val et = EditText(activity).apply {
+            hint = tr("PIN del coche (app Leapmotor)", "Vehicle PIN (Leapmotor app)", "Fahrzeug-PIN (Leapmotor-App)", "PIN do carro (app Leapmotor)")
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        }
         AlertDialog.Builder(activity)
-            .setTitle("PIN de las órdenes remotas")
-            .setMessage("El mismo PIN que pide la app oficial de Leapmotor para abrir, cerrar o poner el clima. Se guarda cifrado.")
+            .setTitle(tr("PIN de las órdenes remotas", "Remote command PIN", "PIN für Fernbefehle", "PIN para comandos remotos"))
+            .setMessage(tr(
+                "El mismo PIN que pide la app oficial de Leapmotor para abrir, cerrar o poner el clima. Se guarda cifrado.",
+                "The same PIN requested by the official Leapmotor app to lock, unlock or start climate. Stored encrypted.",
+                "Dieselbe PIN wie in der offiziellen Leapmotor-App zum Öffnen, Schließen oder Klimatisieren. Wird verschlüsselt gespeichert.",
+                "O mesmo PIN pedido pela app oficial da Leapmotor para abrir, fechar ou ligar a climatização. Guardado cifrado.",
+            ))
             .setView(et)
-            .setPositiveButton("Guardar") { _, _ ->
+            .setPositiveButton(tr("Guardar", "Save", "Speichern", "Guardar")) { _, _ ->
                 val ok = CompanionCloud.savePin(et.text.toString().trim())
-                Toast.makeText(activity, if (ok) "✓ PIN guardado" else "El PIN son de 4 a 12 cifras", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    activity,
+                    if (ok) tr("✓ PIN guardado", "✓ PIN saved", "✓ PIN gespeichert", "✓ PIN guardado")
+                    else tr("El PIN son de 4 a 12 cifras", "PIN must be 4 to 12 digits", "Die PIN muss 4 bis 12 Ziffern haben", "O PIN deve ter entre 4 e 12 dígitos"),
+                    Toast.LENGTH_SHORT,
+                ).show()
                 onRefresh()
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(tr("Cancelar", "Cancel", "Abbrechen", "Cancelar"), null)
             .show()
     }
 
@@ -380,7 +716,6 @@ object MyCarTab {
             addJavascriptInterface(object {
                 @JavascriptInterface fun ready() { webReady = true; post { push3d() } }
                 @JavascriptInterface fun color(hex: String?) { if (!hex.isNullOrBlank()) paintHex = hex }
-                // Las puertas del dibujo reflejan el coche real: un toque no las abre (se vuelve a pintar el estado real).
                 @JavascriptInterface fun doorToggled(@Suppress("UNUSED_PARAMETER") i: Int, @Suppress("UNUSED_PARAMETER") open: Boolean) { post { push3d() } }
                 @JavascriptInterface fun bootToggled(@Suppress("UNUSED_PARAMETER") open: Boolean) { post { push3d() } }
                 @JavascriptInterface fun snapshot(@Suppress("UNUSED_PARAMETER") d: String?) {}
@@ -396,7 +731,12 @@ object MyCarTab {
         val wv = webView ?: return
         if (!webReady) return
         val cd = CompanionCloud.current.data
-        val tags = arrayOf("Del. izq", "Del. der", "Tras. izq", "Tras. der")
+        val tags = arrayOf(
+            tr("Del. izq", "Front L", "Vorne L", "Fr. esq"),
+            tr("Del. der", "Front R", "Vorne R", "Fr. dir"),
+            tr("Tras. izq", "Rear L", "Hinten L", "Tr. esq"),
+            tr("Tras. der", "Rear R", "Hinten R", "Tr. dir"),
+        )
         val tyres = JSONArray()
         for (i in 0..3) {
             val bar = cd?.tyreBars?.getOrNull(i) ?: Double.NaN
@@ -425,10 +765,19 @@ object MyCarTab {
         if (ms <= 0) return "—"
         val s = (System.currentTimeMillis() - ms).coerceAtLeast(0) / 1000
         return when {
-            s < 60 -> "hace ${s} s"
-            s < 3600 -> "hace ${s / 60} min"
-            s < 172800 -> "hace ${s / 3600} h"
-            else -> "hace ${s / 86400} d"
+            s < 60 -> tr("hace ${s} s", "${s}s ago", "vor ${s} s", "há ${s} s")
+            s < 3600 -> {
+                val m = s / 60
+                tr("hace $m min", "${m}m ago", "vor $m Min.", "há $m min")
+            }
+            s < 172800 -> {
+                val h = s / 3600
+                tr("hace $h h", "${h}h ago", "vor $h Std.", "há $h h")
+            }
+            else -> {
+                val d = s / 86400
+                tr("hace $d d", "${d}d ago", "vor $d T.", "há $d d")
+            }
         }
     }
 
@@ -436,7 +785,7 @@ object MyCarTab {
         ctx.contentResolver.query(u, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
         }
-    }.getOrNull() ?: (u.lastPathSegment ?: "archivo")
+    }.getOrNull() ?: (u.lastPathSegment ?: "file")
 
     private fun readUri(ctx: Context, u: Uri): ByteArray {
         ctx.contentResolver.openInputStream(u).use { input ->

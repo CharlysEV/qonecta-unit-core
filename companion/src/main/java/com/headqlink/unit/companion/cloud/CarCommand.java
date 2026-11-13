@@ -114,23 +114,36 @@ final class CarCommand {
     String label() {
         switch (kind) {
             case LOCK:
-                return "Cerrar el coche";
+                return com.headqlink.unit.companion.CompanionI18n.tr(
+                        "Cerrar el coche", "Lock the car", "Fahrzeug verriegeln", "Trancar o carro");
             case UNLOCK:
-                return "Abrir el coche";
+                return com.headqlink.unit.companion.CompanionI18n.tr(
+                        "Abrir el coche", "Unlock the car", "Fahrzeug entriegeln", "Destrancar o carro");
             case TRUNK_OPEN:
-                return "Abrir el maletero";
+                return com.headqlink.unit.companion.CompanionI18n.tr(
+                        "Abrir el maletero", "Open the trunk", "Kofferraum öffnen", "Abrir a bagageira");
             case TRUNK_CLOSE:
-                return "Cerrar el maletero";
+                return com.headqlink.unit.companion.CompanionI18n.tr(
+                        "Cerrar el maletero", "Close the trunk", "Kofferraum schließen", "Fechar a bagageira");
             case CLIMATE_OFF:
-                return "Apagar el clima";
+                return com.headqlink.unit.companion.CompanionI18n.tr(
+                        "Apagar el clima", "Turn off climate", "Klima ausschalten", "Desligar climatização");
             case DEFROST:
-                return "Desempañar";
+                return com.headqlink.unit.companion.CompanionI18n.tr(
+                        "Desempañar", "Defrost", "Entfrosten", "Desembaciar");
             case FIND:
-                return "Localizar el coche";
+                return com.headqlink.unit.companion.CompanionI18n.tr(
+                        "Localizar el coche", "Find the car", "Fahrzeug orten", "Localizar o carro");
             case CABLE_UNLOCK:
-                return "Soltar el cable de carga";
+                return com.headqlink.unit.companion.CompanionI18n.tr(
+                        "Soltar el cable de carga", "Unlock charging cable", "Ladekabel entriegeln", "Soltar o cabo de carregamento");
             default:
-                return (mode == Mode.COLD ? "Frío a " : mode == Mode.HEAT ? "Calefacción a " : "Clima a ") + tempC + " °C";
+                String prefix = mode == Mode.COLD
+                        ? com.headqlink.unit.companion.CompanionI18n.tr("Frío a ", "Cooling to ", "Kühlen auf ", "Frio a ")
+                        : mode == Mode.HEAT
+                        ? com.headqlink.unit.companion.CompanionI18n.tr("Calefacción a ", "Heating to ", "Heizen auf ", "Aquecimento a ")
+                        : com.headqlink.unit.companion.CompanionI18n.tr("Clima a ", "Climate to ", "Klima auf ", "Climatização a ");
+                return prefix + tempC + " °C";
         }
     }
 

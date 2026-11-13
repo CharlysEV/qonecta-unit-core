@@ -32,6 +32,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.headqlink.unit.bridge.MapsRoute
 import com.headqlink.unit.bridge.NavPoint
+import com.headqlink.unit.companion.CompanionI18n.tr
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -183,14 +184,24 @@ object LeapCompanionHub {
                     @JavascriptInterface
                     fun doorToggled(index: Int, isOpen: Boolean) {
                         if (index in 0..3) {
-                            val doorLabels = arrayOf("Delantera Izq.", "Delantera Der.", "Trasera Izq.", "Trasera Der.")
+                            val doorLabels = arrayOf(
+                                tr("Delantera Izq.", "Front Left", "Vorne Links", "Dianteira Esq."),
+                                tr("Delantera Der.", "Front Right", "Vorne Rechts", "Dianteira Dir."),
+                                tr("Trasera Izq.", "Rear Left", "Hinten Links", "Traseira Esq."),
+                                tr("Trasera Der.", "Rear Right", "Hinten Rechts", "Traseira Dir."),
+                            )
                             CompanionVehicleState.update(activity) { st ->
                                 val nextDoors = st.doorsOpen.clone()
                                 nextDoors[index] = isOpen
                                 st.copy(
                                     doorsOpen = nextDoors,
                                     locked = if (isOpen) false else st.locked,
-                                    lastCommandStatus = "Puerta ${doorLabels[index]} ${if (isOpen) "ABIERTA" else "CERRADA"} en el modelo 3D",
+                                    lastCommandStatus = tr(
+                                        "Puerta ${doorLabels[index]} ${if (isOpen) "ABIERTA" else "CERRADA"} en el modelo 3D",
+                                        "${doorLabels[index]} door ${if (isOpen) "OPENED" else "CLOSED"} on 3D model",
+                                        "Tür ${doorLabels[index]} im 3D-Modell ${if (isOpen) "GEÖFFNET" else "GESCHLOSSEN"}",
+                                        "Porta ${doorLabels[index]} ${if (isOpen) "ABERTA" else "FECHADA"} no modelo 3D",
+                                    ),
                                 )
                             }
                             uiHandler.post { onStateChanged() }
@@ -203,7 +214,12 @@ object LeapCompanionHub {
                             st.copy(
                                 bootOpen = isOpen,
                                 locked = if (isOpen) false else st.locked,
-                                lastCommandStatus = "Portón del maletero ${if (isOpen) "ABIERTO" else "CERRADO"} en el modelo 3D",
+                                lastCommandStatus = tr(
+                                    "Portón del maletero ${if (isOpen) "ABIERTO" else "CERRADO"} en el modelo 3D",
+                                    "Boot tailgate ${if (isOpen) "OPENED" else "CLOSED"} on 3D model",
+                                    "Heckklappe im 3D-Modell ${if (isOpen) "GEÖFFNET" else "GESCHLOSSEN"}",
+                                    "Porta-bagagens ${if (isOpen) "ABERTA" else "FECHADA"} no modelo 3D",
+                                ),
                             )
                         }
                         uiHandler.post { onStateChanged() }
@@ -250,7 +266,15 @@ object LeapCompanionHub {
             .put("doors", doorsArr)
             .put("boot", st.bootOpen)
             .put("color", st.paintHex)
-            .put("hint", "Gira el C10 con el dedo · Toca una puerta o botón para abrir/cerrar")
+            .put(
+                "hint",
+                tr(
+                    "Gira el C10 con el dedo · Toca una puerta o botón para abrir/cerrar",
+                    "Drag to rotate the C10 · Tap a door or button to open/close",
+                    "Drehe den C10 mit dem Finger · Tür oder Button zum Öffnen/Schließen antippen",
+                    "Roda o C10 com o dedo · Toca numa porta ou botão para abrir/fechar",
+                ),
+            )
         view.evaluateJavascript("if(window.update)update($payload);", null)
     }
 
@@ -524,7 +548,8 @@ object LeapCompanionHub {
 
     /** Aviso honesto: esta pestaña aún enseña datos de ejemplo, no los de tu coche. */
     private fun sampleBanner(ctx: Context, what: String) = TextView(ctx).apply {
-        text = "⚠️ Datos de ejemplo · $what"
+        val prefix = tr("⚠️ Datos de ejemplo", "⚠️ Sample preview", "⚠️ Vorschau-Daten", "⚠️ Dados de demonstração")
+        text = "$prefix · $what"
         setTextColor(WARN)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
         typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
@@ -553,9 +578,9 @@ object LeapCompanionHub {
 
         val activeTariffLabel: String
             get() = when (tariffMode) {
-                1 -> "Rápida CC"
-                2 -> "Mixto CA/CC"
-                else -> "Casa CA"
+                1 -> tr("Rápida CC", "DC Fast", "DC-Schnell", "Rápida CC")
+                2 -> tr("Mixto CA/CC", "Mixed AC/DC", "Mix AC/DC", "Misto CA/CC")
+                else -> tr("Casa CA", "Home AC", "Haus AC", "Casa CA")
             }
     }
 
@@ -656,15 +681,46 @@ object LeapCompanionHub {
                 gravity = Gravity.CENTER_VERTICAL
             }
             head.addView(
-                text(activity, "TARIFAS ENERGÍA Y COMBUSTIBLE · SINCRONIZADO CON UNIT", 12f, ACCENT, bold = true),
+                text(
+                    activity,
+                    tr(
+                        "TARIFAS ENERGÍA Y COMBUSTIBLE · SINCRONIZADO CON UNIT",
+                        "ENERGY & FUEL TARIFFS · SYNCED WITH UNIT",
+                        "ENERGIE- & KRAFTSTOFFTARIFE · MIT UNIT SYNCHRONISIERT",
+                        "TARIFAS DE ENERGIA E COMBUSTÍVEL · SINCRONIZADO COM UNIT",
+                    ),
+                    12f,
+                    ACCENT,
+                    bold = true,
+                ),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
             head.addView(
-                pill(activity, if (cfg.isReevMode) "⛽⚡ REEV Activo" else "⚡ BEV 100%", primary = cfg.isReevMode, amber = cfg.isReevMode) {
+                pill(
+                    activity,
+                    if (cfg.isReevMode) tr("⛽⚡ REEV Activo", "⛽⚡ REEV Active", "⛽⚡ REEV Aktiv", "⛽⚡ REEV Ativo")
+                    else tr("⚡ BEV 100%", "⚡ 100% BEV", "⚡ 100 % BEV", "⚡ BEV 100%"),
+                    primary = cfg.isReevMode,
+                    amber = cfg.isReevMode,
+                ) {
                     saveEnergyPricingAndSync(activity, cfg.copy(isReevMode = !cfg.isReevMode))
                     Toast.makeText(
                         activity,
-                        if (!cfg.isReevMode) "Modo C10 REEV (Batería + Gasolina 50 L) activado y enviado al coche" else "Modo C10 BEV 100% Eléctrico activado y enviado al coche",
+                        if (!cfg.isReevMode) {
+                            tr(
+                                "Modo C10 REEV (Batería + Gasolina 50 L) activado y enviado al coche",
+                                "C10 REEV mode (Battery + 50 L Petrol) enabled and synced to car",
+                                "C10 REEV-Modus (Batterie + 50 L Benzin) aktiviert & ans Fahrzeug gesendet",
+                                "Modo C10 REEV (Bateria + Gasolina 50 L) ativado e enviado ao carro",
+                            )
+                        } else {
+                            tr(
+                                "Modo C10 BEV 100% Eléctrico activado y enviado al coche",
+                                "C10 100% Electric BEV mode enabled and synced to car",
+                                "C10 100 % Elektro-BEV-Modus aktiviert & ans Fahrzeug gesendet",
+                                "Modo C10 BEV 100% Elétrico ativado e enviado ao carro",
+                            )
+                        },
                         Toast.LENGTH_SHORT,
                     ).show()
                     onRefresh()
@@ -674,11 +730,17 @@ object LeapCompanionHub {
 
             addView(text(
                 activity,
-                "Configura aquí los precios y se trasladan automáticamente a Qonecta Unit en el coche (válido para BEV y REEV):",
+                tr(
+                    "Configura aquí los precios y se trasladan automáticamente a Qonecta Unit en el coche (válido para BEV y REEV):",
+                    "Set your prices here and they automatically sync to Qonecta Unit in the car (valid for both BEV and REEV):",
+                    "Preise hier einstellen – sie werden automatisch mit Qonecta Unit im Fahrzeug synchronisiert (BEV & REEV):",
+                    "Configura aqui os preços e são sincronizados automaticamente com o Qonecta Unit no carro (válido para BEV e REEV):",
+                ),
                 12.5f,
                 DIM,
             ).apply { setPadding(0, dp(activity, 4), 0, dp(activity, 8)) })
 
+            val activeTag = tr("● Tarifa activa", "● Active tariff", "● Aktiver Tarif", "● Tarifa ativa")
             val row1 = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 weightSum = 2f
@@ -686,9 +748,9 @@ object LeapCompanionHub {
             row1.addView(
                 miniStatBox(
                     activity,
-                    "🏠 LUZ EN CASA (CA)",
+                    tr("🏠 LUZ EN CASA (CA)", "🏠 HOME ELECTRICITY (AC)", "🏠 HAUSSTROM (AC)", "🏠 ELETRICIDADE CASA (CA)"),
                     String.format(Locale.getDefault(), "%.2f €/kWh", cfg.homeElecEurKwh),
-                    if (cfg.tariffMode == 0) "● Tarifa activa" else "Carga doméstica",
+                    if (cfg.tariffMode == 0) activeTag else tr("Carga doméstica", "Home charging", "Heimladen", "Carregamento doméstico"),
                     if (cfg.tariffMode == 0) OK else TEXT,
                 ),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(activity, 6) },
@@ -696,9 +758,9 @@ object LeapCompanionHub {
             row1.addView(
                 miniStatBox(
                     activity,
-                    "⚡ CARGA RÁPIDA (CC)",
+                    tr("⚡ CARGA RÁPIDA (CC)", "⚡ DC FAST CHARGING", "⚡ DC-SCHNELLLADEN", "⚡ CARREGAMENTO RÁPIDO (CC)"),
                     String.format(Locale.getDefault(), "%.2f €/kWh", cfg.dcFastElecEurKwh),
-                    if (cfg.tariffMode == 1) "● Tarifa activa" else "En ruta fuera",
+                    if (cfg.tariffMode == 1) activeTag else tr("En ruta fuera", "Public DC chargers", "Unterwegs DC", "Em viagem fora"),
                     if (cfg.tariffMode == 1) WARN else TEXT,
                 ),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
@@ -712,9 +774,10 @@ object LeapCompanionHub {
             row2.addView(
                 miniStatBox(
                     activity,
-                    "⛽ GASOLINA 95 (REEV)",
+                    tr("⛽ GASOLINA 95 (REEV)", "⛽ PETROL 95 (REEV)", "⛽ SUPER E5/E10 (REEV)", "⛽ GASOLINA 95 (REEV)"),
                     String.format(Locale.getDefault(), "%.2f €/L", cfg.gasolineEurLiter),
-                    if (cfg.isReevMode) "Motor extensor C10" else "Comparativa ahorro",
+                    if (cfg.isReevMode) tr("Motor extensor C10", "C10 range extender", "C10 Range-Extender", "Extensor de autonomia C10")
+                    else tr("Comparativa ahorro", "Savings benchmark", "Ersparnis-Vergleich", "Comparação poupança"),
                     if (cfg.isReevMode) WARN else ACCENT,
                 ),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(activity, 6) },
@@ -722,9 +785,9 @@ object LeapCompanionHub {
             row2.addView(
                 miniStatBox(
                     activity,
-                    "🛢️ DIÉSEL (COMPARATIVA)",
+                    tr("🛢️ DIÉSEL (COMPARATIVA)", "🛢️ DIESEL (BENCHMARK)", "🛢️ DIESEL (VERGLEICH)", "🛢️ GASÓLEO (COMPARAÇÃO)"),
                     String.format(Locale.getDefault(), "%.2f €/L", cfg.dieselEurLiter),
-                    "Frente a SUV diésel",
+                    tr("Frente a SUV diésel", "Vs. diesel SUV", "Ggü. Diesel-SUV", "Face a SUV a gasóleo"),
                     TEXT,
                 ),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
@@ -737,7 +800,11 @@ object LeapCompanionHub {
                 orientation = LinearLayout.HORIZONTAL
                 weightSum = 3f
             }
-            val modes = listOf(0 to "🏠 Usar Casa", 1 to "⚡ Usar Rápida", 2 to "🔄 Mixto 70/30")
+            val modes = listOf(
+                0 to tr("🏠 Usar Casa", "🏠 Use Home", "🏠 Hausstrom", "🏠 Usar Casa"),
+                1 to tr("⚡ Usar Rápida", "⚡ Use DC Fast", "⚡ DC-Schnell", "⚡ Usar Rápida"),
+                2 to tr("🔄 Mixto 70/30", "🔄 Mixed 70/30", "🔄 Mix 70/30", "🔄 Misto 70/30"),
+            )
             modes.forEachIndexed { idx, (mCode, mLabel) ->
                 val sel = cfg.tariffMode == mCode
                 modeRow.addView(
@@ -755,7 +822,16 @@ object LeapCompanionHub {
             })
 
             addView(
-                pill(activity, "✏️ Editar precios (Casa, Carga rápida, Gasolina, Diésel y REEV)", primary = true) {
+                pill(
+                    activity,
+                    tr(
+                        "✏️ Editar precios (Casa, Carga rápida, Gasolina, Diésel y REEV)",
+                        "✏️ Edit prices (Home AC, DC Fast, Petrol, Diesel & REEV)",
+                        "✏️ Preise bearbeiten (Hausstrom, DC, Benzin, Diesel & REEV)",
+                        "✏️ Editar preços (Casa, Rápida CC, Gasolina, Gasóleo e REEV)",
+                    ),
+                    primary = true,
+                ) {
                     showEnergyPricingDialog(activity, onRefresh)
                 },
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -785,35 +861,63 @@ object LeapCompanionHub {
                 box.addView(this)
             }
         }
-        val homeEt = field("🏠 Electricidad en casa CA (€/kWh)", cfg.homeElecEurKwh)
-        val dcEt = field("⚡ Carga rápida fuera CC (€/kWh)", cfg.dcFastElecEurKwh)
-        val gasEt = field("⛽ Precio Gasolina 95 (€/L · REEV y comparativa)", cfg.gasolineEurLiter)
-        val dieselEt = field("🛢️ Precio Diésel (€/L · comparativa)", cfg.dieselEurLiter)
+        val homeEt = field(
+            tr("🏠 Electricidad en casa CA (€/kWh)", "🏠 Home AC Electricity (€/kWh)", "🏠 Hausstrom AC (€/kWh)", "🏠 Eletricidade em casa CA (€/kWh)"),
+            cfg.homeElecEurKwh,
+        )
+        val dcEt = field(
+            tr("⚡ Carga rápida fuera CC (€/kWh)", "⚡ Public DC Fast Charging (€/kWh)", "⚡ Öffentliches DC-Schnellladen (€/kWh)", "⚡ Carregamento rápido CC (€/kWh)"),
+            cfg.dcFastElecEurKwh,
+        )
+        val gasEt = field(
+            tr("⛽ Precio Gasolina 95 (€/L · REEV y comparativa)", "⛽ Petrol 95 Price (€/L · REEV & benchmark)", "⛽ Benzinpreis (€/L · REEV & Vergleich)", "⛽ Preço Gasolina 95 (€/L · REEV e comparação)"),
+            cfg.gasolineEurLiter,
+        )
+        val dieselEt = field(
+            tr("🛢️ Precio Diésel (€/L · comparativa)", "🛢️ Diesel Price (€/L · benchmark)", "🛢️ Dieselpreis (€/L · Vergleich)", "🛢️ Preço Gasóleo (€/L · comparação)"),
+            cfg.dieselEurLiter,
+        )
 
         var reevChecked = cfg.isReevMode
+        fun reevBtnLabel(checked: Boolean) = if (checked) {
+            tr(
+                "✓ Modo C10 REEV (Eléctrico + Gasolina 50 L)",
+                "✓ C10 REEV Mode (Electric + 50 L Petrol)",
+                "✓ C10 REEV-Modus (Elektro + 50 L Benzin)",
+                "✓ Modo C10 REEV (Elétrico + Gasolina 50 L)",
+            )
+        } else {
+            tr(
+                "Modo C10 BEV (100% Eléctrico) · Pulsa para cambiar a REEV",
+                "C10 BEV Mode (100% Electric) · Tap to switch to REEV",
+                "C10 BEV-Modus (100 % Elektro) · Tippen für REEV",
+                "Modo C10 BEV (100% Elétrico) · Toca para mudar para REEV",
+            )
+        }
         val reevToggleBtn = pill(
             activity,
-            if (reevChecked) "✓ Modo C10 REEV (Eléctrico + Gasolina 50 L)" else "Modo C10 BEV (100% Eléctrico) · Pulsa para cambiar a REEV",
+            reevBtnLabel(reevChecked),
             primary = reevChecked,
             amber = reevChecked,
         ) {}
         reevToggleBtn.setOnClickListener {
             reevChecked = !reevChecked
-            reevToggleBtn.text = if (reevChecked) {
-                "✓ Modo C10 REEV (Eléctrico + Gasolina 50 L)"
-            } else {
-                "Modo C10 BEV (100% Eléctrico) · Pulsa para cambiar a REEV"
-            }
+            reevToggleBtn.text = reevBtnLabel(reevChecked)
         }
         box.addView(reevToggleBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(activity, 10)
         })
 
         AlertDialog.Builder(activity)
-            .setTitle("Precios de Energía y Combustible")
-            .setMessage("Se guardarán en el compañero y se trasladarán automáticamente al Qonecta Unit del coche.")
+            .setTitle(tr("Precios de Energía y Combustible", "Energy & Fuel Prices", "Energie- & Kraftstoffpreise", "Preços de Energia e Combustível"))
+            .setMessage(tr(
+                "Se guardarán en el compañero y se trasladarán automáticamente al Qonecta Unit del coche.",
+                "Prices are saved in Companion and automatically synced to Qonecta Unit in the car.",
+                "Preise werden in Companion gespeichert und automatisch mit Qonecta Unit im Fahrzeug synchronisiert.",
+                "Serão guardados no Companion e sincronizados automaticamente com o Qonecta Unit do carro.",
+            ))
             .setView(box)
-            .setPositiveButton("Guardar y enviar al Unit") { _, _ ->
+            .setPositiveButton(tr("Guardar y enviar al Unit", "Save & sync to Unit", "Speichern & an Unit senden", "Guardar e enviar ao Unit")) { _, _ ->
                 fun parse(et: EditText, def: Double): Double =
                     et.text?.toString()?.trim()?.replace(',', '.')?.toDoubleOrNull() ?: def
                 val updated = cfg.copy(
@@ -824,10 +928,19 @@ object LeapCompanionHub {
                     isReevMode = reevChecked,
                 )
                 saveEnergyPricingAndSync(activity, updated)
-                Toast.makeText(activity, "✓ Tarifas guardadas y sincronizadas con Qonecta Unit", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    activity,
+                    tr(
+                        "✓ Tarifas guardadas y sincronizadas con Qonecta Unit",
+                        "✓ Tariffs saved and synced with Qonecta Unit",
+                        "✓ Tarife gespeichert und mit Qonecta Unit synchronisiert",
+                        "✓ Tarifas guardadas e sincronizadas com o Qonecta Unit",
+                    ),
+                    Toast.LENGTH_SHORT,
+                ).show()
                 onRefresh()
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(tr("Cancelar", "Cancel", "Abbrechen", "Cancelar"), null)
             .show()
     }
 
@@ -841,7 +954,20 @@ object LeapCompanionHub {
     )
 
     fun buildTripsTab(activity: Activity, root: LinearLayout, onRefresh: () -> Unit = {}) {
-        root.addView(text(activity, "Viajes y Estadísticas (100 % Reales)", 25f, TEXT, bold = true))
+        root.addView(
+            text(
+                activity,
+                tr(
+                    "Viajes y Estadísticas (100 % Reales)",
+                    "Trips & Statistics (100% Real)",
+                    "Fahrten & Statistiken (100 % Echtzeit)",
+                    "Viagens e Estatísticas (100% Reais)",
+                ),
+                25f,
+                TEXT,
+                bold = true,
+            )
+        )
 
         val prefs = activity.getSharedPreferences("companion_vehicle_state", Context.MODE_PRIVATE)
         val pricing = loadEnergyPricing(activity)
@@ -896,12 +1022,27 @@ object LeapCompanionHub {
                         startTimeMs = ts,
                         isLive = true,
                         hidden = false,
-                        title = "SESIÓN EN VIVO C10 ($stamp) · BATERÍA ${soc.toInt()}% (${rangeKm.toInt()} KM)",
-                        subtitle = String.format(Locale.getDefault(), "%.1f km en curso · %d min · %.0f°C ext.", tripKm, durMin, extC),
+                        title = tr(
+                            "SESIÓN EN VIVO C10 ($stamp) · BATERÍA ${soc.toInt()}% (${rangeKm.toInt()} KM)",
+                            "LIVE C10 SESSION ($stamp) · BATTERY ${soc.toInt()}% (${rangeKm.toInt()} KM)",
+                            "LIVE-FAHRT C10 ($stamp) · BATTERIE ${soc.toInt()}% (${rangeKm.toInt()} KM)",
+                            "SESSÃO EM DIRETO C10 ($stamp) · BATERIA ${soc.toInt()}% (${rangeKm.toInt()} KM)",
+                        ),
+                        subtitle = tr(
+                            String.format(Locale.getDefault(), "%.1f km en curso · %d min · %.0f°C ext.", tripKm, durMin, extC),
+                            String.format(Locale.getDefault(), "%.1f km ongoing · %d min · %.0f°C ext.", tripKm, durMin, extC),
+                            String.format(Locale.getDefault(), "%.1f km laufend · %d Min. · %.0f°C außen", tripKm, durMin, extC),
+                            String.format(Locale.getDefault(), "%.1f km em curso · %d min · %.0f°C ext.", tripKm, durMin, extC),
+                        ),
                         metricsLine = if (avgKwh > 0.1) {
                             String.format(Locale.getDefault(), "%.1f kWh/100  ·  %.2f kWh  ·  %.2f € (%s)", avgKwh, tripKwh, liveCost, pricing.activeTariffLabel)
                         } else {
-                            "Trayecto en curso · Telemetría real C10"
+                            tr(
+                                "Trayecto en curso · Telemetría real C10",
+                                "Ongoing drive · Real C10 telemetry",
+                                "Aktuelle Fahrt · Echte C10-Telemetrie",
+                                "Viagem em curso · Telemetria real C10",
+                            )
                         },
                     ),
                 )
@@ -961,13 +1102,19 @@ object LeapCompanionHub {
                         daily30Kms[29 - daysAgo] += dist.toFloat()
                     }
                     val reevSuffix = if (fuelL >= 0.05) String.format(Locale.getDefault(), " + %.1f L REEV", fuelL) else ""
+                    val hiddenBadge = if (isHidden) tr("🔒 [OCULTO] ", "🔒 [HIDDEN] ", "🔒 [VERBORGEN] ", "🔒 [OCULTO] ") else ""
                     realTrips.add(
                         CompanionTripItem(
                             startTimeMs = ts,
                             isLive = false,
                             hidden = isHidden,
-                            title = (if (isHidden) "🔒 [OCULTO] " else "") + "$stamp  ·  $orig → $dest",
-                            subtitle = String.format(Locale.getDefault(), "%.1f km · %d min · media %.0f km/h", dist, dur, avgSpd),
+                            title = "$hiddenBadge$stamp  ·  $orig → $dest",
+                            subtitle = tr(
+                                String.format(Locale.getDefault(), "%.1f km · %d min · media %.0f km/h", dist, dur, avgSpd),
+                                String.format(Locale.getDefault(), "%.1f km · %d min · avg %.0f km/h", dist, dur, avgSpd),
+                                String.format(Locale.getDefault(), "%.1f km · %d Min. · Ø %.0f km/h", dist, dur, avgSpd),
+                                String.format(Locale.getDefault(), "%.1f km · %d min · média %.0f km/h", dist, dur, avgSpd),
+                            ),
                             metricsLine = String.format(Locale.getDefault(), "%.1f kWh/100%s  ·  %d%% → %d%%  ·  %.2f €", avgKwh, reevSuffix, sSoc, eSoc, cost),
                         ),
                     )
@@ -976,9 +1123,30 @@ object LeapCompanionHub {
         }
 
         if (realTrips.isEmpty() && hiddenTripsCount == 0) {
-            root.addView(sampleBanner(activity, "Conecta el móvil a Qonecta Unit en el coche para sincronizar tus viajes reales"))
+            root.addView(
+                sampleBanner(
+                    activity,
+                    tr(
+                        "Conecta el móvil a Qonecta Unit en el coche para sincronizar tus viajes reales",
+                        "Connect your phone to Qonecta Unit in the car to sync your real trips",
+                        "Verbinde dein Smartphone mit Qonecta Unit im Fahrzeug, um deine echten Fahrten zu synchronisieren",
+                        "Liga o telemóvel ao Qonecta Unit no carro para sincronizar as tuas viagens reais",
+                    ),
+                )
+            )
         } else {
-            root.addView(text(activity, "● Sincronizado bidireccionalmente con Qonecta Unit (Móvil ↔ Coche)", 13f, OK, bold = true).apply {
+            root.addView(text(
+                activity,
+                tr(
+                    "● Sincronizado bidireccionalmente con Qonecta Unit (Móvil ↔ Coche)",
+                    "● Two-way synced with Qonecta Unit (Phone ↔ Car)",
+                    "● Bidirektional mit Qonecta Unit synchronisiert (Smartphone ↔ Fahrzeug)",
+                    "● Sincronizado bidirecionalmente com o Qonecta Unit (Telemóvel ↔ Carro)",
+                ),
+                13f,
+                OK,
+                bold = true,
+            ).apply {
                 setPadding(0, dp(activity, 4), 0, dp(activity, 2))
             })
         }
@@ -992,35 +1160,78 @@ object LeapCompanionHub {
 
         // Tarjeta 30 días con gráfica de barras en Canvas + comparativa Gasolina y Diésel
         root.addView(card(activity).apply {
-            addView(text(activity, "ÚLTIMOS 30 DÍAS · EVOLUCIÓN Y AHORRO REAL", 12.5f, ACCENT, bold = true))
+            addView(text(
+                activity,
+                tr(
+                    "ÚLTIMOS 30 DÍAS · EVOLUCIÓN Y AHORRO REAL",
+                    "LAST 30 DAYS · REAL TRENDS & SAVINGS",
+                    "LETZTE 30 TAGE · VERLAUF & ECHTE ERSPARNIS",
+                    "ÚLTIMOS 30 DIAS · EVOLUÇÃO E POUPANÇA REAL",
+                ),
+                12.5f,
+                ACCENT,
+                bold = true,
+            ))
             val statsRow = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 weightSum = 3f
                 setPadding(0, dp(activity, 8), 0, dp(activity, 6))
             }
             statsRow.addView(
-                miniStatBox(activity, "RECORRIDO", String.format(Locale.getDefault(), "%.1f km", totalKm), "${realTrips.size} visibles", TEXT),
+                miniStatBox(
+                    activity,
+                    tr("RECORRIDO", "DISTANCE", "STRECKE", "PERCURSO"),
+                    String.format(Locale.getDefault(), "%.1f km", totalKm),
+                    tr("${realTrips.size} visibles", "${realTrips.size} visible", "${realTrips.size} sichtbar", "${realTrips.size} visíveis"),
+                    TEXT,
+                ),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(activity, 6) },
             )
             statsRow.addView(
-                miniStatBox(activity, "MEDIA MES", if (meanKwh100 > 0.1) String.format(Locale.getDefault(), "%.1f", meanKwh100) else "--", if (pricing.isReevMode) "kWh/100 + REEV" else "kWh/100 km", OK),
+                miniStatBox(
+                    activity,
+                    tr("MEDIA MES", "30D AVG", "Ø MONAT", "MÉDIA MÊS"),
+                    if (meanKwh100 > 0.1) String.format(Locale.getDefault(), "%.1f", meanKwh100) else "--",
+                    if (pricing.isReevMode) "kWh/100 + REEV" else "kWh/100 km",
+                    OK,
+                ),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(activity, 6) },
             )
             statsRow.addView(
-                miniStatBox(activity, "COSTE (${pricing.activeTariffLabel.uppercase(Locale.getDefault())})", String.format(Locale.getDefault(), "%.2f €", totalCostEur), String.format(Locale.getDefault(), "%.1f kWh", totalKwh), ACCENT),
+                miniStatBox(
+                    activity,
+                    tr("COSTE", "COST", "KOSTEN", "CUSTO") + " (${pricing.activeTariffLabel.uppercase(Locale.getDefault())})",
+                    String.format(Locale.getDefault(), "%.2f €", totalCostEur),
+                    String.format(Locale.getDefault(), "%.1f kWh", totalKwh),
+                    ACCENT,
+                ),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
             addView(statsRow)
 
             addView(text(
                 activity,
-                String.format(
-                    Locale.getDefault(),
-                    "💰 Ahorro frente a Gasolina (%.2f €/L): +%.2f €  ·  Frente a Diésel (%.2f €/L): +%.2f €",
-                    pricing.gasolineEurLiter,
-                    petrolSavedEur,
-                    pricing.dieselEurLiter,
-                    dieselSavedEur,
+                tr(
+                    String.format(
+                        Locale.getDefault(),
+                        "💰 Ahorro frente a Gasolina (%.2f €/L): +%.2f €  ·  Frente a Diésel (%.2f €/L): +%.2f €",
+                        pricing.gasolineEurLiter, petrolSavedEur, pricing.dieselEurLiter, dieselSavedEur,
+                    ),
+                    String.format(
+                        Locale.getDefault(),
+                        "💰 Saved vs. Petrol (%.2f €/L): +%.2f €  ·  Vs. Diesel (%.2f €/L): +%.2f €",
+                        pricing.gasolineEurLiter, petrolSavedEur, pricing.dieselEurLiter, dieselSavedEur,
+                    ),
+                    String.format(
+                        Locale.getDefault(),
+                        "💰 Ersparnis ggü. Benzin (%.2f €/L): +%.2f €  ·  Ggü. Diesel (%.2f €/L): +%.2f €",
+                        pricing.gasolineEurLiter, petrolSavedEur, pricing.dieselEurLiter, dieselSavedEur,
+                    ),
+                    String.format(
+                        Locale.getDefault(),
+                        "💰 Poupança face a Gasolina (%.2f €/L): +%.2f €  ·  Face a Gasóleo (%.2f €/L): +%.2f €",
+                        pricing.gasolineEurLiter, petrolSavedEur, pricing.dieselEurLiter, dieselSavedEur,
+                    ),
                 ),
                 12.5f,
                 OK,
@@ -1039,12 +1250,27 @@ object LeapCompanionHub {
                 gravity = Gravity.CENTER_VERTICAL
             }
             histHeader.addView(
-                text(activity, "HISTORIAL DE VIAJES · PRIVACIDAD MÓVIL ↔ UNIT", 12f, ACCENT, bold = true),
+                text(
+                    activity,
+                    tr(
+                        "HISTORIAL DE VIAJES · PRIVACIDAD MÓVIL ↔ UNIT",
+                        "TRIP HISTORY · PHONE ↔ UNIT PRIVACY",
+                        "FAHRTENVERLAUF · DATENSCHUTZ SMARTPHONE ↔ UNIT",
+                        "HISTÓRICO DE VIAGENS · PRIVACIDADE TELEMÓVEL ↔ UNIT",
+                    ),
+                    12f,
+                    ACCENT,
+                    bold = true,
+                ),
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
             val privacyBtn = pill(
                 activity,
-                if (showHiddenTripsInCompanion) "🔓 Ocultar privados ($hiddenTripsCount)" else "🔒 Mostrar ocultos ($hiddenTripsCount)",
+                if (showHiddenTripsInCompanion) {
+                    tr("🔓 Ocultar privados ($hiddenTripsCount)", "🔓 Hide private ($hiddenTripsCount)", "🔓 Verborgene ausbl. ($hiddenTripsCount)", "🔓 Ocultar privados ($hiddenTripsCount)")
+                } else {
+                    tr("🔒 Mostrar ocultos ($hiddenTripsCount)", "🔒 Show hidden ($hiddenTripsCount)", "🔒 Verborgene zeigen ($hiddenTripsCount)", "🔒 Mostrar ocultos ($hiddenTripsCount)")
+                },
                 primary = showHiddenTripsInCompanion,
                 amber = hiddenTripsCount > 0 && !showHiddenTripsInCompanion,
             ) {
@@ -1056,16 +1282,31 @@ object LeapCompanionHub {
 
             addView(text(
                 activity,
-                "Si ocultas o eliminas un viaje aquí, se ocultará o eliminará automáticamente en el Qonecta Unit del coche.",
+                tr(
+                    "Si ocultas o eliminas un viaje aquí, se ocultará o eliminará automáticamente en el Qonecta Unit del coche.",
+                    "Hiding or deleting a trip here automatically hides or deletes it on Qonecta Unit in the car.",
+                    "Wenn du eine Fahrt hier ausblendest oder löschst, geschieht dies automatisch auch in Qonecta Unit im Fahrzeug.",
+                    "Se ocultares ou eliminares uma viagem aqui, será ocultada ou eliminada automaticamente no Qonecta Unit do carro.",
+                ),
                 12f,
                 DIM,
             ).apply { setPadding(0, dp(activity, 4), 0, dp(activity, 6)) })
 
             if (realTrips.isEmpty()) {
                 val emptyMsg = if (hiddenTripsCount > 0 && !showHiddenTripsInCompanion) {
-                    "Tienes $hiddenTripsCount viaje(s) oculto(s) por privacidad. Pulsa «🔒 Mostrar ocultos» arriba para verlos o restaurarlos."
+                    tr(
+                        "Tienes $hiddenTripsCount viaje(s) oculto(s) por privacidad. Pulsa «🔒 Mostrar ocultos» arriba para verlos o restaurarlos.",
+                        "You have $hiddenTripsCount hidden trip(s) for privacy. Tap «🔒 Show hidden» above to view or restore them.",
+                        "Du hast $hiddenTripsCount ausgeblendete Fahrt(en). Tippe oben auf «🔒 Verborgene zeigen», um sie anzuzeigen.",
+                        "Tens $hiddenTripsCount viagem(ns) oculta(s) por privacidade. Toca em «🔒 Mostrar ocultos» acima para vê-las ou restaurá-las.",
+                    )
                 } else {
-                    "Aún no hay recorridos guardados (≥ 0,2 km). Al conducir tu C10 y poner P al aparcar, tus viajes reales se sincronizarán aquí."
+                    tr(
+                        "Aún no hay recorridos guardados (≥ 0,2 km). Al conducir tu C10 y poner P al aparcar, tus viajes reales se sincronizarán aquí.",
+                        "No recorded trips yet (≥ 0.2 km). Drive your C10 and shift to P when parking — your real trips will sync here automatically.",
+                        "Noch keine gespeicherten Fahrten (≥ 0,2 km). Nach einer Fahrt mit deinem C10 und Schalten auf P werden deine Fahrten hier synchronisiert.",
+                        "Ainda não há viagens guardadas (≥ 0,2 km). Ao conduzir o teu C10 e colocar em P ao estacionar, as viagens reais sincronizam-se aqui.",
+                    )
                 }
                 addView(text(activity, emptyMsg, 13f, DIM).apply {
                     setPadding(0, dp(activity, 8), 0, dp(activity, 4))
@@ -1100,28 +1341,39 @@ object LeapCompanionHub {
                         }
                         val hideBtn = pill(
                             activity,
-                            if (item.hidden) "👁 Mostrar en Unit y Móvil" else "👁 Ocultar por privacidad",
+                            if (item.hidden) tr("👁 Mostrar en Unit y Móvil", "👁 Show on Unit & Phone", "👁 Auf Unit & Smartphone zeigen", "👁 Mostrar no Unit e Telemóvel")
+                            else tr("👁 Ocultar por privacidad", "👁 Hide for privacy", "👁 Privat ausblenden", "👁 Ocultar por privacidade"),
                             amber = !item.hidden,
                             primary = item.hidden,
                         ) {
                             toggleTripHiddenAndSync(activity, item.startTimeMs, item.hidden)
                             Toast.makeText(
                                 activity,
-                                if (item.hidden) "Viaje visible de nuevo en Móvil y Unit" else "Viaje oculto por privacidad en Móvil y Unit",
+                                if (item.hidden) tr("Viaje visible de nuevo en Móvil y Unit", "Trip visible again on Phone & Unit", "Fahrt wieder sichtbar auf Smartphone & Unit", "Viagem novamente visível no Telemóvel e Unit")
+                                else tr("Viaje oculto por privacidad en Móvil y Unit", "Trip hidden for privacy on Phone & Unit", "Fahrt privat ausgeblendet auf Smartphone & Unit", "Viagem ocultada por privacidade no Telemóvel e Unit"),
                                 Toast.LENGTH_SHORT,
                             ).show()
                             onRefresh()
                         }
-                        val delBtn = pill(activity, "🗑 Eliminar") {
+                        val delBtn = pill(activity, tr("🗑 Eliminar", "🗑 Delete", "🗑 Löschen", "🗑 Eliminar")) {
                             AlertDialog.Builder(activity)
-                                .setTitle("Eliminar viaje")
-                                .setMessage("¿Seguro que quieres eliminar este viaje permanentemente en el compañero y en el Qonecta Unit del coche?")
-                                .setPositiveButton("Eliminar en ambos") { _, _ ->
+                                .setTitle(tr("Eliminar viaje", "Delete trip", "Fahrt löschen", "Eliminar viagem"))
+                                .setMessage(tr(
+                                    "¿Seguro que quieres eliminar este viaje permanentemente en el compañero y en el Qonecta Unit del coche?",
+                                    "Are you sure you want to permanently delete this trip on both Companion and Qonecta Unit?",
+                                    "Möchtest du diese Fahrt dauerhaft in Companion und Qonecta Unit löschen?",
+                                    "Tens a certeza de que queres eliminar permanentemente esta viagem no Companion e no Qonecta Unit?",
+                                ))
+                                .setPositiveButton(tr("Eliminar en ambos", "Delete on both", "Auf beiden löschen", "Eliminar em ambos")) { _, _ ->
                                     deleteTripAndSync(activity, item.startTimeMs)
-                                    Toast.makeText(activity, "Viaje eliminado en el móvil y en Qonecta Unit", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(
+                                        activity,
+                                        tr("Viaje eliminado en el móvil y en Qonecta Unit", "Trip deleted on phone and Qonecta Unit", "Fahrt auf Smartphone und Qonecta Unit gelöscht", "Viagem eliminada no telemóvel e no Qonecta Unit"),
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
                                     onRefresh()
                                 }
-                                .setNegativeButton("Cancelar", null)
+                                .setNegativeButton(tr("Cancelar", "Cancel", "Abbrechen", "Cancelar"), null)
                                 .show()
                         }
                         actionsRow.addView(hideBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -1150,32 +1402,86 @@ object LeapCompanionHub {
             gravity = Gravity.CENTER_VERTICAL
         }
         val titleCol = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-        titleCol.addView(text(activity, "Casa · Home Assistant", 25f, TEXT, bold = true))
+        titleCol.addView(
+            text(
+                activity,
+                tr("Casa · Home Assistant", "Home · Home Assistant", "Zuhause · Home Assistant", "Casa · Home Assistant"),
+                25f,
+                TEXT,
+                bold = true,
+            )
+        )
         titleCol.addView(text(
             activity,
-            if (st.haUrl.isNotBlank()) "● Conectado a ${st.haUrl}" else "● Domótica inteligente sincronizada con la llegada del C10",
+            if (st.haUrl.isNotBlank()) {
+                tr("● Conectado a ${st.haUrl}", "● Connected to ${st.haUrl}", "● Verbunden mit ${st.haUrl}", "● Ligado a ${st.haUrl}")
+            } else {
+                tr(
+                    "● Domótica inteligente sincronizada con la llegada del C10",
+                    "● Smart home synced with your C10's arrival",
+                    "● Smart Home synchronisiert mit der Ankunft deines C10",
+                    "● Domótica inteligente sincronizada com a chegada do C10",
+                )
+            },
             13f,
             if (st.haUrl.isNotBlank()) OK else ACCENT,
         ))
         head.addView(titleCol, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        head.addView(pill(activity, "⚙️ Servidor HA", primary = st.haUrl.isBlank()) {
+        head.addView(pill(activity, tr("⚙️ Servidor HA", "⚙️ HA Server", "⚙️ HA-Server", "⚙️ Servidor HA"), primary = st.haUrl.isBlank()) {
             showHomeAssistantDialog(activity, onRefresh)
         })
         root.addView(head)
-        root.addView(sampleBanner(activity, "los botones aún no hablan con Home Assistant"))
+        root.addView(
+            sampleBanner(
+                activity,
+                tr(
+                    "los botones aún no hablan con Home Assistant",
+                    "tiles are preview-only until Home Assistant webhook is linked",
+                    "Kacheln sind derzeit Vorschau ohne aktive Home-Assistant-Verbindung",
+                    "os botões ainda estão em modo de pré-visualização",
+                ),
+            )
+        )
 
         val sp = activity.getSharedPreferences("companion_ha_entities", Context.MODE_PRIVATE)
 
         // Cuadrícula 2×2 estilo PhoneHome de Qonecta+
         val gridCard = card(activity).apply {
-            addView(text(activity, "PANEL DOMÓTICO · GARAJE Y CARGADOR", 12.5f, ACCENT, bold = true).apply {
+            addView(text(
+                activity,
+                tr(
+                    "PANEL DOMÓTICO · GARAJE Y CARGADOR",
+                    "SMART HOME PANEL · GARAGE & WALLBOX",
+                    "SMART-HOME-PANEL · GARAGE & WALLBOX",
+                    "PAINEL DOMÓTICO · GARAGEM E WALLBOX",
+                ),
+                12.5f,
+                ACCENT,
+                bold = true,
+            ).apply {
                 setPadding(0, 0, 0, dp(activity, 8))
             })
             val items = listOf(
-                Triple("garage_door", "🚪 Puerta Garaje", "Cerrada · Auto < 80 m"),
-                Triple("wallbox_charger", "⚡ Wallbox 7,4 kW", "Programado 00:00 h"),
-                Triple("porch_light", "💡 Luces Porche", "Encendido automático"),
-                Triple("home_climate", "🌡️ Clima Salón", "21,5 °C · Bomba calor"),
+                Triple(
+                    "garage_door",
+                    tr("🚪 Puerta Garaje", "🚪 Garage Door", "🚪 Garagentor", "🚪 Portão Garagem"),
+                    tr("Cerrada · Auto < 80 m", "Closed · Auto < 80 m", "Geschlossen · Auto < 80 m", "Fechado · Auto < 80 m"),
+                ),
+                Triple(
+                    "wallbox_charger",
+                    "⚡ Wallbox 7.4 kW",
+                    tr("Programado 00:00 h", "Scheduled 00:00", "Geplant 00:00 Uhr", "Programado 00:00 h"),
+                ),
+                Triple(
+                    "porch_light",
+                    tr("💡 Luces Porche", "💡 Porch Lights", "💡 Einfahrtslicht", "💡 Luzes Entrada"),
+                    tr("Encendido automático", "Auto turn-on", "Automatik ein", "Ligação automática"),
+                ),
+                Triple(
+                    "home_climate",
+                    tr("🌡️ Clima Salón", "🌡️ Living Room", "🌡️ Wohnzimmer", "🌡️ Clima Sala"),
+                    tr("21,5 °C · Bomba calor", "21.5 °C · Heat pump", "21,5 °C · Wärmepumpe", "21,5 °C · Bomba calor"),
+                ),
             )
             for (r in 0..1) {
                 val row = LinearLayout(activity).apply {
@@ -1197,10 +1503,16 @@ object LeapCompanionHub {
                         }
                     }
                     tile.addView(text(activity, title, 15.5f, TEXT, bold = true))
-                    tile.addView(text(activity, if (active) "● ACTIVO / ABIERTO" else sub, 12f, if (active) OK else DIM, bold = active).apply {
+                    val activeLbl = tr("● ACTIVO / ABIERTO", "● ACTIVE / OPEN", "● AKTIV / OFFEN", "● ATIVO / ABERTO")
+                    tile.addView(text(activity, if (active) activeLbl else sub, 12f, if (active) OK else DIM, bold = active).apply {
                         setPadding(0, dp(activity, 4), 0, dp(activity, 10))
                     })
-                    tile.addView(pill(activity, if (active) "Apagar / Cerrar" else "Activar ahora", primary = active) {
+                    val btnLbl = if (active) {
+                        tr("Apagar / Cerrar", "Turn off / Close", "Aus / Schließen", "Desligar / Fechar")
+                    } else {
+                        tr("Activar ahora", "Activate now", "Jetzt aktivieren", "Ativar agora")
+                    }
+                    tile.addView(pill(activity, btnLbl, primary = active) {
                         sp.edit().putBoolean(key, !active).apply()
                         onRefresh()
                     })
@@ -1217,10 +1529,26 @@ object LeapCompanionHub {
 
         // Automatización GPS al llegar a casa con el C10
         root.addView(card(activity).apply {
-            addView(text(activity, "AUTOMATIZACIÓN AL LLEGAR EN EL C10", 12.5f, ACCENT, bold = true))
             addView(text(
                 activity,
-                "✓ Al acercarte a menos de 80 metros de casa con Qonecta Unit conectado, aparece el aviso de apertura en 1 toque del garaje y se enciende la luz de entrada.",
+                tr(
+                    "AUTOMATIZACIÓN AL LLEGAR EN EL C10",
+                    "ARRIVAL AUTOMATION IN YOUR C10",
+                    "ANKUNFTS-AUTOMATION IM C10",
+                    "AUTOMATIZAÇÃO AO CHEGAR NO C10",
+                ),
+                12.5f,
+                ACCENT,
+                bold = true,
+            ))
+            addView(text(
+                activity,
+                tr(
+                    "✓ Al acercarte a menos de 80 metros de casa con Qonecta Unit conectado, aparece el aviso de apertura en 1 toque del garaje y se enciende la luz de entrada.",
+                    "✓ Within 80 meters of home with Qonecta Unit connected, a 1-tap garage opener prompt appears and entry lights turn on.",
+                    "✓ Unter 80 Metern vor Zuhause erscheint bei verbundenem Qonecta Unit der 1-Tap-Garagenöffner und das Einfahrtslicht schaltet ein.",
+                    "✓ Ao aproximar-te a menos de 80 metros de casa com o Qonecta Unit ligado, surge o aviso de abertura num toque da garagem e acende-se a luz de entrada.",
+                ),
                 13.5f,
                 TEXT,
             ).apply { setPadding(0, dp(activity, 6), 0, 0) })
@@ -1233,17 +1561,51 @@ object LeapCompanionHub {
 
     fun buildRouteTab(activity: Activity, root: LinearLayout) {
         val st = CompanionVehicleState.current
-        root.addView(text(activity, "Planificador de Ruta EV", 25f, TEXT, bold = true))
-        root.addView(sampleBanner(activity, "la curva de batería es ilustrativa; el envío a Google Maps sí funciona"))
+        root.addView(
+            text(
+                activity,
+                tr("Planificador de Ruta EV", "EV Route Planner", "EV-Routenplaner", "Planeador de Rota EV"),
+                25f,
+                TEXT,
+                bold = true,
+            )
+        )
+        root.addView(
+            sampleBanner(
+                activity,
+                tr(
+                    "la curva de batería es ilustrativa; el envío a Google Maps sí funciona",
+                    "SoC curve is illustrative; sending routes to Google Maps works live",
+                    "Batteriekurve ist beispielhaft; das Senden an Google Maps funktioniert live",
+                    "a curva de bateria é ilustrativa; o envio para o Google Maps funciona em direto",
+                ),
+            )
+        )
         root.addView(text(
             activity,
-            "Calcula paradas óptimas con el ${st.socPct}% (${st.rangeKm} km) actual de tu C10 y envía la ruta a Google Maps / Android Auto.",
+            tr(
+                "Calcula paradas óptimas con el ${st.socPct}% (${st.rangeKm} km) actual de tu C10 y envía la ruta a Google Maps / Android Auto.",
+                "Plan optimal charging stops with your C10's current ${st.socPct}% (${st.rangeKm} km) and send the route to Google Maps / Android Auto.",
+                "Berechne optimale Ladestopps mit aktuellen ${st.socPct}% (${st.rangeKm} km) deines C10 und sende die Route an Google Maps / Android Auto.",
+                "Calcula paragens ideais com os atuais ${st.socPct}% (${st.rangeKm} km) do teu C10 e envia a rota para o Google Maps / Android Auto.",
+            ),
             13.5f,
             DIM,
         ).apply { setPadding(0, dp(activity, 4), 0, dp(activity, 8)) })
 
         root.addView(card(activity).apply {
-            addView(text(activity, "PREVISUALIZACIÓN DE RUTA Y CURVA DE BATERÍA SoC", 12.5f, ACCENT, bold = true))
+            addView(text(
+                activity,
+                tr(
+                    "PREVISUALIZACIÓN DE RUTA Y CURVA DE BATERÍA SoC",
+                    "ROUTE PREVIEW & BATTERY SoC CURVE",
+                    "ROUTENVORSCHAU & BATTERIE-SoC-KURVE",
+                    "PRÉ-VISUALIZAÇÃO DA ROTA E CURVA DE BATERIA SoC",
+                ),
+                12.5f,
+                ACCENT,
+                bold = true,
+            ))
             addView(
                 CompanionRoutePreviewView(activity, st.socPct),
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(activity, 130)).apply {
@@ -1253,7 +1615,12 @@ object LeapCompanionHub {
             )
 
             val destInput = EditText(activity).apply {
-                hint = "Destino (ej. Madrid, Valencia, Santiago, Lisboa…)"
+                hint = tr(
+                    "Destino (ej. Madrid, Valencia, Santiago, Lisboa…)",
+                    "Destination (e.g. London, Munich, Paris, Lisbon…)",
+                    "Zielort (z. B. München, Berlin, Hamburg, Wien…)",
+                    "Destino (ex. Lisboa, Porto, Coimbra, Faro…)",
+                )
                 setHintTextColor(FAINT)
                 setTextColor(TEXT)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
@@ -1263,7 +1630,12 @@ object LeapCompanionHub {
             addView(destInput)
 
             val stopInput = EditText(activity).apply {
-                hint = "Parada de carga CC opcional (ej. Zunder, Ionity…)"
+                hint = tr(
+                    "Parada de carga CC opcional (ej. Zunder, Ionity…)",
+                    "Optional DC charging stop (e.g. Ionity, Fastned…)",
+                    "Optionaler DC-Ladestopp (z. B. Ionity, EnBW, Aral pulse…)",
+                    "Paragem de carregamento CC opcional (ex. Ionity, Continente Plug&Charge…)",
+                )
                 setHintTextColor(FAINT)
                 setTextColor(TEXT)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
@@ -1274,11 +1646,29 @@ object LeapCompanionHub {
                 topMargin = dp(activity, 8)
             })
 
-            addView(pill(activity, "🗺️ Enviar ruta a Google Maps / Android Auto", primary = true) {
+            addView(pill(
+                activity,
+                tr(
+                    "🗺️ Enviar ruta a Google Maps / Android Auto",
+                    "🗺️ Send route to Google Maps / Android Auto",
+                    "🗺️ Route an Google Maps / Android Auto senden",
+                    "🗺️ Enviar rota para Google Maps / Android Auto",
+                ),
+                primary = true,
+            ) {
                 val destText = destInput.text?.toString()?.trim().orEmpty()
                 val stopText = stopInput.text?.toString()?.trim().orEmpty()
                 if (destText.isBlank()) {
-                    Toast.makeText(activity, "Escribe un destino para abrir la ruta", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        activity,
+                        tr(
+                            "Escribe un destino para abrir la ruta",
+                            "Enter a destination to start the route",
+                            "Bitte gib ein Ziel ein, um die Route zu öffnen",
+                            "Escreve um destino para abrir a rota",
+                        ),
+                        Toast.LENGTH_SHORT,
+                    ).show()
                 } else {
                     val uriStr = if (stopText.isNotBlank()) {
                         "https://www.google.com/maps/dir/?api=1&destination=${Uri.encode(destText)}&waypoints=${Uri.encode(stopText)}&travelmode=driving&dir_action=navigate"
@@ -1298,14 +1688,43 @@ object LeapCompanionHub {
         })
 
         root.addView(card(activity).apply {
-            addView(text(activity, "RUTAS FAVORITAS CON CARGADORES ULTRARRÁPIDOS", 12.5f, ACCENT, bold = true))
-            val presets = listOf(
-                Triple("Madrid · Puerta del Sol (312 km)", 40.4168 to -3.7038, NavPoint(41.6520, -4.7286, "Zunder Valladolid (180 kW CC)")),
-                Triple("Valencia · Ciudad de las Artes (356 km)", 39.4549 to -0.3505, NavPoint(39.9642, -3.0044, "Ionity Tarancón (350 kW CC)")),
-                Triple("Santiago de Compostela (388 km)", 42.8804 to -8.5459, NavPoint(42.0025, -5.6725, "Zunder Benavente (160 kW CC)")),
-            )
+            addView(text(
+                activity,
+                tr(
+                    "RUTAS FAVORITAS CON CARGADORES ULTRARRÁPIDOS",
+                    "FAVORITE ROUTES WITH ULTRA-FAST DC CHARGERS",
+                    "FAVORITEN-ROUTEN MIT HPC-SCHNELLLADERN",
+                    "ROTAS FAVORITAS COM CARREGADORES ULTRARRÁPIDOS",
+                ),
+                12.5f,
+                ACCENT,
+                bold = true,
+            ))
+            val presets = when (CompanionI18n.currentLang()) {
+                CompanionI18n.Lang.DE -> listOf(
+                    Triple("München · Marienplatz (305 km)", 48.1372 to 11.5756, NavPoint(48.7665, 11.4257, "Ionity Köschinger Forst (350 kW DC)")),
+                    Triple("Berlin · Brandenburger Tor (348 km)", 52.5163 to 13.3777, NavPoint(51.8400, 12.2400, "EnBW Dessau-Ost (300 kW DC)")),
+                    Triple("Hamburg · HafenCity (362 km)", 53.5413 to 9.9937, NavPoint(52.8000, 9.9500, "Ionity Lüneburger Heide (350 kW DC)")),
+                )
+                CompanionI18n.Lang.PT -> listOf(
+                    Triple("Lisboa · Praça do Comércio (314 km)", 38.7075 to -9.1364, NavPoint(39.7436, -8.8071, "Ionity Leiria (350 kW CC)")),
+                    Triple("Porto · Ribeira (312 km)", 41.1406 to -8.6130, NavPoint(40.2033, -8.4103, "PCPR Coimbra (180 kW CC)")),
+                    Triple("Faro · Algarve (278 km)", 37.0194 to -7.9304, NavPoint(37.5200, -8.1600, "Ionity Almodôvar (350 kW CC)")),
+                )
+                CompanionI18n.Lang.EN -> listOf(
+                    Triple("Madrid · Puerta del Sol (312 km)", 40.4168 to -3.7038, NavPoint(41.6520, -4.7286, "Zunder Valladolid (180 kW DC)")),
+                    Triple("Lisbon · Parque das Nações (318 km)", 38.7686 to -9.0940, NavPoint(39.7436, -8.8071, "Ionity Leiria (350 kW DC)")),
+                    Triple("Munich · Zentrum (305 km)", 48.1372 to 11.5756, NavPoint(48.7665, 11.4257, "Ionity Kösching (350 kW DC)")),
+                )
+                CompanionI18n.Lang.ES -> listOf(
+                    Triple("Madrid · Puerta del Sol (312 km)", 40.4168 to -3.7038, NavPoint(41.6520, -4.7286, "Zunder Valladolid (180 kW CC)")),
+                    Triple("Valencia · Ciudad de las Artes (356 km)", 39.4549 to -0.3505, NavPoint(39.9642, -3.0044, "Ionity Tarancón (350 kW CC)")),
+                    Triple("Santiago de Compostela (388 km)", 42.8804 to -8.5459, NavPoint(42.0025, -5.6725, "Zunder Benavente (160 kW CC)")),
+                )
+            }
+            val viaWord = tr("vía", "via", "über", "via")
             presets.forEach { (title, coords, chargerStop) ->
-                val btn = pill(activity, "⚡ $title · vía ${chargerStop.name}") {
+                val btn = pill(activity, "⚡ $title · $viaWord ${chargerStop.name}") {
                     val dest = NavPoint(coords.first, coords.second, title)
                     val built = MapsRoute.build(dest, listOf(chargerStop))
                     val intent = MapsLauncher.buildIntent(activity, built)
@@ -1422,19 +1841,24 @@ object LeapCompanionHub {
             setPadding(dp(activity, 20), dp(activity, 12), dp(activity, 20), dp(activity, 8))
         }
         val urlEt = EditText(activity).apply {
-            hint = "https://tu-casa.duckdns.org:8123"
+            hint = "https://your-home.duckdns.org:8123"
             setText(st.haUrl)
         }
         val tokenEt = EditText(activity).apply {
-            hint = "Token de larga duración de Home Assistant"
+            hint = tr(
+                "Token de larga duración de Home Assistant",
+                "Home Assistant Long-Lived Access Token",
+                "Home Assistant langlebiges Zugriffstoken",
+                "Token de longa duração do Home Assistant",
+            )
             setText(st.haToken)
         }
         box.addView(urlEt)
         box.addView(tokenEt)
         AlertDialog.Builder(activity)
-            .setTitle("Conectar Home Assistant")
+            .setTitle(tr("Conectar Home Assistant", "Connect Home Assistant", "Home Assistant verbinden", "Ligar ao Home Assistant"))
             .setView(box)
-            .setPositiveButton("Guardar") { _, _ ->
+            .setPositiveButton(tr("Guardar", "Save", "Speichern", "Guardar")) { _, _ ->
                 CompanionVehicleState.update(activity) { cur ->
                     cur.copy(
                         haUrl = urlEt.text?.toString()?.trim().orEmpty(),
@@ -1443,7 +1867,7 @@ object LeapCompanionHub {
                 }
                 onRefresh()
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(tr("Cancelar", "Cancel", "Abbrechen", "Cancelar"), null)
             .show()
     }
 
@@ -1613,11 +2037,26 @@ object LeapCompanionHub {
             paint.textSize = 24f
             paint.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             paint.color = OK
-            canvas.drawText("Salida $startSoc%", w * 0.05f, h * 0.17f, paint)
+            canvas.drawText(
+                tr("Salida $startSoc%", "Start $startSoc%", "Start $startSoc%", "Partida $startSoc%"),
+                w * 0.05f,
+                h * 0.17f,
+                paint,
+            )
             paint.color = WARN
-            canvas.drawText("⚡ Parada CC (18%→80%)", w * 0.36f, h * 0.93f, paint)
+            canvas.drawText(
+                tr("⚡ Parada CC (18%→80%)", "⚡ DC Stop (18%→80%)", "⚡ DC-Stopp (18%→80%)", "⚡ Paragem CC (18%→80%)"),
+                w * 0.34f,
+                h * 0.93f,
+                paint,
+            )
             paint.color = ACCENT
-            canvas.drawText("Llegada 34%", w * 0.74f, h * 0.84f, paint)
+            canvas.drawText(
+                tr("Llegada 34%", "Arrival 34%", "Ankunft 34%", "Chegada 34%"),
+                w * 0.72f,
+                h * 0.84f,
+                paint,
+            )
         }
     }
 

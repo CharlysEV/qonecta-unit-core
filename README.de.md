@@ -1,10 +1,11 @@
 # 🚗 Qonecta Unit (`v0.1.18`)
 
 <p align="center">
-  <b>Idioma / Language / Sprache:</b><br/>
+  <b>Idioma / Language / Sprache / Idioma:</b><br/>
   <a href="README.md">🇪🇸 <b>Español</b></a> ·
   <a href="README.en.md">🇬🇧 <b>English</b></a> ·
-  🇩🇪 <b>Deutsch</b>
+  🇩🇪 <b>Deutsch</b> ·
+  <a href="README.pt.md">🇵🇹 <b>Português</b></a>
 </p>
 
 <p align="center">
@@ -20,7 +21,8 @@
   <b>Schritt-für-Schritt-Anleitungen:</b>
   <a href="docs/INSTALLATIONSANLEITUNG_QONECTA_UNIT_C10.de.md">🇩🇪 Deutsch</a> ·
   <a href="docs/MANUAL_INSTALLATION_QONECTA_UNIT_C10.en.md">🇬🇧 English</a> ·
-  <a href="docs/MANUAL_INSTALACION_QONECTA_UNIT_C10.md">🇪🇸 Español</a>
+  <a href="docs/MANUAL_INSTALACION_QONECTA_UNIT_C10.md">🇪🇸 Español</a> ·
+  <a href="docs/MANUAL_INSTALACAO_QONECTA_UNIT_C10.pt.md">🇵🇹 Português</a>
 </p>
 
 ---
@@ -66,6 +68,7 @@ Sie arbeitet in Echtzeit synchronisiert mit **[Qonecta Companion](https://github
    - 🇩🇪 **Deutsch:** [docs/INSTALLATIONSANLEITUNG_QONECTA_UNIT_C10.de.md](docs/INSTALLATIONSANLEITUNG_QONECTA_UNIT_C10.de.md)
    - 🇬🇧 **English:** [docs/MANUAL_INSTALLATION_QONECTA_UNIT_C10.en.md](docs/MANUAL_INSTALLATION_QONECTA_UNIT_C10.en.md)
    - 🇪🇸 **Español:** [docs/MANUAL_INSTALACION_QONECTA_UNIT_C10.md](docs/MANUAL_INSTALACION_QONECTA_UNIT_C10.md)
+   - 🇵🇹 **Português:** [docs/MANUAL_INSTALACAO_QONECTA_UNIT_C10.pt.md](docs/MANUAL_INSTALACAO_QONECTA_UNIT_C10.pt.md)
 
 ---
 

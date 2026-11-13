@@ -13,6 +13,7 @@ import android.os.IBinder
 import com.headqlink.unit.bridge.BridgeClientSession
 import com.headqlink.unit.bridge.BridgeConstants
 import com.headqlink.unit.bridge.BridgeMessage
+import com.headqlink.unit.companion.CompanionI18n.tr
 import kotlin.concurrent.thread
 
 /**
@@ -112,7 +113,14 @@ class BridgeService : Service() {
                     mainHandler.post {
                         onResult(
                             Result.failure(
-                                IllegalStateException("Qonecta Unit no está conectado ahora mismo. Conecta primero con el coche arriba.")
+                                IllegalStateException(
+                                    tr(
+                                        "Qonecta Unit no está conectado ahora mismo. Conecta primero con el coche arriba.",
+                                        "Qonecta Unit is not connected right now. Connect to the car above first.",
+                                        "Qonecta Unit ist derzeit nicht verbunden. Verbinde dich zuerst oben mit dem Fahrzeug.",
+                                        "O Qonecta Unit não está ligado neste momento. Liga-te primeiro ao carro acima.",
+                                    )
+                                )
                             )
                         )
                     }
@@ -123,7 +131,14 @@ class BridgeService : Service() {
                     mainHandler.post {
                         onResult(
                             Result.failure(
-                                IllegalStateException("El coche no respondió a tiempo o tiene una versión anterior de Qonecta Unit.")
+                                IllegalStateException(
+                                    tr(
+                                        "El coche no respondió a tiempo o tiene una versión anterior de Qonecta Unit.",
+                                        "The car did not respond in time or runs an older version of Qonecta Unit.",
+                                        "Das Fahrzeug hat nicht rechtzeitig geantwortet oder nutzt eine ältere Version von Qonecta Unit.",
+                                        "O carro não respondeu a tempo ou tem uma versão anterior do Qonecta Unit.",
+                                    )
+                                )
                             )
                         )
                     }
@@ -158,7 +173,12 @@ class BridgeService : Service() {
                     it.copy(
                         otaInProgress = false,
                         otaLastOk = false,
-                        otaStatusMessage = "⚠️ El coche no está conectado todavía. Espera a que arriba ponga «● Conectado».",
+                        otaStatusMessage = tr(
+                            "⚠️ El coche no está conectado todavía. Espera a que arriba ponga «● Conectado».",
+                            "⚠️ The car is not connected yet. Wait until the status above says «● Connected».",
+                            "⚠️ Das Fahrzeug ist noch nicht verbunden. Warte, bis oben «● Verbunden» steht.",
+                            "⚠️ O carro ainda não está ligado. Aguarda até aparecer «● Ligado» acima.",
+                        ),
                     )
                 }
                 return
@@ -168,7 +188,12 @@ class BridgeService : Service() {
                     it.copy(
                         otaInProgress = false,
                         otaLastOk = false,
-                        otaStatusMessage = "⚠️ El archivo APK no se puede leer en el móvil.",
+                        otaStatusMessage = tr(
+                            "⚠️ El archivo APK no se puede leer en el móvil.",
+                            "⚠️ The APK file cannot be read on your phone.",
+                            "⚠️ Die APK-Datei kann auf dem Smartphone nicht gelesen werden.",
+                            "⚠️ O ficheiro APK não pode ser lido no telemóvel.",
+                        ),
                     )
                 }
                 return
@@ -178,7 +203,12 @@ class BridgeService : Service() {
                 it.copy(
                     otaInProgress = true,
                     otaLastOk = null,
-                    otaStatusMessage = "⏳ Preparando envío de ${apkFile.name} al coche…",
+                    otaStatusMessage = tr(
+                        "⏳ Preparando envío de ${apkFile.name} al coche…",
+                        "⏳ Preparing transfer of ${apkFile.name} to the car…",
+                        "⏳ Übertragung von ${apkFile.name} ans Fahrzeug wird vorbereitet…",
+                        "⏳ A preparar o envio de ${apkFile.name} para o carro…",
+                    ),
                 )
             }
 
@@ -212,7 +242,14 @@ class BridgeService : Service() {
                             BridgeState.update {
                                 it.copy(
                                     otaInProgress = !st.done,
-                                    otaStatusMessage = st.message.ifBlank { "Estado en el coche: ${st.stage} (${st.progressPct}%)" },
+                                    otaStatusMessage = st.message.ifBlank {
+                                        tr(
+                                            "Estado en el coche: ${st.stage} (${st.progressPct}%)",
+                                            "Car status: ${st.stage} (${st.progressPct}%)",
+                                            "Status im Fahrzeug: ${st.stage} (${st.progressPct}%)",
+                                            "Estado no carro: ${st.stage} (${st.progressPct}%)",
+                                        )
+                                    },
                                     otaLastOk = if (st.done) st.ok else null,
                                 )
                             }
@@ -228,7 +265,12 @@ class BridgeService : Service() {
                                 it.copy(
                                     otaInProgress = false,
                                     otaLastOk = false,
-                                    otaStatusMessage = "⚠️ El coche tiene una versión anterior a v0.1.17 (aún sin recepción Push de 1 toque). Instálala esta última vez con la tarjeta «🆘 Instalar desde cero» de abajo.",
+                                    otaStatusMessage = tr(
+                                        "⚠️ El coche tiene una versión anterior a v0.1.17 (aún sin recepción Push de 1 toque). Instálala esta última vez con el Tutorial paso a paso de abajo.",
+                                        "⚠️ The car runs a version older than v0.1.17 (before 1-tap Push). Install it one last time using the step-by-step Tutorial below.",
+                                        "⚠️ Das Fahrzeug nutzt eine Version älter als v0.1.17 (vor 1-Tap-Push). Installiere sie ein letztes Mal über die Schritt-für-Schritt-Anleitung unten.",
+                                        "⚠️ O carro tem uma versão anterior à v0.1.17 (ainda sem atualização de 1 toque). Instala-a esta última vez com o Tutorial passo a passo abaixo.",
+                                    ),
                                 )
                             }
                         }
@@ -249,7 +291,7 @@ class BridgeService : Service() {
                         tcpSock.use { sock ->
                             val out = sock.getOutputStream()
                             out.write("$otaId\n".toByteArray(Charsets.US_ASCII))
-                            streamFileWithProgress(apkFile, out, "Wi-Fi Directo")
+                            streamFileWithProgress(apkFile, out, tr("Wi-Fi Directo", "Wi-Fi Direct", "Wi-Fi Direct", "Wi-Fi Direto"))
                             out.flush()
                             runCatching { sock.shutdownOutput() }
                             doneLatch.await(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -276,7 +318,14 @@ class BridgeService : Service() {
                     val btAddr = CompanionPrefs(appCtx).carBtAddress
                     if (ready.rfcommAvailable && !btAddr.isNullOrBlank()) {
                         BridgeState.update {
-                            it.copy(otaStatusMessage = "🔵 Sin Wi-Fi directa con el coche: enviando actualización por Bluetooth…")
+                            it.copy(
+                                otaStatusMessage = tr(
+                                    "🔵 Sin Wi-Fi directa con el coche: enviando actualización por Bluetooth…",
+                                    "🔵 No direct Wi-Fi with the car: sending update via Bluetooth…",
+                                    "🔵 Kein direktes WLAN zum Fahrzeug: Sende Update über Bluetooth…",
+                                    "🔵 Sem Wi-Fi direto com o carro: a enviar atualização por Bluetooth…",
+                                )
+                            )
                         }
                         val btSock = linkHelper.openOtaBluetoothSocket(btAddr)
                         if (btSock != null) {
@@ -298,7 +347,12 @@ class BridgeService : Service() {
                             it.copy(
                                 otaInProgress = false,
                                 otaLastOk = false,
-                                otaStatusMessage = "⚠️ No se pudo abrir canal de datos Wi-Fi ni Bluetooth con el coche. Verifica que el Bluetooth del coche esté elegido o Android Auto inalámbrico conectado.",
+                                otaStatusMessage = tr(
+                                    "⚠️ No se pudo abrir canal de datos Wi-Fi ni Bluetooth con el coche. Verifica que el Bluetooth del coche esté elegido o Android Auto inalámbrico conectado.",
+                                    "⚠️ Could not open a Wi-Fi or Bluetooth data channel with the car. Check that your car's Bluetooth is selected or Wireless Android Auto is active.",
+                                    "⚠️ Es konnte kein WLAN- oder Bluetooth-Datenkanal zum Fahrzeug geöffnet werden. Prüfe, ob das Fahrzeug-Bluetooth ausgewählt oder kabelloses Android Auto aktiv ist.",
+                                    "⚠️ Não foi possível abrir um canal de dados Wi-Fi nem Bluetooth com o carro. Verifica se o Bluetooth do carro está selecionado ou se o Android Auto sem fios está ligado.",
+                                ),
                             )
                         }
                     }
@@ -309,7 +363,12 @@ class BridgeService : Service() {
                         it.copy(
                             otaInProgress = false,
                             otaLastOk = false,
-                            otaStatusMessage = "⚠️ Error al enviar actualización al coche: ${e.message}",
+                            otaStatusMessage = tr(
+                                "⚠️ Error al enviar actualización al coche: ${e.message}",
+                                "⚠️ Error sending update to the car: ${e.message}",
+                                "⚠️ Fehler beim Senden des Updates ans Fahrzeug: ${e.message}",
+                                "⚠️ Erro ao enviar a atualização para o carro: ${e.message}",
+                            ),
                         )
                     }
                 }
@@ -337,7 +396,12 @@ class BridgeService : Service() {
                         BridgeState.update {
                             it.copy(
                                 otaInProgress = true,
-                                otaStatusMessage = "🚀 Enviando al coche por $channelLabel: $pct% ($mbDone / $mbTotal MB)…",
+                                otaStatusMessage = tr(
+                                    "🚀 Enviando al coche por $channelLabel: $pct% ($mbDone / $mbTotal MB)…",
+                                    "🚀 Sending to car via $channelLabel: $pct% ($mbDone / $mbTotal MB)…",
+                                    "🚀 Sende ans Fahrzeug über $channelLabel: $pct% ($mbDone / $mbTotal MB)…",
+                                    "🚀 A enviar para o carro por $channelLabel: $pct% ($mbDone / $mbTotal MB)…",
+                                ),
                             )
                         }
                     }
@@ -347,7 +411,18 @@ class BridgeService : Service() {
 
         private fun launch(ctx: Context, i: Intent) {
             runCatching { ctx.startForegroundService(i) }
-                .onFailure { e -> BridgeState.update { it.copy(detail = "Android no dejó arrancar el servicio: ${e.message}") } }
+                .onFailure { e ->
+                    BridgeState.update {
+                        it.copy(
+                            detail = tr(
+                                "Android no dejó arrancar el servicio: ${e.message}",
+                                "Android blocked starting the service: ${e.message}",
+                                "Android hat den Dienststart blockiert: ${e.message}",
+                                "O Android não permitiu iniciar o serviço: ${e.message}",
+                            )
+                        )
+                    }
+                }
         }
     }
 
@@ -364,26 +439,40 @@ class BridgeService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        CompanionI18n.init(this)
         prefs = CompanionPrefs(this)
         link = CarLink(this)
         val nm = getSystemService(NotificationManager::class.java)
         nm?.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Conexión con el coche", NotificationManager.IMPORTANCE_LOW).apply {
+            NotificationChannel(
+                CHANNEL,
+                tr("Conexión con el coche", "Car connection", "Fahrzeugverbindung", "Ligação ao carro"),
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
                 setShowBadge(false)
             }
         )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        CompanionI18n.init(this)
         if (intent?.action == ACTION_STOP) {
             shutdown()
             return START_NOT_STICKY
         }
-        val currentCar = session?.let { prefs.carName ?: "el coche" }
+        val currentCar = session?.let {
+            prefs.carName ?: tr("el coche", "the car", "das Fahrzeug", "o carro")
+        }
         val fgText = if (currentCar != null) {
-            "Conectado con $currentCar por ${session?.transport ?: "Bluetooth"} · Datos y Rutas BT activos"
+            val trp = session?.transport ?: "Bluetooth"
+            tr(
+                "Conectado con $currentCar por $trp · Datos y Rutas BT activos",
+                "Connected to $currentCar via $trp · Data & BT Routes active",
+                "Verbunden mit $currentCar über $trp · Daten & BT-Routen aktiv",
+                "Ligado a $currentCar por $trp · Dados e Rotas BT ativos",
+            )
         } else {
-            "Buscando el coche…"
+            tr("Buscando el coche…", "Searching for car…", "Suche Fahrzeug…", "À procura do carro…")
         }
         if (!goForeground(fgText)) {
             stopSelf()
@@ -426,7 +515,17 @@ class BridgeService : Service() {
             }
         }
         if (!prefs.isPaired && pendingPairCode == null) {
-            BridgeState.update { it.copy(phase = BridgeState.Phase.STOPPED, detail = "Empareja con el código que muestra el coche.") }
+            BridgeState.update {
+                it.copy(
+                    phase = BridgeState.Phase.STOPPED,
+                    detail = tr(
+                        "Empareja con el código que muestra el coche.",
+                        "Pair using the 6-digit code shown on the car.",
+                        "Mit dem 6-stelligen Code auf dem Fahrzeugdisplay koppeln.",
+                        "Emparelha com o código de 6 dígitos mostrado no carro.",
+                    ),
+                )
+            }
             shutdown()
             return START_NOT_STICKY
         }
@@ -453,18 +552,48 @@ class BridgeService : Service() {
                     it.copy(
                         phase = BridgeState.Phase.STOPPED,
                         transport = "",
-                        detail = "Marca Bluetooth o Wi-Fi en las opciones de conexión.",
+                        detail = tr(
+                            "Marca Bluetooth o Wi-Fi en las opciones de conexión.",
+                            "Select Bluetooth or Wi-Fi in the connection options.",
+                            "Wähle Bluetooth oder WLAN in den Verbindungsoptionen.",
+                            "Seleciona Bluetooth ou Wi-Fi nas opções de ligação.",
+                        ),
                     )
                 }
                 shutdown()
                 return
             }
             val searchDetail = when {
-                code != null && !useWifi -> "Buscando el coche solo por Bluetooth para emparejar…"
-                code != null -> "Buscando el coche para emparejar…"
-                useBt && !useWifi -> "Modo Solo Bluetooth activo (sin Wi-Fi 5 GHz): buscando el coche…"
-                !useBt && useWifi -> "Modo Solo Wi-Fi activo: buscando la red del coche…"
-                else -> "Buscando el coche (Bluetooth o Wi-Fi)…"
+                code != null && !useWifi -> tr(
+                    "Buscando el coche solo por Bluetooth para emparejar…",
+                    "Searching for car via Bluetooth only to pair…",
+                    "Suche Fahrzeug nur über Bluetooth zum Koppeln…",
+                    "À procura do carro apenas por Bluetooth para emparelhar…",
+                )
+                code != null -> tr(
+                    "Buscando el coche para emparejar…",
+                    "Searching for car to pair…",
+                    "Suche Fahrzeug zum Koppeln…",
+                    "À procura do carro para emparelhar…",
+                )
+                useBt && !useWifi -> tr(
+                    "Modo Solo Bluetooth activo (sin Wi-Fi 5 GHz): buscando el coche…",
+                    "Bluetooth-Only mode active (no 5 GHz Wi-Fi): searching for car…",
+                    "Nur-Bluetooth-Modus aktiv (kein 5-GHz-WLAN): Suche Fahrzeug…",
+                    "Modo Só Bluetooth ativo (sem Wi-Fi 5 GHz): à procura do carro…",
+                )
+                !useBt && useWifi -> tr(
+                    "Modo Solo Wi-Fi activo: buscando la red del coche…",
+                    "Wi-Fi-Only mode active: searching for car network…",
+                    "Nur-WLAN-Modus aktiv: Suche Fahrzeugnetzwerk…",
+                    "Modo Só Wi-Fi ativo: à procura da rede do carro…",
+                )
+                else -> tr(
+                    "Buscando el coche (Bluetooth o Wi-Fi)…",
+                    "Searching for car (Bluetooth or Wi-Fi)…",
+                    "Suche Fahrzeug (Bluetooth oder WLAN)…",
+                    "À procura do carro (Bluetooth ou Wi-Fi)…",
+                )
             }
             BridgeState.update {
                 it.copy(
@@ -473,7 +602,10 @@ class BridgeService : Service() {
                     detail = searchDetail,
                 )
             }
-            notifyText(if (code != null) "Emparejando con el coche…" else "Buscando el coche…")
+            notifyText(
+                if (code != null) tr("Emparejando con el coche…", "Pairing with car…", "Koppeln mit Fahrzeug…", "A emparelhar com o carro…")
+                else tr("Buscando el coche…", "Searching for car…", "Suche Fahrzeug…", "À procura do carro…")
+            )
 
             val opened = link.open(
                 carBtAddress = prefs.carBtAddress,
@@ -483,11 +615,25 @@ class BridgeService : Service() {
             if (opened == null) {
                 if (!useWifi && useBt && prefs.carBtAddress.isNullOrBlank()) {
                     BridgeState.update {
-                        it.copy(detail = "Modo Solo Bluetooth: elige el Bluetooth de tu C10 en «Conexión» o abre Qonecta Unit en el coche.")
+                        it.copy(
+                            detail = tr(
+                                "Modo Solo Bluetooth: elige el Bluetooth de tu C10 en «Conexión» o abre Qonecta Unit en el coche.",
+                                "Bluetooth-Only mode: pick your C10 Bluetooth in «Connection» or open Qonecta Unit in the car.",
+                                "Nur-Bluetooth-Modus: Wähle das C10-Bluetooth unter «Verbindung» oder öffne Qonecta Unit im Fahrzeug.",
+                                "Modo Só Bluetooth: escolhe o Bluetooth do teu C10 em «Ligação» ou abre o Qonecta Unit no carro.",
+                            )
+                        )
                     }
                 } else if (code != null && prefs.carBtAddress.isNullOrBlank()) {
                     BridgeState.update {
-                        it.copy(detail = "Elige el Bluetooth de tu coche arriba o conecta el Wi-Fi del coche.")
+                        it.copy(
+                            detail = tr(
+                                "Elige el Bluetooth de tu coche arriba o conecta el Wi-Fi del coche.",
+                                "Select your car's Bluetooth above or connect to the car's Wi-Fi.",
+                                "Wähle oben das Fahrzeug-Bluetooth oder verbinde dich mit dem Fahrzeug-WLAN.",
+                                "Escolhe o Bluetooth do teu carro acima ou liga-te ao Wi-Fi do carro.",
+                            )
+                        )
                     }
                 }
                 sleep(backoffMs)
@@ -495,7 +641,18 @@ class BridgeService : Service() {
                 continue
             }
             backoffMs = 2_500L
-            BridgeState.update { it.copy(phase = BridgeState.Phase.CONNECTING, transport = opened.transport, detail = "Conectando por ${opened.transport}…") }
+            BridgeState.update {
+                it.copy(
+                    phase = BridgeState.Phase.CONNECTING,
+                    transport = opened.transport,
+                    detail = tr(
+                        "Conectando por ${opened.transport}…",
+                        "Connecting via ${opened.transport}…",
+                        "Verbinde über ${opened.transport}…",
+                        "A ligar por ${opened.transport}…",
+                    ),
+                )
+            }
 
             val client = BridgeClientSession(opened.channel, opened.transport)
             val watchdog = thread(isDaemon = true) {
@@ -528,7 +685,7 @@ class BridgeService : Service() {
                         }
                     }
                     pendingPairCode = null
-                    val car = reply.carName.ifBlank { "el coche" }
+                    val car = reply.carName.ifBlank { tr("el coche", "the car", "das Fahrzeug", "o carro") }
                     BridgeState.update {
                         it.copy(
                             phase = BridgeState.Phase.CONNECTED,
@@ -536,10 +693,31 @@ class BridgeService : Service() {
                             carName = car,
                             carAppVersion = reply.carAppVersion,
                             carVersionCode = reply.carVersionCode,
-                            detail = if (reply.newlyPaired) "¡Emparejado con $car! Ya puedes mandar rutas y actualizaciones en 1 toque." else "Conectado. Rutas, telemetría y actualizaciones en 1 toque activas.",
+                            detail = if (reply.newlyPaired) {
+                                tr(
+                                    "¡Emparejado con $car! Ya puedes mandar rutas y actualizaciones en 1 toque.",
+                                    "Paired with $car! You can now send routes and 1-tap updates.",
+                                    "Mit $car gekoppelt! Du kannst jetzt Routen und 1-Tap-Updates senden.",
+                                    "Emparelhado com $car! Já podes enviar rotas e atualizações num toque.",
+                                )
+                            } else {
+                                tr(
+                                    "Conectado. Rutas, telemetría y actualizaciones en 1 toque activas.",
+                                    "Connected. Routes, live telemetry and 1-tap updates active.",
+                                    "Verbunden. Routen, Live-Telemetrie und 1-Tap-Updates aktiv.",
+                                    "Ligado. Rotas, telemetria e atualizações num toque ativas.",
+                                )
+                            },
                         )
                     }
-                    notifyText("Conectado con $car por ${opened.transport} · Datos y Rutas BT activos")
+                    notifyText(
+                        tr(
+                            "Conectado con $car por ${opened.transport} · Datos y Rutas BT activos",
+                            "Connected to $car via ${opened.transport} · Data & BT Routes active",
+                            "Verbunden mit $car über ${opened.transport} · Daten & BT-Routen aktiv",
+                            "Ligado a $car por ${opened.transport} · Dados e Rotas BT ativos",
+                        )
+                    )
                     android.util.Log.i("BridgeService", "Conectado con $car por ${opened.transport}")
                     pushPreferencesAndTripsToCar(this)
                     val nowMs = System.currentTimeMillis()
@@ -579,18 +757,48 @@ class BridgeService : Service() {
                             carAppVersion = "",
                             carVersionCode = 0,
                             otaInProgress = false,
-                            detail = "Se cortó la conexión con el coche. Reintentando…",
+                            detail = tr(
+                                "Se cortó la conexión con el coche. Reintentando…",
+                                "Connection to the car was lost. Retrying…",
+                                "Verbindung zum Fahrzeug unterbrochen. Neuer Versuch…",
+                                "A ligação ao carro foi interrompida. A tentar novamente…",
+                            ),
                         )
                     }
                 }
                 is BridgeMessage.Denied -> {
                     opened.channel.close()
                     val msg = when (reply.reason) {
-                        BridgeMessage.Denied.BAD_CODE -> "Código incorrecto o caducado. Pide uno nuevo en el coche."
-                        BridgeMessage.Denied.NOT_PAIRING -> "El coche no está esperando emparejar. Pulsa «Emparejar móvil» en el coche."
-                        BridgeMessage.Denied.BAD_TOKEN -> "El coche ya no reconoce este móvil. Vuelve a emparejar."
-                        BridgeMessage.Denied.BAD_VERSION -> "Versiones distintas: actualiza Qonecta Unit y el Companion."
-                        else -> "El coche rechazó la conexión (${reply.reason})."
+                        BridgeMessage.Denied.BAD_CODE -> tr(
+                            "Código incorrecto o caducado. Pide uno nuevo en el coche.",
+                            "Incorrect or expired code. Request a new code on the car.",
+                            "Code falsch oder abgelaufen. Fordere im Fahrzeug einen neuen Code an.",
+                            "Código incorreto ou expirado. Pede um novo código no carro.",
+                        )
+                        BridgeMessage.Denied.NOT_PAIRING -> tr(
+                            "El coche no está esperando emparejar. Pulsa «Emparejar móvil» en el coche.",
+                            "The car is not waiting to pair. Tap «Pair phone» on the car screen.",
+                            "Das Fahrzeug wartet nicht auf Kopplung. Tippe im Fahrzeug auf «Smartphone koppeln».",
+                            "O carro não está à espera de emparelhar. Toca em «Emparelhar telemóvel» no carro.",
+                        )
+                        BridgeMessage.Denied.BAD_TOKEN -> tr(
+                            "El coche ya no reconoce este móvil. Vuelve a emparejar.",
+                            "The car no longer recognizes this phone. Please pair again.",
+                            "Das Fahrzeug erkennt dieses Smartphone nicht mehr. Bitte neu koppeln.",
+                            "O carro já não reconhece este telemóvel. Volta a emparelhar.",
+                        )
+                        BridgeMessage.Denied.BAD_VERSION -> tr(
+                            "Versiones distintas: actualiza Qonecta Unit y el Companion.",
+                            "Version mismatch: update both Qonecta Unit and Companion.",
+                            "Versionskonflikt: Aktualisiere Qonecta Unit und Companion.",
+                            "Versões diferentes: atualiza o Qonecta Unit e o Companion.",
+                        )
+                        else -> tr(
+                            "El coche rechazó la conexión (${reply.reason}).",
+                            "The car rejected the connection (${reply.reason}).",
+                            "Das Fahrzeug hat die Verbindung abgelehnt (${reply.reason}).",
+                            "O carro recusou a ligação (${reply.reason}).",
+                        )
                     }
                     if (code != null) pendingPairCode = null
                     if (reply.reason == BridgeMessage.Denied.BAD_TOKEN) prefs.token = null
@@ -655,7 +863,17 @@ class BridgeService : Service() {
             startForeground(NOTIF_ID, n)
         }
     }.onFailure { e ->
-        BridgeState.update { it.copy(phase = BridgeState.Phase.STOPPED, detail = "Android no dejó arrancar la conexión en segundo plano: ${e.message}") }
+        BridgeState.update {
+            it.copy(
+                phase = BridgeState.Phase.STOPPED,
+                detail = tr(
+                    "Android no dejó arrancar la conexión en segundo plano: ${e.message}",
+                    "Android blocked starting the background connection: ${e.message}",
+                    "Android hat die Hintergrundverbindung blockiert: ${e.message}",
+                    "O Android não permitiu iniciar a ligação em segundo plano: ${e.message}",
+                ),
+            )
+        }
     }.isSuccess
 
     private fun notifyText(text: String) {

@@ -4,7 +4,19 @@ import android.content.Context
 
 /** Lo que el Companion recuerda del coche emparejado. */
 class CompanionPrefs(context: Context) {
-    private val p = context.applicationContext.getSharedPreferences("companion", Context.MODE_PRIVATE)
+    private val appCtx = context.applicationContext
+    private val p = appCtx.getSharedPreferences("companion", Context.MODE_PRIVATE)
+
+    init {
+        CompanionI18n.init(appCtx)
+    }
+
+    /** Idioma preferido: "" (automático del sistema), "es", "en", "de" o "pt". */
+    var appLang: String
+        get() = p.getString("app_lang", "") ?: ""
+        set(v) {
+            CompanionI18n.setPreferredLanguage(appCtx, v)
+        }
 
     var carBtAddress: String?
         get() = p.getString("car_bt", null)

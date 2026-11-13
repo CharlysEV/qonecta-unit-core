@@ -77,6 +77,8 @@ object UnitTelemetry {
             hasUnitConnInfo = connObj != null,
         )
         current = data
+        val liveSpeed = if (!data.speedKmh.isNaN()) "${data.speedKmh.toInt()} km/h" else "0 km/h"
+        val liveGear = data.gear.ifBlank { "P" }
         CompanionVehicleState.update(context) { cur ->
             cur.copy(
                 socPct = if (!data.socPct.isNaN() && data.socPct in 0.0..100.0) data.socPct.toInt() else cur.socPct,
@@ -88,7 +90,12 @@ object UnitTelemetry {
                 cabinTempC = if (!data.cabinC.isNaN()) data.cabinC else cur.cabinTempC,
                 extTempC = if (!data.extC.isNaN()) data.extC else cur.extTempC,
                 charging = data.charging,
-                lastCommandStatus = "● En vivo desde Qonecta Unit (${data.gear.ifBlank { "P" }} · ${if (!data.speedKmh.isNaN()) "${data.speedKmh.toInt()} km/h" else "0 km/h"})",
+                lastCommandStatus = CompanionI18n.tr(
+                    "● En vivo desde Qonecta Unit ($liveGear · $liveSpeed)",
+                    "● Live from Qonecta Unit ($liveGear · $liveSpeed)",
+                    "● Live von Qonecta Unit ($liveGear · $liveSpeed)",
+                    "● Em direto do Qonecta Unit ($liveGear · $liveSpeed)",
+                ),
             )
         }
         if (context != null) {
