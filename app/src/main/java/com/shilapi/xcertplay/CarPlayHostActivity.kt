@@ -105,9 +105,6 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private var connectionPanel: View? = null
     private var wifiRecoveryButton: View? = null
-    private var carPlayExtendedPanel: com.headqlink.unit.extended.ExtendedPanelView? = null
-    private var carPlayExtendedFab: ImageView? = null
-    private var carPlayExtendedMode: Boolean = true
     private var reconnectAttempts = 0
     private lateinit var airPlayIdentity: AirPlayIdentity
 
@@ -429,9 +426,9 @@ class CarPlayHostActivity : ComponentActivity() {
                 "transport=${if (wirelessEnabled) "wireless" else "wired"}",
         )
         val reusedBackgroundSession = if (simulateIphone) false else adoptBackgroundSession()
-        microphoneAvailable =
-            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        microphonePermissionResolved = microphoneAvailable || simulateIphone
+        // Core Phase 0: disable head-unit AudioRecord uplink so CarPlay never collides with C10's voice daemon/Audio HAL.
+        microphoneAvailable = false
+        microphonePermissionResolved = true
         if (simulateIphone) {
             vpnReady = true
             wirelessPermissionsReady = true
@@ -439,10 +436,8 @@ class CarPlayHostActivity : ComponentActivity() {
             maybeStartCarPlay()
         } else if (reusedBackgroundSession) {
             updateDebugOverlays()
-        } else if (microphonePermissionResolved) {
-            requestStartupPrerequisites()
         } else {
-            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+            requestStartupPrerequisites()
         }
     }
 
@@ -587,31 +582,9 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        com.headqlink.unit.extended.LeapVehicleDataSource.start(applicationContext)
-        com.andrerinas.openheadunit.cluster.ClusterMapController.showWelcomeIfAvailable(
-            this,
-            com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.CARPLAY,
-        )
-        if (!displayListenerRegistered) {
-            displayManager.registerDisplayListener(externalDisplayListener, mainHandler)
-            displayListenerRegistered = true
-        }
-        refreshClusterDisplay()
     }
 
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-            val code = event.keyCode
-            if (code == android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE ||
-                code == android.view.KeyEvent.KEYCODE_HEADSETHOOK ||
-                code == android.view.KeyEvent.KEYCODE_MEDIA_PLAY ||
-                code == android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
-            ) {
-                if (com.andrerinas.openheadunit.cluster.ClusterMapController.onSteeringPlayPausePressed(this, event.downTime)) {
-                    return true
-                }
-            }
-        }
         return super.dispatchKeyEvent(event)
     }
 
@@ -718,85 +691,12 @@ class CarPlayHostActivity : ComponentActivity() {
             textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.rgb(168, 182, 202)); setPadding(0, dp(20), 0, 0)
         })
         root.addView(panel, FrameLayout.LayoutParams(-1, -1))
-        val appSettings = runCatching { com.andrerinas.openheadunit.utils.Settings(this) }.getOrNull()
-        carPlayExtendedMode = appSettings?.extendedMode != false
-        val extPanel = com.headqlink.unit.extended.ExtendedPanelView(this).apply {
-            isClickable = true
-            source = com.headqlink.unit.extended.LeapVehicleDataSource
-            onFullscreen = { setCarPlayExtendedMode(false) }
-            onOpenCarData = { com.headqlink.unit.extended.ExtendedHubView.showDialog(this@CarPlayHostActivity) }
-            onOpenSplitScreen = {
-                com.headqlink.unit.extended.ExtendedHubView.showDialog(
-                    context = this@CarPlayHostActivity,
-                    initialTab = com.headqlink.unit.extended.ExtendedHubView.Tab.ROUTE,
-                    initialSplitScreen = true,
-                )
-            }
-        }
-        val extFab = ImageView(this).apply {
-            setImageResource(R.drawable.hql_ic_split)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(com.headqlink.unit.extended.PanelFormat.SURFACE_HI)
-                setStroke(2, com.headqlink.unit.extended.PanelFormat.OUTLINE)
-            }
-            alpha = 0.72f
-            val pad = dp(14)
-            setPadding(pad, pad, pad, pad)
-            contentDescription = getString(R.string.qu_extended)
-            setOnClickListener { setCarPlayExtendedMode(true) }
-        }
-        root.addView(extPanel, FrameLayout.LayoutParams(0, -1, Gravity.END))
-        root.addView(extFab, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.TOP or Gravity.END).apply {
-            topMargin = dp(16)
-            rightMargin = dp(16)
-        })
-        carPlayExtendedPanel = extPanel
-        carPlayExtendedFab = extFab
-        root.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-            if (v.width > 0) applyCarPlayExtendedLayout(v.width)
-        }
         videoView = video
         gestureOverlay = gestureLayer
         stageStatusView = stage
         connectionPanel = panel
         updateDebugOverlays()
         return root
-    }
-
-    private fun setCarPlayExtendedMode(enabled: Boolean) {
-        carPlayExtendedMode = enabled
-        runCatching { com.andrerinas.openheadunit.utils.Settings(this).extendedMode = enabled }
-        val rootW = (videoView?.parent as? View)?.width ?: resources.displayMetrics.widthPixels
-        applyCarPlayExtendedLayout(rootW)
-    }
-
-    private fun applyCarPlayExtendedLayout(totalWidth: Int) {
-        if (totalWidth <= 0) return
-        val percent = runCatching { com.andrerinas.openheadunit.utils.Settings(this).extendedPanelPercent }.getOrDefault(25)
-        val panelW = if (carPlayExtendedMode && totalWidth >= dp(900)) {
-            (totalWidth * (percent / 100f)).toInt().coerceIn(dp(260), totalWidth / 2)
-        } else {
-            0
-        }
-        val showPanel = panelW > 0
-        carPlayExtendedPanel?.let { p ->
-            val lp = p.layoutParams as FrameLayout.LayoutParams
-            if (lp.width != panelW) {
-                lp.width = panelW
-                p.layoutParams = lp
-            }
-            p.visibility = if (showPanel) View.VISIBLE else View.GONE
-        }
-        carPlayExtendedFab?.visibility = if (!showPanel && totalWidth >= dp(900)) View.VISIBLE else View.GONE
-        listOfNotNull(videoView, gestureOverlay, connectionPanel).forEach { v ->
-            val lp = v.layoutParams as? FrameLayout.LayoutParams ?: return@forEach
-            if (lp.rightMargin != panelW) {
-                lp.rightMargin = panelW
-                v.layoutParams = lp
-            }
-        }
     }
 
     private fun buildSettingsMenu(): View {
@@ -2735,47 +2635,8 @@ class CarPlayHostActivity : ComponentActivity() {
         appendLog(requestSummary)
         appendLog(support.details)
         appendLog(effectiveSummary)
-        val cluster = clusterDisplaySize?.let { clusterSize ->
-            val metrics = DisplayMetrics()
-            clusterDisplay?.getRealMetrics(metrics)
-            val widthMm = (if (metrics.xdpi > 0f) {
-                (clusterSize.width * 25.4f / metrics.xdpi).toInt()
-            } else {
-                AirPlayDisplaySettings.DEFAULT_WIDTH_PHYSICAL_MM
-            }).coerceIn(
-                AirPlayDisplaySettings.MIN_REPORTED_PHYSICAL_MM,
-                AirPlayDisplaySettings.MAX_REPORTED_PHYSICAL_MM,
-            )
-            AirPlayDisplayConfig(
-                widthPixels = clusterSize.width,
-                heightPixels = clusterSize.height,
-                widthPhysicalMm = widthMm,
-                heightPhysicalMm = (widthMm.toDouble() * clusterSize.height / clusterSize.width)
-                    .toInt().coerceAtLeast(1),
-                fps = fps,
-            )
-        } ?: run {
-            val appSettings = runCatching { com.andrerinas.openheadunit.App.provide(this).settings }.getOrNull()
-            if (appSettings?.clusterMapEnabled != false &&
-                com.andrerinas.openheadunit.cluster.ClusterMapController.hasClusterDisplay(this)
-            ) {
-                appendLog("CarPlay instrument cluster display enabled (720x720 on Display 2)")
-                AirPlayDisplayConfig(
-                    widthPixels = 720,
-                    heightPixels = 720,
-                    widthPhysicalMm = 109,
-                    heightPhysicalMm = 109,
-                    fps = 30,
-                    primaryInputDevice = 0,
-                    features = 0,
-                    safeArea = com.shilapi.xcertplay.airplay.AirPlayInsets(top = 144, bottom = 72, left = 0, right = 0),
-                    safeAreaDrawOutside = true,
-                    initialUrl = "maps:/car/instrumentcluster/map",
-                )
-            } else {
-                null
-            }
-        }
+        // Core Phase 0: single main CarPlay display only (no secondary cluster hardware decoder).
+        val cluster: AirPlayDisplayConfig? = null
         return AirPlayConfig(
             deviceName = "LeapCarPlay",
             deviceId = LeapCarPlayBootstrap.deviceId(airPlayIdentity),
@@ -2785,7 +2646,7 @@ class CarPlayHostActivity : ComponentActivity() {
             cluster = cluster,
             rightHandDrive = rightHandDrive,
             hevc = hevcEnabled,
-            microphone = microphoneAvailable,
+            microphone = false,
             manufacturer = normalizedManufacturer(),
             model = normalizedModel(),
             oemLabel = oemLabel,
@@ -3414,10 +3275,6 @@ class CarPlayHostActivity : ComponentActivity() {
         val oldSimulator = simulator
         val oldSink = sink
         CarPlayBackgroundSession.clear(oldController)
-        com.andrerinas.openheadunit.cluster.ClusterMapController.stop(
-            com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.CARPLAY,
-            this
-        )
         controller = null
         simulator = null
         sink = null
@@ -3592,18 +3449,6 @@ class CarPlayHostActivity : ComponentActivity() {
                 activeScreenStreamTypes.add(type)
             } else {
                 activeScreenStreamTypes.remove(type)
-            }
-            if (type == SCREEN_TYPE_ALT && clusterPresentation == null) {
-                if (active) {
-                    com.andrerinas.openheadunit.cluster.ClusterMapController.startForCarPlay(this) { surface ->
-                        onClusterSurfaceChanged(surface)
-                    }
-                } else {
-                    com.andrerinas.openheadunit.cluster.ClusterMapController.stop(
-                        com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.CARPLAY,
-                        this,
-                    )
-                }
             }
             appendLog(
                 "CarPlay ${if (type == SCREEN_TYPE_ALT) "secondary" else "main"} " +

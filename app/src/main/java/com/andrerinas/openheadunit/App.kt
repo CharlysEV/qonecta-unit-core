@@ -1,23 +1,29 @@
 package com.andrerinas.openheadunit
 
-import androidx.appcompat.app.AppCompatDelegate
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.os.UserManager
 import android.os.Build
+import android.os.SystemClock
+import android.os.UserManager
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.multidex.MultiDex
-import com.andrerinas.openheadunit.main.BackgroundNotification
 import com.andrerinas.openheadunit.aap.AapNavigation
+import com.andrerinas.openheadunit.main.BackgroundNotification
 import com.andrerinas.openheadunit.ssl.ConscryptInitializer
 import com.andrerinas.openheadunit.utils.AppLog
 import com.andrerinas.openheadunit.utils.AppThemeManager
 import com.andrerinas.openheadunit.utils.Settings
-import android.os.SystemClock
-import java.io.File
 
+/**
+ * Qonecta Unit Core Application.
+ *
+ * Intentionally minimal: never opens network sockets, Bluetooth servers, or OEM Binders
+ * during Application.onCreate(). Everything runs strictly on demand when the user opens
+ * the app and starts Android Auto or Apple CarPlay.
+ */
 class App : Application() {
 
     private val component: AppComponent by lazy {
@@ -33,9 +39,6 @@ class App : Application() {
         super.onCreate()
         instance = this
 
-
-
-        // Enable vector drawable support on older Android versions
         AppCompatDelegate.setCompatVectorFromResourcesEnabled(true)
 
         if (ConscryptInitializer.isNeededForTls12()) {
@@ -43,40 +46,19 @@ class App : Application() {
         }
 
         if (isUserUnlocked()) {
-            val settings = Settings(this) // Create a Settings instance
-            AppLog.init(settings, this) // Initialize AppLog with settings for conditional logging
+            val settings = Settings(this)
+            AppLog.init(settings, this)
 
-            // Sync auto-start settings to device-protected storage so that
-            // BootCompleteReceiver, UsbAttachedActivity, and AutoStartReceiver
-            // can read them during locked boot (before user unlock)
-            Settings.syncAutoStartOnBootToDeviceStorage(this, settings.autoStartOnBoot)
-            Settings.syncAutoStartOnUsbToDeviceStorage(this, settings.autoStartOnUsb)
-            Settings.syncAutoStartOnWifiToDeviceStorage(this, settings.autoStartOnWifi)
-            Settings.syncAutoStartWifiSsidToDeviceStorage(this, settings.autoStartWifiSsid)
-            Settings.syncAutoStartBtMacsToDeviceStorage(this, settings.autoStartBluetoothDeviceMacs)
+            // Core safe mode: keep all boot/background auto-start flags disabled.
+            Settings.syncAutoStartOnBootToDeviceStorage(this, false)
+            Settings.syncAutoStartOnUsbToDeviceStorage(this, false)
+            Settings.syncAutoStartOnWifiToDeviceStorage(this, false)
+            Settings.syncAutoStartWifiSsidToDeviceStorage(this, "")
+            Settings.syncAutoStartBtMacsToDeviceStorage(this, emptySet())
 
-            // Apply app theme (runs the live manager when dynamic, or when a saved place
-            // can force the app theme even over a static base).
             AppThemeManager.reapply(this, settings)
-            // Qonecta Unit Companion: puente con el móvil (TCP en la Wi-Fi de Android Auto + Bluetooth RFCOMM)
-            // para que el planificador mande la ruta a Google Maps del móvil.
-            runCatching { com.headqlink.unit.bridgehost.CompanionBridgeHost.start(this) }
-                .onFailure { AppLog.w("Companion bridge did not start: ${it.message}") }
         } else {
-            AppLog.init(null, this) // Initialize with default logging if locked
-            AppLog.w("App started in Direct Boot mode (locked). Settings access deferred.")
-        }
-
-        if (ConscryptInitializer.isAvailable()) {
-            AppLog.i("Conscrypt security provider is active")
-        } else if (ConscryptInitializer.isNeededForTls12()) {
-            AppLog.w("Conscrypt not available - TLS 1.2 may not work on this device")
-        }
-
-        AppLog.d( "native library dir ${applicationInfo.nativeLibraryDir}")
-
-        File(applicationInfo.nativeLibraryDir).listFiles()?.forEach { file ->
-            AppLog.d( "   ${file.name}")
+            AppLog.init(null, this)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -92,13 +74,12 @@ class App : Application() {
 
             AapNavigation.createNotificationChannel(this)
 
-            val bootChannel = NotificationChannel(bootStartChannel, "Boot Auto-Start", NotificationManager.IMPORTANCE_HIGH)
-            bootChannel.description = "Shown once after boot to open the app"
+            val bootChannel = NotificationChannel(bootStartChannel, "Projection Launch", NotificationManager.IMPORTANCE_HIGH)
+            bootChannel.description = "Projection launch notification"
             bootChannel.setShowBadge(false)
             component.notificationManager.createNotificationChannel(bootChannel)
         }
 
-        // Register the main broadcast receiver safely for Android 14+ using ContextCompat
         ContextCompat.registerReceiver(this, AapBroadcastReceiver(), AapBroadcastReceiver.filter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
@@ -138,10 +119,10 @@ class App : Application() {
         var instance: App? = null
             private set
 
-
         fun get(context: Context): App {
             return context.applicationContext as App
         }
+
         fun provide(context: Context): AppComponent {
             return get(context).component
         }

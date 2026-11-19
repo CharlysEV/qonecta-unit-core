@@ -33,17 +33,11 @@ class LeapCarPlaySessionService : Service() {
             .setContentIntent(open).setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Disconnect", stop).build()).build()
         if (Build.VERSION.SDK_INT >= 29) {
-            var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-            if (Build.VERSION.SDK_INT >= 30 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            }
-            startForeground(1, notification, types)
+            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         } else startForeground(1, notification)
         return START_NOT_STICKY
     }
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // BYD's recents force-stops the package ~10 ms after removing the task: end guidance first.
-        com.shilapi.xcertplay.hud.BydNavigationOutputs.endNow()
         CarPlayBackgroundSession.stop()
         stopSelf()
     }

@@ -73,8 +73,8 @@ android {
         applicationId = "com.tencent.qqmusiccar"
         minSdk = 28
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.1.18-unit"
+        versionCode = 21
+        versionName = "0.2.0-core"
         setProperty("archivesBaseName", "QonectaUnit_${versionName}")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled = true
@@ -261,7 +261,6 @@ dependencies {
 
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.0")
     implementation(project(":contract"))
-    implementation(project(":bridge"))
 
     // Multidex
     implementation("androidx.multidex:multidex:2.0.1")

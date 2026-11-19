@@ -12,10 +12,10 @@
         android:orientation="vertical"
         android:paddingStart="30dp"
         android:paddingEnd="30dp"
-        android:paddingTop="16dp"
-        android:paddingBottom="16dp">
+        android:paddingTop="18dp"
+        android:paddingBottom="18dp">
 
-        <!-- Cabecera superior con accesos rápidos de Qonecta Unit -->
+        <!-- Cabecera limpia: Qonecta Unit Core (AA + CarPlay) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -44,7 +44,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/da_brand"
+                        android:text="Qonecta Unit Core"
                         android:textSize="34sp"
                         android:textColor="@color/hql_text"
                         android:fontFamily="sans-serif-medium"
@@ -54,11 +54,11 @@
                         android:id="@+id/home_version_badge"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="10dp"
+                        android:layout_marginStart="12dp"
                         android:paddingHorizontal="12dp"
                         android:paddingVertical="5dp"
                         android:background="@drawable/bg_pill_translucent"
-                        android:text="C10 · v0.1.18-unit · por CharlysEV"
+                        android:text="v0.2.0-core · AA + CarPlay"
                         android:singleLine="true"
                         android:textSize="14.5sp"
                         android:textColor="@color/hql_accent"
@@ -68,118 +68,25 @@
                 </LinearLayout>
 
                 <TextView
-                    android:id="@+id/home_c10_telemetry_subtitle"
+                    android:id="@+id/home_subtitle_banner"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:singleLine="true"
                     android:ellipsize="end"
-                    android:text="LEAPMOTOR C10  ·  POR CHARLYSEV  ·  BLUETOOTH COMPANION  ·  ANDROID AUTO  ·  CARPLAY"
-                    android:textSize="14.5sp"
+                    android:text="MODO LIMPIO  ·  SOLO ANDROID AUTO Y APPLE CARPLAY  ·  SIN EXTENDIDO NI SERVICIOS EN SEGUNDO PLANO"
+                    android:textSize="14sp"
                     android:textColor="@color/hql_accent"
                     android:textStyle="bold"
                     android:letterSpacing="0.03" />
             </LinearLayout>
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/home_support_button"
-                android:layout_width="wrap_content"
-                android:layout_height="54dp"
-                android:layout_marginEnd="7dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="☕ Apoyar"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textAllCaps="false"
-                android:textColor="#FFB547"
-                app:backgroundTint="@color/hql_surface_top"
-                app:strokeColor="#FFB547"
-                app:strokeWidth="2dp"
-                app:cornerRadius="18dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/extended_mode_toggle_button"
-                android:layout_width="wrap_content"
-                android:layout_height="54dp"
-                android:layout_marginEnd="7dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="Extendido"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textAllCaps="false"
-                android:textColor="@color/hql_accent"
-                app:backgroundTint="@color/hql_surface_top"
-                app:strokeColor="@color/hql_accent"
-                app:strokeWidth="2dp"
-                app:cornerRadius="18dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/cluster_page_button"
-                android:layout_width="wrap_content"
-                android:layout_height="54dp"
-                android:layout_marginEnd="7dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="Cuadro: Mapa"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textAllCaps="false"
-                android:textColor="@color/hql_text"
-                app:backgroundTint="@color/hql_surface_top"
-                app:strokeColor="@color/hql_outline"
-                app:strokeWidth="2dp"
-                app:cornerRadius="18dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/extended_hub_button"
-                android:layout_width="wrap_content"
-                android:layout_height="54dp"
-                android:layout_marginEnd="7dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="⚡ Menú Extendido"
-                android:textSize="16.5sp"
-                android:textStyle="bold"
-                android:textAllCaps="false"
-                android:textColor="@color/hql_bg"
-                app:backgroundTint="@color/hql_accent"
-                app:cornerRadius="18dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/home_usb_updater_button"
-                android:layout_width="wrap_content"
-                android:layout_height="54dp"
-                android:layout_marginEnd="7dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="📦 USB"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textAllCaps="false"
-                android:textColor="@color/hql_text"
-                app:backgroundTint="@color/hql_surface_top"
-                app:strokeColor="@color/hql_outline"
-                app:strokeWidth="2dp"
-                app:cornerRadius="18dp" />
-
-            <com.google.android.material.button.MaterialButton
                 android:id="@+id/settings_button"
                 android:layout_width="wrap_content"
                 android:layout_height="54dp"
-                android:layout_marginEnd="7dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
+                android:layout_marginEnd="10dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
                 android:text="Ajustes"
@@ -195,15 +102,15 @@
                 app:iconSize="20dp"
                 app:iconTint="@color/hql_accent"
                 app:iconGravity="textStart"
-                app:iconPadding="5dp" />
+                app:iconPadding="6dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/exit_button"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="wrap_content"
                 android:layout_height="54dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
                 android:textSize="16sp"
@@ -216,78 +123,15 @@
                 app:cornerRadius="18dp" />
         </LinearLayout>
 
-        <!-- Banner automático cuando se detecta un APK en el pendrive USB conectado (Actualizar con 1 toque sin Vivaldi) -->
+        <!-- Aviso si se elige un modo Wi-Fi y el Wi-Fi del coche está apagado -->
         <LinearLayout
-            android:id="@+id/usb_apk_update_banner"
+            android:id="@+id/wifi_conflict_banner"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="20dp"
-            android:paddingEnd="18dp"
-            android:paddingTop="12dp"
-            android:paddingBottom="12dp"
-            android:background="@drawable/da_card"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/usb_apk_update_text"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="14dp"
-                android:text="📦 Pendrive USB detectado con Qonecta Unit listo para instalar sin abrir Vivaldi."
-                android:textSize="18sp"
-                android:textColor="@color/hql_text"
-                android:fontFamily="sans-serif-medium"
-                android:textStyle="bold" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/usb_apk_browse_files_btn"
-                android:layout_width="wrap_content"
-                android:layout_height="52dp"
-                android:layout_marginEnd="10dp"
-                android:paddingStart="18dp"
-                android:paddingEnd="18dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="📂 Abrir Archivos C10"
-                android:textSize="16.5sp"
-                android:textStyle="bold"
-                android:textAllCaps="false"
-                android:textColor="@color/hql_text"
-                app:backgroundTint="@color/hql_surface_top"
-                app:strokeColor="@color/hql_outline"
-                app:strokeWidth="2dp"
-                app:cornerRadius="16dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/usb_apk_install_now_btn"
-                android:layout_width="wrap_content"
-                android:layout_height="52dp"
-                android:paddingStart="22dp"
-                android:paddingEnd="22dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="📲 Actualizar / Instalar ahora"
-                android:textSize="17.5sp"
-                android:textStyle="bold"
-                android:textAllCaps="false"
-                android:textColor="@color/hql_bg"
-                app:backgroundTint="@color/hql_accent"
-                app:cornerRadius="16dp" />
-        </LinearLayout>
-
-        <!-- Aviso automático solo si se elige un modo Wi-Fi y el Wi-Fi del C10 está apagado -->
-        <LinearLayout
-            android:id="@+id/wifi_conflict_banner"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:padding="10dp"
+            android:padding="12dp"
             android:background="@drawable/da_card"
             android:visibility="gone">
 
@@ -298,14 +142,14 @@
                 android:layout_weight="1"
                 android:layout_marginEnd="14dp"
                 android:text="📡 El Wi-Fi del coche está apagado: enciéndelo para usar Wi-Fi Direct 5 GHz o Hotspot del móvil."
-                android:textSize="13sp"
+                android:textSize="14sp"
                 android:textColor="#FFB547"
                 android:fontFamily="sans-serif-medium" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/wifi_conflict_action"
                 android:layout_width="wrap_content"
-                android:layout_height="42dp"
+                android:layout_height="44dp"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:insetTop="0dp"
@@ -319,29 +163,27 @@
                 app:cornerRadius="12dp" />
         </LinearLayout>
 
-        <!-- TARJETA PRINCIPAL HERO: Estado en vivo + Botones de Acción + Contador Circular a la derecha -->
+        <!-- Tarjeta principal de conexión -->
         <LinearLayout
             android:id="@+id/hero_connection_card"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="14dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="26dp"
-            android:paddingEnd="22dp"
-            android:paddingTop="18dp"
-            android:paddingBottom="18dp"
+            android:paddingStart="28dp"
+            android:paddingEnd="24dp"
+            android:paddingTop="20dp"
+            android:paddingBottom="20dp"
             android:background="@drawable/da_card">
 
-            <!-- Lado izquierdo: Píldora de estado, Título grande, Subtítulo, Botón Conectar/Cancelar y 4 Modos -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_weight="1.45"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <!-- Fila superior de estado: Píldora ● LISTO / ● CONECTANDO + etiqueta de canal -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -370,19 +212,18 @@
                         android:paddingHorizontal="16dp"
                         android:paddingVertical="6dp"
                         android:background="@drawable/bg_pill_translucent"
-                        android:text="🔗 Canal 5 GHz Wi-Fi Direct listo"
+                        android:text="📡 Wi-Fi 5 GHz listo"
                         android:textSize="17sp"
                         android:textColor="@color/hql_text"
                         android:fontFamily="sans-serif-medium"
                         android:textStyle="bold" />
                 </LinearLayout>
 
-                <!-- Titular principal dinámico: "Conecta tu móvil" / "Conectando a Samsung de Charly" -->
                 <TextView
                     android:id="@+id/connection_status"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="10dp"
                     android:text="Conecta tu móvil"
                     android:textSize="44sp"
                     android:textColor="@color/hql_text"
@@ -390,40 +231,39 @@
                     android:textStyle="bold"
                     android:accessibilityLiveRegion="polite" />
 
-                <!-- Subtítulo dinámico -->
                 <TextView
                     android:id="@+id/hero_subtitle_text"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:text="Elige cómo quieres conectar tu móvil o toca directamente tu teléfono abajo."
-                    android:textSize="19.5sp"
+                    android:text="Elige Android Auto, Apple CarPlay o conecta por Cable USB."
+                    android:textSize="19sp"
                     android:textColor="@color/hql_text_dim" />
 
-                <!-- Fila de botones principales cuando está en espera o Cancelar cuando conecta -->
+                <!-- Botones principales -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
+                    android:layout_marginTop="16dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/wifi_button"
                         android:layout_width="wrap_content"
-                        android:layout_height="66dp"
-                        android:layout_marginEnd="10dp"
-                        android:paddingStart="24dp"
-                        android:paddingEnd="24dp"
+                        android:layout_height="68dp"
+                        android:layout_marginEnd="12dp"
+                        android:paddingStart="26dp"
+                        android:paddingEnd="26dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        android:text="✨ Conectar Android Auto"
+                        android:text="Conectar Android Auto"
                         android:textSize="20sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
                         android:textColor="@color/hql_bg"
                         app:backgroundTint="@color/hql_accent"
-                        app:cornerRadius="33dp"
+                        app:cornerRadius="34dp"
                         app:icon="@drawable/ic_android_auto"
                         app:iconSize="26dp"
                         app:iconTint="@color/hql_bg"
@@ -431,75 +271,56 @@
                         app:iconPadding="8dp" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/companion_pair_button"
-                        android:layout_width="wrap_content"
-                        android:layout_height="66dp"
-                        android:layout_marginEnd="10dp"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:text="🔑 Vincular Companion"
-                        android:textSize="19sp"
-                        android:textStyle="bold"
-                        android:textAllCaps="false"
-                        android:textColor="@color/hql_accent"
-                        app:backgroundTint="@color/hql_surface_top"
-                        app:strokeColor="@color/hql_accent"
-                        app:strokeWidth="2dp"
-                        app:cornerRadius="33dp" />
-
-                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/carplay_button"
                         android:layout_width="wrap_content"
-                        android:layout_height="66dp"
-                        android:layout_marginEnd="10dp"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
+                        android:layout_height="68dp"
+                        android:layout_marginEnd="12dp"
+                        android:paddingStart="22dp"
+                        android:paddingEnd="22dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        android:text="CarPlay"
-                        android:textSize="19sp"
+                        android:text="Apple CarPlay"
+                        android:textSize="19.5sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
                         android:textColor="@color/hql_text"
                         app:backgroundTint="@color/hql_surface_top"
                         app:strokeColor="@color/hql_edge"
                         app:strokeWidth="2dp"
-                        app:cornerRadius="33dp"
+                        app:cornerRadius="34dp"
                         app:icon="@drawable/ic_carplay"
                         app:iconSize="26dp"
                         app:iconTint="@null"
                         app:iconGravity="textStart"
-                        app:iconPadding="7dp" />
+                        app:iconPadding="8dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/usb_button"
                         android:layout_width="wrap_content"
-                        android:layout_height="66dp"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
+                        android:layout_height="68dp"
+                        android:paddingStart="22dp"
+                        android:paddingEnd="22dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
                         android:text="Cable USB"
-                        android:textSize="19sp"
+                        android:textSize="19.5sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
                         android:textColor="@color/hql_text"
                         app:backgroundTint="@color/hql_surface_top"
                         app:strokeColor="@color/hql_edge"
                         app:strokeWidth="2dp"
-                        app:cornerRadius="33dp"
+                        app:cornerRadius="34dp"
                         app:icon="@drawable/ic_usb_white"
                         app:iconSize="24dp"
                         app:iconTint="@color/hql_accent"
                         app:iconGravity="textStart"
-                        app:iconPadding="7dp" />
+                        app:iconPadding="8dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/hero_cancel_button"
                         android:layout_width="wrap_content"
-                        android:layout_height="66dp"
+                        android:layout_height="68dp"
                         android:paddingStart="28dp"
                         android:paddingEnd="28dp"
                         android:insetTop="0dp"
@@ -512,16 +333,16 @@
                         app:backgroundTint="@color/hql_surface_top"
                         app:strokeColor="@color/hql_outline"
                         app:strokeWidth="2dp"
-                        app:cornerRadius="33dp"
+                        app:cornerRadius="34dp"
                         android:visibility="gone" />
                 </LinearLayout>
 
-                <!-- Casillas independientes de transporte (puedes marcar solo Bluetooth y desmarcar Wi-Fi 5G) -->
+                <!-- 3 modos limpios de transporte para Android Auto -->
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:text="MARCA O DESMARCA QUÉ CONEXIONES QUIERES USAR (TOCA PARA ACTIVAR / DESACTIVAR):"
+                    android:layout_marginTop="18dp"
+                    android:text="MODO DE CONEXIÓN PARA ANDROID AUTO:"
                     android:textSize="15sp"
                     android:textColor="@color/hql_accent"
                     android:fontFamily="sans-serif-medium"
@@ -535,35 +356,16 @@
                     android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/mode_btn_bt_companion"
-                        android:layout_width="0dp"
-                        android:layout_weight="1.12"
-                        android:layout_height="74dp"
-                        android:layout_marginEnd="8dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:paddingHorizontal="10dp"
-                        android:text="☑ 🔵 Bluetooth\nCompanion + Datos"
-                        android:textSize="15.5sp"
-                        android:textStyle="bold"
-                        android:textAllCaps="false"
-                        android:textColor="@color/hql_bg"
-                        app:backgroundTint="@color/hql_accent"
-                        app:strokeColor="@color/hql_accent"
-                        app:strokeWidth="2dp"
-                        app:cornerRadius="16dp" />
-
-                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/mode_btn_wifi_direct"
                         android:layout_width="0dp"
-                        android:layout_weight="1.05"
+                        android:layout_weight="1"
                         android:layout_height="74dp"
-                        android:layout_marginEnd="8dp"
+                        android:layout_marginEnd="10dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        android:paddingHorizontal="10dp"
-                        android:text="☑ 📡 Wi-Fi 5 GHz\nAndroid Auto sin cables"
-                        android:textSize="15.5sp"
+                        android:paddingHorizontal="12dp"
+                        android:text="☑ 📡 Wi-Fi 5 GHz\nSin cables (Direct)"
+                        android:textSize="16sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
                         android:textColor="@color/hql_bg"
@@ -575,14 +377,14 @@
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/mode_btn_hotspot"
                         android:layout_width="0dp"
-                        android:layout_weight="1.02"
+                        android:layout_weight="1"
                         android:layout_height="74dp"
-                        android:layout_marginEnd="8dp"
+                        android:layout_marginEnd="10dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        android:paddingHorizontal="10dp"
-                        android:text="☐ 📲 Hotspot Móvil\nInternet al coche + AA"
-                        android:textSize="15.5sp"
+                        android:paddingHorizontal="12dp"
+                        android:text="☐ 📲 Hotspot Móvil\nInternet + AA"
+                        android:textSize="16sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
                         android:textColor="@color/hql_text"
@@ -594,13 +396,13 @@
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/mode_btn_usb"
                         android:layout_width="0dp"
-                        android:layout_weight="0.95"
+                        android:layout_weight="1"
                         android:layout_height="74dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        android:paddingHorizontal="10dp"
+                        android:paddingHorizontal="12dp"
                         android:text="☑ 🔌 Cable USB\nDirecto + Carga"
-                        android:textSize="15.5sp"
+                        android:textSize="16sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
                         android:textColor="@color/hql_text"
@@ -615,13 +417,13 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="☑ Bluetooth Companion + ☑ Wi-Fi 5 GHz activos: desmarca Wi-Fi 5 GHz cuando quieras usar solo Bluetooth sin 5 GHz."
+                    android:text="Toca «Conectar Android Auto», «Apple CarPlay» o tu móvil abajo."
                     android:textSize="16sp"
                     android:textStyle="bold"
                     android:textColor="@color/hql_text" />
             </LinearLayout>
 
-            <!-- Lado derecho: Contador Circular Animado con Aura Radial y Segundos ("1 s, 2 s, 3 s...") -->
+            <!-- Anillo visual de estado / contador (solo anima cuando está conectando) -->
             <FrameLayout
                 android:layout_width="0dp"
                 android:layout_weight="0.62"
@@ -638,17 +440,17 @@
             </FrameLayout>
         </LinearLayout>
 
-        <!-- SECCIÓN INFERIOR: CONEXIONES RECIENTES Y DISPOSITIVOS VINCULADOS (Tarjetas directas de 1 toque) -->
+        <!-- Móviles vinculados por Bluetooth -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="14dp"
             android:orientation="vertical">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="MÓVILES VINCULADOS (TOCA TU MÓVIL PARA CONECTAR AL INSTANTE)"
+                android:text="MÓVILES VINCULADOS (TOCA TU MÓVIL PARA CONECTAR)"
                 android:textSize="16sp"
                 android:textColor="@color/hql_accent"
                 android:fontFamily="sans-serif-medium"

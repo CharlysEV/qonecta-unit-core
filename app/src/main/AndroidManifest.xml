@@ -10,29 +10,7 @@
             <action android:name="android.settings.WIFI_SETTINGS" />
         </intent>
         <package android:name="com.google.android.projection.gearhead" />
-        <!-- Sonda del coche (com.headqlink.unit.probe.CarProbe): servicios de Leapmotor de la unidad. -->
-        <package android:name="com.leapmotor.carcontrol" />
-        <package android:name="com.leapmotor.autosdk.server" />
-        <package android:name="com.leapmotor.media" />
-        <intent>
-            <action android:name="com.leapmotor.carcontrol.services.BINDER_POOL" />
-        </intent>
-        <intent>
-            <action android:name="com.leapmotor.carcontrol.services.LP_BINDER_POOL" />
-        </intent>
-        <intent>
-            <action android:name="com.leapmotor.carcontrol.CAR_CONTROL_SERVICE" />
-        </intent>
-        <intent>
-            <action android:name="com.leapmotor.autosdk.server.action.AUTOSDK_SERVICE" />
-        </intent>
     </queries>
-
-    <!-- Sonda del coche + integración nativa C10 (Cluster + Media Widget + CarControl): -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
-    <uses-permission android:name="com.leapmotor.autosdk.server.USE_SERVICE" />
-    <uses-permission android:name="com.leapmotor.media.MediaService.permission.ACCESS_SERVICE" />
-    <uses-permission android:name="com.leapmotor.carcontrol.CAR_CONTROL_SERVICE" />
 
     <uses-feature
         android:name="android.hardware.usb.host"
@@ -50,19 +28,8 @@
         android:name="android.hardware.location.gps"
         android:required="false" />
     <uses-feature
-        android:name="android.hardware.location.network"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.microphone"
-        android:required="false" />
-    <uses-feature
         android:name="android.hardware.bluetooth"
         android:required="false" />
-
-    <!-- Qonecta Unit: con nuestro paquete (el de DiAuto haría fallar la instalación si DiAuto está en la unidad). -->
-    <permission
-        android:name="${applicationId}.permission.NAVIGATION_UPDATE"
-        android:protectionLevel="signature" />
 
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
@@ -72,35 +39,20 @@
         android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="s" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- Optional, granted by the owner: follow the stock cluster screens (dashboard side map). -->
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.BROADCAST_STICKY" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission
-        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
-        tools:ignore="ScopedStorage" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application
@@ -109,8 +61,6 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/title"
-        android:largeHeap="true"
-        android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true"
         android:localeConfig="@xml/locales_config"
@@ -124,24 +74,10 @@
             android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
-            android:theme="@style/AppTheme">
-
-        </activity>
-
-        <activity
-            android:name=".cluster.ClusterMapActivity"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:hardwareAccelerated="true"
-            android:launchMode="singleInstance"
-            android:resizeableActivity="true"
-            android:taskAffinity=""
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+            android:theme="@style/AppTheme" />
 
         <activity
             android:name=".app.UsbAttachedActivity"
-            android:directBootAware="true"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/AppTheme.Translucent">
@@ -163,7 +99,6 @@
             </intent-filter>
         </service>
 
-
         <activity
             android:name=".main.MainActivity"
             android:icon="@mipmap/ic_launcher"
@@ -173,74 +108,15 @@
             android:launchMode="singleTask"
             android:theme="@style/SplashTheme">
 
-            <!-- Primary Launcher Filter -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-
-            <!-- Navigation Role Registration (allows selecting as default nav app) -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-
-                <category android:name="android.intent.category.APP_MAPS" />
-                <category android:name="android.intent.category.APP_NAVIGATION" />
-            </intent-filter>
-
-            <!-- Navigation Intent Filter (handles system navigate actions) -->
-            <intent-filter>
-                <action android:name="android.intent.action.NAVIGATE" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
-
-            <!-- Navigation Intent Filters & Deep Links -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <data android:scheme="headunit" />
-                <data android:host="selfmode" />
-            </intent-filter>
-
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <data android:scheme="geo" />
-            </intent-filter>
-
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <data android:scheme="google.navigation" />
-            </intent-filter>
-
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <data
-                    android:host="maps.google.com"
-                    android:scheme="http" />
-                <data
-                    android:host="maps.google.com"
-                    android:scheme="https" />
-            </intent-filter>
         </activity>
 
         <activity
@@ -282,94 +158,15 @@
         <service
             android:name="com.shilapi.xcertplay.LeapCarPlaySessionService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice|microphone" />
+            android:foregroundServiceType="connectedDevice" />
 
         <service
             android:name=".aap.AapService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice|mediaPlayback|microphone"
-            android:stopWithTask="false" />
+            android:foregroundServiceType="connectedDevice|mediaPlayback"
+            android:stopWithTask="true" />
+
         <service android:name=".location.GpsLocationService" />
-
-        <receiver
-            android:name=".app.BootCompleteReceiver"
-            android:directBootAware="true"
-            android:exported="true">
-            <intent-filter>
-                <!-- Standard Android boot -->
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-                <action android:name="android.intent.action.USER_UNLOCKED" />
-                <!-- Generic / OEM quick boot -->
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
-                <!-- MediaTek IPO (Instant Power On) -->
-                <action android:name="com.mediatek.intent.action.QUICKBOOT_POWERON" />
-                <action android:name="com.mediatek.intent.action.BOOT_IPO" />
-                <!-- FYT / GLSX head units (ACC ignition wake) -->
-                <action android:name="com.fyt.boot.ACCON" />
-                <action android:name="com.glsx.boot.ACCON" />
-                <action android:name="android.intent.action.ACTION_MT_COMMAND_SLEEP_OUT" />
-                <!-- Microntek / MTCD / PX3 head units (ACC wake) -->
-                <action android:name="com.cayboy.action.ACC_ON" />
-                <action android:name="com.carboy.action.ACC_ON" />
-            </intent-filter>
-        </receiver>
-
-        <receiver
-            android:name=".app.AutoStartReceiver"
-            android:directBootAware="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
-            </intent-filter>
-        </receiver>
-
-        <receiver
-            android:name=".app.WifiAutoStartReceiver"
-            android:directBootAware="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.net.wifi.STATE_CHANGE" />
-            </intent-filter>
-        </receiver>
-
-        <activity
-            android:name=".main.AutomationActivity"
-            android:excludeFromRecents="true"
-            android:exported="true"
-            android:noHistory="true"
-            android:taskAffinity=""
-            android:theme="@android:style/Theme.Translucent.NoTitleBar">
-            <intent-filter>
-                <action android:name="com.andrerinas.openheadunit.ACTION_SET_NIGHT_MODE" />
-                <action android:name="com.andrerinas.openheadunit.ACTION_CONNECT" />
-                <action android:name="com.andrerinas.openheadunit.ACTION_DISCONNECT" />
-                <action android:name="com.andrerinas.openheadunit.ACTION_START_SELF_MODE" />
-                <action android:name="com.andrerinas.openheadunit.ACTION_STOP_SERVICE" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <data
-                    android:host="connect"
-                    android:scheme="headunit" />
-                <data
-                    android:host="disconnect"
-                    android:scheme="headunit" />
-                <data
-                    android:host="nightmode"
-                    android:scheme="headunit" />
-                <data
-                    android:host="exit"
-                    android:scheme="headunit" />
-            </intent-filter>
-        </activity>
 
         <provider
             android:name="androidx.core.content.FileProvider"

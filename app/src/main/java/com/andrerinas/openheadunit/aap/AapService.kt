@@ -391,11 +391,7 @@ class AapService : Service(), UsbReceiver.Listener {
         val effectivePlaying = isPlayingFromStatus && !commManager.isExternalAudioFocusLost()
         lastAaPlaybackIsPlaying = effectivePlaying
         mediaSessionIsPlaying = effectivePlaying
-        com.andrerinas.openheadunit.cluster.ClusterMapController.updateMedia(
-            appName = status.mediaSource?.takeIf { it.isNotBlank() },
-            positionMs = lastAaPlaybackPositionMs,
-            isPlaying = effectivePlaying,
-        )
+
 
         if (!App.provide(this).settings.syncMediaSessionWithAaMetadata) return
         safeMediaSessionCall { it.isActive = effectivePlaying }
@@ -438,16 +434,7 @@ class AapService : Service(), UsbReceiver.Listener {
                 } else {
                     0L
                 }
-                com.andrerinas.openheadunit.cluster.ClusterMapController.updateMedia(
-                    title = if (meta.hasSong()) meta.song else "",
-                    artist = if (meta.hasArtist()) meta.artist else "",
-                    album = if (meta.hasAlbum()) meta.album else "",
-                    albumArt = bitmap,
-                    keepExistingArtIfNull = false,
-                    durationMs = durMs,
-                    positionMs = lastAaPlaybackPositionMs,
-                    isPlaying = lastAaPlaybackIsPlaying ?: mediaSessionIsPlaying,
-                )
+
                 if (!App.provide(this@AapService).settings.syncMediaSessionWithAaMetadata) return@withContext
                 applyAaMediaMetadataToSession(meta, bitmap)
                 updateMediaNotification(meta)
@@ -755,12 +742,7 @@ class AapService : Service(), UsbReceiver.Listener {
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                var fgType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                    androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    fgType = fgType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                }
+                val fgType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                 try {
                     startForeground(1, createNotification(), fgType)
                 } catch (_: Exception) {
@@ -783,8 +765,7 @@ class AapService : Service(), UsbReceiver.Listener {
         observeConnectionState()
         registerReceivers()
 
-        // Handle immediate WiFi auto-start check (e.g. if already connected on boot/wake)
-        WifiAutoStartReceiver.checkAndStart(this)
+        // Core mode: never auto-start wireless from boot/background.
 
         // Do NOT set mediaSession.isActive = true or register global MEDIA_BUTTON receivers
         // before an actual Android Auto connection is established! On Leapmotor C10
@@ -1948,12 +1929,7 @@ class AapService : Service(), UsbReceiver.Listener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                var fgType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                    androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    fgType = fgType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                }
+                val fgType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                 try {
                     startForeground(1, createNotification(), fgType)
                 } catch (_: Exception) {

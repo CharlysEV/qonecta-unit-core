@@ -56,48 +56,6 @@ internal object BydClusterBridge {
 
     fun onFrame(frame: Iap2Frame) = synchronized(lock) {
         val change = route.accept(frame.messageId, frame.payload)
-        val appContext = context
-        if (appContext != null) {
-            when (change) {
-                BydHudRouteChange.GUIDANCE -> {
-                    val apple = route.currentApple()
-                    val clusterFrame = apple?.let(BydClusterFrame::from)
-                    if (apple != null && clusterFrame != null) {
-                        val (nextEvt, side) = when (clusterFrame.icon) {
-                            2 -> 4 to 1
-                            3 -> 4 to 2
-                            4 -> 3 to 1
-                            5 -> 3 to 2
-                            6 -> 5 to 1
-                            7 -> 5 to 2
-                            8, 19 -> 6 to 1
-                            11, 12, 17, 18 -> 11 to null
-                            15 -> 16 to null
-                            else -> 14 to null
-                        }
-                        com.andrerinas.openheadunit.cluster.ClusterMapController.updateNavigation(
-                            appContext,
-                            com.andrerinas.openheadunit.cluster.ClusterMapController.ClusterNavState(
-                                isNavigating = true,
-                                distanceMeters = clusterFrame.distanceMeters,
-                                timeSeconds = clusterFrame.routeRemainingSeconds.takeIf { it >= 0 },
-                                road = clusterFrame.road.ifBlank { "Ruta CarPlay" },
-                                actionText = clusterFrame.road.ifBlank { "Continúa por la ruta" },
-                                turnSide = side,
-                                nextEventType = nextEvt,
-                                maneuverType = apple.type,
-                                totalDistanceMeters = clusterFrame.routeRemainingMeters.takeIf { it >= 0 },
-                                totalTimeSeconds = clusterFrame.routeRemainingSeconds.takeIf { it >= 0 }?.toLong(),
-                            )
-                        )
-                    }
-                }
-                BydHudRouteChange.CLEAR -> {
-                    com.andrerinas.openheadunit.cluster.ClusterMapController.clearNavigation(appContext)
-                }
-                BydHudRouteChange.NONE -> Unit
-            }
-        }
         if (!available) return@synchronized
         when (change) {
             BydHudRouteChange.GUIDANCE -> sendCurrentLocked(force = false)
@@ -108,7 +66,6 @@ internal object BydClusterBridge {
 
     fun clear() = synchronized(lock) {
         route.clear() // Prevent the keepalive from restoring guidance after cleanup.
-        context?.let { com.andrerinas.openheadunit.cluster.ClusterMapController.clearNavigation(it) }
         if (available && lastSent != null) sendEndLocked()
     }
 

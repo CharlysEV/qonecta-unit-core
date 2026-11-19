@@ -77,7 +77,6 @@ class LeapCarPlayActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        com.shilapi.xcertplay.hud.BydNavigationOutputs.onAppOpened(applicationContext)
         WindowCompat.setDecorFitsSystemWindows(window, true)
         window.statusBarColor = BG; window.navigationBarColor = BG
         WindowInsetsControllerCompat(window, window.decorView).apply {
@@ -107,10 +106,6 @@ class LeapCarPlayActivity : ComponentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); render() }
     override fun onResume() {
         super.onResume(); handler.removeCallbacks(tick); handler.post(tick)
-        com.andrerinas.openheadunit.cluster.ClusterMapController.showWelcomeIfAvailable(
-            this,
-            com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.CARPLAY
-        )
         // Back from the car settings: refresh the car hotspot reminder on the home page.
         if (!initialLaunch && page == "home") render()
         if (initialLaunch) {
@@ -130,16 +125,7 @@ class LeapCarPlayActivity : ComponentActivity() {
         scroll.addView(content)
         val header = row().apply { gravity = Gravity.CENTER_VERTICAL }
         header.addView(ImageView(this).apply { setImageResource(R.drawable.ic_carplay); contentDescription = "CarPlay" }, LinearLayout.LayoutParams(dp(36), dp(36)))
-        header.addView(label("Qonecta Unit · CarPlay", 26, TEXT, true).apply { setPadding(dp(12), 0, 0, 0) }, LinearLayout.LayoutParams(0, dp(56), 1f))
-        header.addView(button("Extendido · Ruta y Coche", false) {
-            com.headqlink.unit.extended.ExtendedHubView.showDialog(this)
-        }, LinearLayout.LayoutParams(dp(230), dp(56)).apply { rightMargin = dp(12) })
-        header.addView(button("Simular iPhone (Demo)", true) {
-            startActivity(
-                Intent(this, CarPlayHostActivity::class.java)
-                    .putExtra(CarPlayLoopbackSimulator.EXTRA_SIMULATE_IPHONE, true)
-            )
-        }, LinearLayout.LayoutParams(dp(230), dp(56)).apply { rightMargin = dp(12) })
+        header.addView(label("Qonecta Unit Core · CarPlay", 26, TEXT, true).apply { setPadding(dp(12), 0, 0, 0) }, LinearLayout.LayoutParams(0, dp(56), 1f))
         header.addView(button(if (page == "home") "Android Auto" else "Back", false) {
             if (page == "home") finish()
             else { page = "home"; render() }
@@ -454,12 +440,6 @@ class LeapCarPlayActivity : ComponentActivity() {
                 })
             }
             AirPlayPersistence.saveWirelessEnabled(this, wireless)
-            com.andrerinas.openheadunit.cluster.ClusterMapController.notifyConnecting(
-                this,
-                LeapCarPlayPreferences.phoneName(this),
-                if (wireless) "Apple CarPlay Inalámbrico" else "Apple CarPlay USB",
-                com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.CARPLAY
-            )
             openProjection()
         }
         if (CarPlayBackgroundSession.hasSession()) CarPlayBackgroundSession.stop { runOnUiThread { open() } }

@@ -137,12 +137,8 @@ class Settings(private val context: Context) {
     // Instrument-cluster ("dashboard") map from Android Auto / CarPlay. Enabled by default when a
     // secondary cluster display (such as Display 2 on the Leapmotor C10) is present.
     var clusterMapEnabled: Boolean
-        get() = prefs.getBoolean(
-            "cluster-map-enabled",
-            com.andrerinas.openheadunit.cluster.ClusterMapController.hasClusterDisplay(context) ||
-                android.os.Build.MODEL.contains("Leapmotor", ignoreCase = true)
-        )
-        set(value) { prefs.edit().putBoolean("cluster-map-enabled", value).apply() }
+        get() = false
+        set(_) { prefs.edit().putBoolean("cluster-map-enabled", false).apply() }
 
     var clusterMapSize: Int
         get() = prefs.getInt("cluster-map-size", 0)
@@ -388,8 +384,8 @@ class Settings(private val context: Context) {
     // Ninguno de estos tres entra en HeadUnitScreenConfig.computeSettingsHash: conmutar no desbloquea la
     // resolución ni invalida la caché de la superficie (AA se sigue negociando a pantalla completa).
     var extendedMode: Boolean
-        get() = prefs.getBoolean(KEY_EXTENDED_MODE, true)
-        set(value) { prefs.edit().putBoolean(KEY_EXTENDED_MODE, value).apply() }
+        get() = false
+        set(_) { prefs.edit().putBoolean(KEY_EXTENDED_MODE, false).apply() }
 
     // Ancho del panel en % de la pantalla: 30, acotado entre 20 y 40 (ExtendedLayout). Sin interfaz en la v1.
     var extendedPanelPercent: Int
@@ -597,14 +593,8 @@ class Settings(private val context: Context) {
 
     /** Opción independiente: puente Bluetooth con Qonecta Companion (viajes, tarifas, rutas y datos sin Wi-Fi). */
     var btCompanionEnabled: Boolean
-        get() = prefs.getBoolean(KEY_CONN_BT_COMPANION, true)
-        set(value) {
-            val edit = prefs.edit().putBoolean(KEY_CONN_BT_COMPANION, value)
-            if (!wifi5gEnabled && !hotspotModeEnabled) {
-                edit.putInt("wifi-connection-mode", if (value) 4 else 0)
-            }
-            edit.apply()
-        }
+        get() = false
+        set(_) { prefs.edit().putBoolean(KEY_CONN_BT_COMPANION, false).apply() }
 
     /** Opción independiente: Wi-Fi Direct 5 GHz (Android Auto sin cables). Desmarcar apaga 5 GHz de verdad. */
     var wifi5gEnabled: Boolean
@@ -901,7 +891,7 @@ class Settings(private val context: Context) {
         set(value) { prefs.edit().putString("auto-start-wifi-ssid", value).apply() }
 
     var listenForUsbDevices: Boolean
-        get() = prefs.getBoolean("listen-for-usb-devices", true)
+        get() = prefs.getBoolean("listen-for-usb-devices", false)
         set(value) { prefs.edit().putBoolean("listen-for-usb-devices", value).apply() }
 
     var showToastMessages: Boolean
@@ -977,15 +967,15 @@ class Settings(private val context: Context) {
         set(value) { LocaleHelper.save(context, value) }
 
     var mediaVolumeOffset: Int
-        get() = prefs.getInt("media-volume-offset", 50)
+        get() = prefs.getInt("media-volume-offset", 0)
         set(value) { prefs.edit().putInt("media-volume-offset", value).apply() }
 
     var assistantVolumeOffset: Int
-        get() = prefs.getInt("assistant-volume-offset", 40)
+        get() = prefs.getInt("assistant-volume-offset", 0)
         set(value) { prefs.edit().putInt("assistant-volume-offset", value).apply() }
 
     var navigationVolumeOffset: Int
-        get() = prefs.getInt("navigation-volume-offset", 40)
+        get() = prefs.getInt("navigation-volume-offset", 0)
         set(value) { prefs.edit().putInt("navigation-volume-offset", value).apply() }
 
     // Custom loading screen

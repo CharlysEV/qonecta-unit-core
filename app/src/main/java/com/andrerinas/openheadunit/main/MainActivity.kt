@@ -122,7 +122,6 @@ class MainActivity : BaseActivity() {
 
         logLaunchSource()
         clearBootLoopGuardIfOpenedByHand()
-        volumeControlStream = android.media.AudioManager.STREAM_MUSIC
 
         // If an Android Auto session is active, bring the projection activity to front
         if (App.provide(this).commManager.isConnected && !App.isPiPActive) {
@@ -156,7 +155,6 @@ class MainActivity : BaseActivity() {
         // and ensures the USB system modal only appears when the user has opted in to listen for ALL USB devices.
         lifecycleScope.launch(Dispatchers.IO) {
             Settings.setUsbAttachedActivityEnabled(applicationContext, appSettings.listenForUsbDevices)
-            com.andrerinas.openheadunit.decoder.MicRecorder.canHeadUnitCaptureAudio(applicationContext)
         }
 
         // Start main service immediately to handle connections and wireless server
@@ -281,13 +279,7 @@ class MainActivity : BaseActivity() {
         // this on its first launch; we always overwrite it here (even with
         // null) so a stale value from a prior attempt can't leak across.
         AapProjectionActivity.pendingStatusText = customStatusText
-        val devName = App.provide(this).settings.autoStartBluetoothDeviceName.ifBlank { "Teléfono" }
-        com.andrerinas.openheadunit.cluster.ClusterMapController.notifyConnecting(
-            this,
-            devName,
-            "Android Auto",
-            com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.ANDROID_AUTO,
-        )
+
         showAutoConnectUi()
     }
 
@@ -706,10 +698,6 @@ class MainActivity : BaseActivity() {
     }
 
     override fun onStart() {
-        com.andrerinas.openheadunit.cluster.ClusterMapController.showWelcomeIfAvailable(
-            this,
-            com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.ANDROID_AUTO,
-        )
         super.onStart()
     }
 
@@ -795,16 +783,9 @@ class MainActivity : BaseActivity() {
             intentAction == Intent.ACTION_ASSIST ||
             intentAction == android.speech.RecognizerIntent.ACTION_VOICE_SEARCH_HANDS_FREE
         ) {
-            AppLog.i("MainActivity: Steering wheel voice assistant button pressed ($intentAction)")
-            val triggered = com.andrerinas.openheadunit.cluster.ClusterMapController.triggerVoiceAssistant(this)
-            if (triggered) {
+            AppLog.i("MainActivity: Voice intent received ($intentAction)")
+            if (App.provide(this).commManager.isConnected) {
                 bringProjectionToFront()
-            } else {
-                Toast.makeText(
-                    this,
-                    "🎙 Conecta Android Auto o CarPlay para usar el asistente de voz del volante",
-                    Toast.LENGTH_SHORT,
-                ).show()
             }
             return
         }

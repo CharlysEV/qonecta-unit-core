@@ -901,7 +901,7 @@ private class AudioRenderer(
             applyFadeIn(data, offset, length)
             fadeApplied = true
         }
-        applyCarPlayGain(data, offset, length)
+        // Core Phase 0: clean unity gain (no 145% software soft-clipping distortion).
         var written = 0
         while (written < length && running) {
             val writeLength = if (playbackStarted) {

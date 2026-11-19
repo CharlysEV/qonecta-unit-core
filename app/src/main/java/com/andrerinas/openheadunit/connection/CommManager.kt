@@ -632,13 +632,6 @@ class CommManager(
         // If not mapped, we use the original keyCode as the logical code.
         var logicalCode = settings.keyCodes.entries.find { it.value == keyCode }?.key ?: keyCode
 
-        if (isPress && isPlayPauseKey(logicalCode) && !isExternalAudioFocusLost()) {
-            if (com.andrerinas.openheadunit.cluster.ClusterMapController.onSteeringPlayPausePressed(context, downTime)) {
-                AppLog.i("CommManager: Steering wheel Play/Pause double-click -> cycled ClusterMap page")
-                return
-            }
-        }
-
         // 2. Proprietary Key Filtering
         // If the key is proprietary (internal ID > 1000) and NOT mapped, we drop it.
         // These keys are intended to be learned/mapped in the Keymap settings.

@@ -25,7 +25,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="@string/da_preferences"
+            android:text="Qonecta Unit Core · Ajustes"
             android:textSize="32sp"
             android:textStyle="bold"
             android:textColor="@color/hql_text" />
@@ -35,347 +35,9 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:layout_marginBottom="18dp"
-            android:text="Ajustes generales del sistema y elección del Menú Extendido Qonecta+ para Android Auto y Apple CarPlay."
+            android:text="Versión limpia de pruebas: solo motor de Android Auto y Apple CarPlay (sin modo Extendido, sin Cuadro, sin Binders OEM, sin autoarranque)."
             android:textSize="17sp"
             android:textColor="@color/hql_text_dim" />
-
-        <!-- Tarjeta Elección de Menú Extendido Qonecta+ -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="14dp"
-            android:orientation="vertical"
-            android:padding="22dp"
-            android:background="@drawable/da_card">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="ELECCIÓN DE MENÚ EXTENDIDO QONECTA+ (ANDROID AUTO Y APPLE CARPLAY)"
-                android:textSize="13sp"
-                android:textColor="@color/hql_accent"
-                android:fontFamily="sans-serif-medium"
-                android:textStyle="bold"
-                android:letterSpacing="0.1" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Elige cómo quieres mostrar la capa extendida (Ruta EV, Telemetría C10, Radio, TV/TDT y Karaoke) durante la conducción."
-                android:textSize="16sp"
-                android:textColor="@color/hql_text_dim" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_ext_mode_full"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="60dp"
-                    android:layout_marginEnd="10dp"
-                    android:text="Extendido Qonecta+ (30%)"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_bg"
-                    app:backgroundTint="@color/hql_accent"
-                    app:cornerRadius="16dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_ext_mode_compact"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="60dp"
-                    android:layout_marginEnd="10dp"
-                    android:text="Extendido Compacto (22%)"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_text"
-                    app:backgroundTint="@color/hql_surface_top"
-                    app:strokeColor="@color/hql_outline"
-                    app:strokeWidth="2dp"
-                    app:cornerRadius="16dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_ext_mode_off"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="60dp"
-                    android:layout_marginEnd="10dp"
-                    android:text="Pantalla Completa (Sin Panel)"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_text"
-                    app:backgroundTint="@color/hql_surface_top"
-                    app:strokeColor="@color/hql_outline"
-                    app:strokeWidth="2dp"
-                    app:cornerRadius="16dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_ext_open_hub"
-                    android:layout_width="wrap_content"
-                    android:layout_height="60dp"
-                    android:paddingStart="22dp"
-                    android:paddingEnd="22dp"
-                    android:text="Abrir Menú Extendido"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_accent"
-                    app:backgroundTint="@color/hql_surface_top"
-                    app:strokeColor="@color/hql_accent"
-                    app:strokeWidth="2dp"
-                    app:cornerRadius="16dp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:text="Posición del Cochecito y Ruta en Cuadro de Instrumentos C10:"
-                    android:textSize="15sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/hql_text" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_cluster_shift_left"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginEnd="6dp"
-                    android:text="◀ Izq."
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_text"
-                    app:backgroundTint="@color/hql_surface_top"
-                    app:strokeColor="@color/hql_outline"
-                    app:strokeWidth="2dp"
-                    app:cornerRadius="14dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_cluster_shift_down"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginEnd="6dp"
-                    android:text="▼ Bajar"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_text"
-                    app:backgroundTint="@color/hql_surface_top"
-                    app:strokeColor="@color/hql_outline"
-                    app:strokeWidth="2dp"
-                    app:cornerRadius="14dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_cluster_shift_reset"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginEnd="6dp"
-                    android:text="Centrado C10"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_bg"
-                    app:backgroundTint="@color/hql_accent"
-                    app:cornerRadius="14dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_cluster_shift_up"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginEnd="6dp"
-                    android:text="▲ Subir"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_text"
-                    app:backgroundTint="@color/hql_surface_top"
-                    app:strokeColor="@color/hql_outline"
-                    app:strokeWidth="2dp"
-                    app:cornerRadius="14dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_cluster_shift_right"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:text="Der. ▶"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_text"
-                    app:backgroundTint="@color/hql_surface_top"
-                    app:strokeColor="@color/hql_outline"
-                    app:strokeWidth="2dp"
-                    app:cornerRadius="14dp" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Tarjeta Qonecta Unit Companion (puente con el móvil) -->
-        <LinearLayout
-            android:id="@+id/da_companion_card"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="14dp"
-            android:orientation="vertical"
-            android:padding="22dp"
-            android:background="@drawable/da_card">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="QONECTA UNIT COMPANION · TU MÓVIL"
-                android:textSize="13sp"
-                android:textColor="@color/hql_accent"
-                android:fontFamily="sans-serif-medium"
-                android:textStyle="bold"
-                android:letterSpacing="0.1" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Con la app Qonecta Unit Companion en tu móvil, las rutas del planificador se abren en Google Maps y Android Auto las muestra aquí. Funciona por la Wi-Fi de Android Auto inalámbrico y por Bluetooth (también con cable)."
-                android:textSize="16sp"
-                android:textColor="@color/hql_text_dim" />
-
-            <TextView
-                android:id="@+id/da_companion_status"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="Sin móvil emparejado"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="@color/hql_text" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_companion_pair"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="56dp"
-                    android:layout_marginEnd="10dp"
-                    android:text="Emparejar móvil"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_bg"
-                    app:backgroundTint="@color/hql_accent"
-                    app:cornerRadius="16dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_companion_test"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="56dp"
-                    android:layout_marginEnd="10dp"
-                    android:text="Enviar ruta de prueba"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_text"
-                    app:backgroundTint="@color/hql_surface_top"
-                    app:strokeColor="@color/hql_outline"
-                    app:strokeWidth="2dp"
-                    app:cornerRadius="16dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/da_companion_forget"
-                    android:layout_width="wrap_content"
-                    android:layout_height="56dp"
-                    android:paddingStart="20dp"
-                    android:paddingEnd="20dp"
-                    android:text="Olvidar móviles"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:textColor="@color/hql_text"
-                    app:backgroundTint="@color/hql_surface_top"
-                    app:strokeColor="@color/hql_outline"
-                    app:strokeWidth="2dp"
-                    app:cornerRadius="16dp" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Tarjeta Instalador / Auto-Actualizador Anti-OTA (Independiente de Vivaldi) -->
-        <LinearLayout
-            android:id="@+id/da_ota_updater"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="88dp"
-            android:layout_marginBottom="6dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:padding="20dp"
-            android:background="@drawable/da_card"
-            android:foreground="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true">
-            <ImageView
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:src="@drawable/ic_da_permissions"
-                app:tint="@color/hql_accent"
-                android:importantForAccessibility="no" />
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="20dp"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Actualizar / Instalar APK por USB o Red (Sin Vivaldi · Blindaje OTA)"
-                    android:textSize="20sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/hql_text" />
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="Instala nuevas versiones desde un Pendrive USB o Wi-Fi aunque una actualización OTA del coche elimine Vivaldi."
-                    android:textSize="15sp"
-                    android:textColor="@color/hql_text_dim" />
-            </LinearLayout>
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/da_ota_updater_btn"
-                android:layout_width="wrap_content"
-                android:layout_height="52dp"
-                android:paddingStart="20dp"
-                android:paddingEnd="20dp"
-                android:text="🛡️ Abrir Instalador USB"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:textAllCaps="false"
-                android:textColor="@color/hql_accent"
-                app:backgroundTint="@color/hql_surface_top"
-                app:strokeColor="@color/hql_accent"
-                app:strokeWidth="2dp"
-                app:cornerRadius="14dp" />
-        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/da_connection_setup"
@@ -420,90 +82,6 @@
         </LinearLayout>
 
         <LinearLayout
-            android:id="@+id/da_diagnostics"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="88dp"
-            android:layout_marginTop="10dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:padding="20dp"
-            android:background="@drawable/da_card"
-            android:foreground="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true">
-            <ImageView
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:src="@drawable/ic_da_diagnostics"
-                app:tint="@color/hql_accent"
-                android:importantForAccessibility="no" />
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="20dp"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/da_diagnostics"
-                    android:textSize="20sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/hql_text" />
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="@string/da_diagnostics_hint"
-                    android:textSize="15sp"
-                    android:textColor="@color/hql_text_dim" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/da_automation"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="88dp"
-            android:layout_marginTop="10dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:padding="20dp"
-            android:background="@drawable/da_card"
-            android:foreground="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true">
-            <ImageView
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:src="@drawable/ic_da_automation"
-                app:tint="@color/hql_accent"
-                android:importantForAccessibility="no" />
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="20dp"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/da_automation"
-                    android:textSize="20sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/hql_text" />
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="@string/da_automation_hint"
-                    android:textSize="15sp"
-                    android:textColor="@color/hql_text_dim" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout
             android:id="@+id/da_display"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -540,6 +118,48 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="@string/da_display_hint"
+                    android:textSize="15sp"
+                    android:textColor="@color/hql_text_dim" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/da_diagnostics"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="88dp"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="20dp"
+            android:background="@drawable/da_card"
+            android:foreground="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:src="@drawable/ic_da_diagnostics"
+                app:tint="@color/hql_accent"
+                android:importantForAccessibility="no" />
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="20dp"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/da_diagnostics"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/hql_text" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/da_diagnostics_hint"
                     android:textSize="15sp"
                     android:textColor="@color/hql_text_dim" />
             </LinearLayout>

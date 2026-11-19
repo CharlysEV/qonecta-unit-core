@@ -22,7 +22,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.andrerinas.openheadunit.R
-import com.headqlink.unit.extended.PanelFormat
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -32,6 +31,20 @@ import kotlin.math.roundToInt
  * tanto en Android Auto como en Apple CarPlay.
  */
 object PhonePickerDialog {
+
+    private object Palette {
+        const val BG = 0xFF0B1117.toInt()
+        const val SURFACE = 0xFF111820.toInt()
+        const val SURFACE_TOP = 0xFF17222D.toInt()
+        const val SURFACE_HI = 0xFF15202B.toInt()
+        const val OUTLINE = 0xFF263544.toInt()
+        const val EDGE = 0xFF22303D.toInt()
+        const val TEXT = 0xFFEAF2F7.toInt()
+        const val DIM = 0xFFA2B6C5.toInt()
+        const val MUTED = 0xFF7D93A5.toInt()
+        const val FAINT = 0xFF688091.toInt()
+        const val ACCENT = 0xFF00E5C7.toInt()
+    }
 
     data class PhoneItem(
         val name: String,
@@ -64,9 +77,9 @@ object PhonePickerDialog {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(32), dp(28), dp(32), dp(28))
             background = GradientDrawable().apply {
-                setColor(PanelFormat.SURFACE)
+                setColor(Palette.SURFACE)
                 cornerRadius = dp(28).toFloat()
-                setStroke(dp(2), PanelFormat.OUTLINE)
+                setStroke(dp(2), Palette.OUTLINE)
             }
         }
 
@@ -81,13 +94,13 @@ object PhonePickerDialog {
         val titleView = TextView(context).apply {
             text = title
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 28f)
-            setTextColor(PanelFormat.TEXT)
+            setTextColor(Palette.TEXT)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }
         val subView = TextView(context).apply {
             text = subtitle
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-            setTextColor(PanelFormat.DIM)
+            setTextColor(Palette.DIM)
             setPadding(0, dp(4), 0, 0)
         }
         titleCol.addView(titleView)
@@ -97,13 +110,13 @@ object PhonePickerDialog {
         val countBadge = TextView(context).apply {
             text = "${items.size} ${if (items.size == 1) "dispositivo" else "dispositivos"}"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setTextColor(PanelFormat.ACCENT)
+            setTextColor(Palette.ACCENT)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             setPadding(dp(16), dp(8), dp(16), dp(8))
             background = GradientDrawable().apply {
                 setColor(0x1F00E5C7)
                 cornerRadius = dp(999).toFloat()
-                setStroke(dp(1), PanelFormat.ACCENT)
+                setStroke(dp(1), Palette.ACCENT)
             }
         }
         header.addView(countBadge, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -228,9 +241,9 @@ object PhonePickerDialog {
         dp: (Int) -> Int,
         onClick: () -> Unit,
     ): View {
-        val strokeColor = if (item.highlighted) PanelFormat.ACCENT else PanelFormat.EDGE
+        val strokeColor = if (item.highlighted) Palette.ACCENT else Palette.EDGE
         val strokeWidth = if (item.highlighted) dp(3) else dp(2)
-        val bgColor = if (item.highlighted) 0xFF1A2836.toInt() else PanelFormat.SURFACE_HI
+        val bgColor = if (item.highlighted) 0xFF1A2836.toInt() else Palette.SURFACE_HI
 
         val baseBg = GradientDrawable().apply {
             setColor(bgColor)
@@ -258,7 +271,7 @@ object PhonePickerDialog {
             val iconDot = TextView(context).apply {
                 text = if (item.highlighted) "★ RECIENTE" else "● BLUETOOTH + WI-FI"
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setTextColor(if (item.highlighted) PanelFormat.ACCENT else PanelFormat.FAINT)
+                setTextColor(if (item.highlighted) Palette.ACCENT else Palette.FAINT)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                 letterSpacing = 0.08f
             }
@@ -276,7 +289,7 @@ object PhonePickerDialog {
             val centerName = TextView(context).apply {
                 text = item.name
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
-                setTextColor(PanelFormat.TEXT)
+                setTextColor(Palette.TEXT)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                 gravity = Gravity.CENTER
                 maxLines = 2
@@ -302,13 +315,13 @@ object PhonePickerDialog {
             val macView = TextView(context).apply {
                 text = item.address
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                setTextColor(PanelFormat.MUTED)
+                setTextColor(Palette.MUTED)
                 typeface = Typeface.MONOSPACE
             }
             val connectHint = TextView(context).apply {
                 text = "Conectar →"
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                setTextColor(PanelFormat.ACCENT)
+                setTextColor(Palette.ACCENT)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             }
             bottomRow.addView(macView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -333,14 +346,14 @@ object PhonePickerDialog {
         onClick: () -> Unit,
     ): TextView {
         val bg = GradientDrawable().apply {
-            setColor(if (primary) PanelFormat.ACCENT else PanelFormat.SURFACE_TOP)
+            setColor(if (primary) Palette.ACCENT else Palette.SURFACE_TOP)
             cornerRadius = dp(18).toFloat()
-            setStroke(dp(2), if (accentStroke) PanelFormat.ACCENT else PanelFormat.EDGE)
+            setStroke(dp(2), if (accentStroke) Palette.ACCENT else Palette.EDGE)
         }
         return TextView(context).apply {
             this.text = text
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            setTextColor(if (primary) PanelFormat.BG else if (accentStroke) PanelFormat.ACCENT else PanelFormat.TEXT)
+            setTextColor(if (primary) Palette.BG else if (accentStroke) Palette.ACCENT else Palette.TEXT)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             gravity = Gravity.CENTER
             setPadding(dp(26), 0, dp(26), 0)

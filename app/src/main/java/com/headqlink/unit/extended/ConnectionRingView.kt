@@ -111,6 +111,9 @@ class ConnectionRingView @JvmOverloads constructor(
     private val arcRect = RectF()
     private val outerRect = RectF()
     private val stepRect = RectF()
+    private var lastShaderW = 0f
+    private var lastShaderH = 0f
+    private var lastShaderState: State? = null
 
     private fun dp(v: Float): Float = v * resources.displayMetrics.density
 
@@ -138,7 +141,7 @@ class ConnectionRingView @JvmOverloads constructor(
         val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
 
-        val accent = QonectaTheme.accent
+        val accent = ACCENT_COLOR
         val r = Color.red(accent)
         val g = Color.green(accent)
         val b = Color.blue(accent)
@@ -147,20 +150,36 @@ class ConnectionRingView @JvmOverloads constructor(
         val cy = h * 0.54f
         val maxR = min(w, h) * 0.40f
 
-        // 1. Aura radial suave de fondo (estilo LeapLink verde/turquesa)
+        // Cache shaders to avoid per-frame allocations during connection animation.
         val auraRadius = maxR * 1.38f
-        glowPaint.shader = RadialGradient(
-            cx,
-            cy,
-            auraRadius,
-            intArrayOf(
-                Color.argb(if (state == State.CONNECTING) 76 else 44, r, g, b),
-                Color.argb(if (state == State.CONNECTING) 28 else 14, r, g, b),
-                Color.argb(0, r, g, b),
-            ),
-            floatArrayOf(0f, 0.58f, 1f),
-            Shader.TileMode.CLAMP,
-        )
+        if (w != lastShaderW || h != lastShaderH || state != lastShaderState) {
+            lastShaderW = w
+            lastShaderH = h
+            lastShaderState = state
+            glowPaint.shader = RadialGradient(
+                cx,
+                cy,
+                auraRadius,
+                intArrayOf(
+                    Color.argb(if (state == State.CONNECTING) 76 else 44, r, g, b),
+                    Color.argb(if (state == State.CONNECTING) 28 else 14, r, g, b),
+                    Color.argb(0, r, g, b),
+                ),
+                floatArrayOf(0f, 0.58f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+            arcPaint.shader = LinearGradient(
+                cx - maxR,
+                cy - maxR,
+                cx + maxR,
+                cy + maxR,
+                accent,
+                Color.WHITE,
+                Shader.TileMode.CLAMP,
+            )
+        }
+
+        // 1. Aura radial suave de fondo
         canvas.drawCircle(cx, cy, auraRadius, glowPaint)
 
         // 2. Indicadores superiores de pasos (•  •  ━━)
@@ -206,15 +225,6 @@ class ConnectionRingView @JvmOverloads constructor(
 
         // 6. Arco activo / giratorio
         arcPaint.strokeWidth = dp(6f)
-        arcPaint.shader = LinearGradient(
-            cx - maxR,
-            cy - maxR,
-            cx + maxR,
-            cy + maxR,
-            accent,
-            Color.WHITE,
-            Shader.TileMode.CLAMP,
-        )
         when (state) {
             State.IDLE -> {
                 canvas.drawArc(arcRect, -90f, 110f, false, arcPaint)
@@ -269,5 +279,9 @@ class ConnectionRingView @JvmOverloads constructor(
                 canvas.drawText(subtitleText, cx, cy + dp(39f), subTextPaint)
             }
         }
+    }
+
+    companion object {
+        private const val ACCENT_COLOR = 0xFF00E5C7.toInt()
     }
 }

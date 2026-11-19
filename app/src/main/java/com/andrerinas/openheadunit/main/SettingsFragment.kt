@@ -718,48 +718,6 @@ class SettingsFragment : Fragment() {
         val scrollState = settingsRecyclerView.layoutManager?.onSaveInstanceState()
         val items = mutableListOf<SettingItem>()
 
-        // --- Qonecta Unit (la primera) ---
-        // Estas tres se escriben en Settings al momento, sin pasar por «pendiente + Guardar»: la proyección
-        // las relee al volver al primer plano (ExtendedUi.onResume).
-        items.add(SettingItem.CategoryHeader("quCategory", R.string.qu_settings_category))
-
-        items.add(SettingItem.SegmentedButtonSettingEntry(
-            stableId = "quExtendedMode",
-            nameResId = R.string.qu_settings_mode,
-            options = listOf(getString(R.string.qu_extended), getString(R.string.qu_fullscreen)),
-            selectedIndex = if (settings.extendedMode) 0 else 1,
-            onOptionSelected = { index ->
-                val extended = index == 0
-                if (settings.extendedMode != extended) {
-                    settings.extendedMode = extended
-                    AppLog.i("[QU] ajustes: modo ${if (extended) "Extendido" else "Pantalla completa"}")
-                }
-                updateSettingsList()
-            }
-        ))
-
-        // Bloque C: abrirá CarCloudActivity. Hasta entonces, sin acción.
-        items.add(SettingItem.SettingEntry(
-            stableId = "quCarCloud",
-            nameResId = R.string.qu_settings_car_data,
-            value = getString(R.string.qu_settings_car_data_pending),
-            onClick = { }
-        ))
-
-        items.add(SettingItem.ToggleSettingEntry(
-            stableId = "quPanelDemo",
-            nameResId = R.string.qu_settings_demo,
-            descriptionResId = R.string.qu_settings_demo_desc,
-            isChecked = settings.panelDemo,
-            onCheckedChanged = { isChecked ->
-                if (settings.panelDemo != isChecked) {
-                    settings.panelDemo = isChecked
-                    AppLog.i("[QU] ajustes: DEMO del panel ${if (isChecked) "sí" else "no"}")
-                }
-                updateSettingsList()
-            }
-        ))
-
         // --- General Settings ---
         items.add(SettingItem.CategoryHeader("general", R.string.category_general))
 
