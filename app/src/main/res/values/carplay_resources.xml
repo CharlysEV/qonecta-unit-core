@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <bool name="config_advanced_audio_channel_mapping">false</bool>
+    <bool name="config_advanced_audio_channel_mapping">true</bool>
 
     <style name="Theme.Xcertplay" parent="android:Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>

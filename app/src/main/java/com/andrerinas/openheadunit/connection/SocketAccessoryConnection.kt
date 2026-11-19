@@ -28,12 +28,12 @@ class SocketAccessoryConnection(private val ip: String, private val port: Int, p
         transport = Socket()
     }
 
-    constructor(socket: Socket, context: Context) : this(socket.inetAddress.hostAddress ?: "", socket.port, context) {
+    constructor(socket: Socket, context: Context) : this(socket.inetAddress?.hostAddress ?: "", socket.port, context) {
         this.transport = socket
         this.singleMessage = socket is NearbySocket
         // Pre-connected sockets (like NearbySocket) need their streams initialized immediately
         // because connect() might not be called or might be bypassed.
-        if (socket.isConnected) {
+        if (socket.isConnected && !socket.isClosed) {
             try {
                 this.input = DataInputStream(socket.getInputStream())
                 this.output = socket.getOutputStream()
@@ -82,7 +82,7 @@ class SocketAccessoryConnection(private val ip: String, private val port: Int, p
     }
 
     override val isConnected: Boolean
-        get() = transport.isConnected
+        get() = transport.isConnected && !transport.isClosed
 
     override suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -209,13 +209,12 @@ class SocketAccessoryConnection(private val ip: String, private val port: Int, p
     }
 
     override fun disconnect() {
-        if (transport.isConnected) {
-            try {
+        try {
+            if (!transport.isClosed) {
                 transport.close()
-            } catch (e: IOException) {
-                AppLog.e(e)
             }
-
+        } catch (e: IOException) {
+            AppLog.e(e)
         }
         input = null
         output = null

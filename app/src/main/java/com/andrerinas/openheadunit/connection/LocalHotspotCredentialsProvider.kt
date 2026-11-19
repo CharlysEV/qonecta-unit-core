@@ -48,35 +48,41 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
             report("Local hotspot requires Android 8 or later. Choose Wi-Fi Direct or Car hotspot.")
             return@post
         }
-                lastFailure = null
-                requested = true
-                val token = ++generation
-                disconnectTwoPointFourStation()
-                val before = interfaces().filter { it.name != "p2p0" }.mapNotNull { it.siteLocalIpv4 }.toSet()
+        lastFailure = null
+        requested = true
+        val token = ++generation
+        disconnectTwoPointFourStation()
         val upstreams = upstreamInterfaces()
         timeout = Runnable {
             if (current(token)) fail("Local hotspot did not become ready. Disconnect the car from home Wi-Fi or turn off its shared hotspot, then retry.")
         }.also { main.postDelayed(it, 25_000) }
-        try {
-            AppLog.i("LocalHotspot: starting Android=${Build.VERSION.RELEASE} sdk=${Build.VERSION.SDK_INT} with Wi-Fi client enabled=${wifi.isWifiEnabled}")
-            startFiveGhzHotspot(object : WifiManager.LocalOnlyHotspotCallback() {
-                override fun onStarted(value: WifiManager.LocalOnlyHotspotReservation) {
-                    if (!current(token) || reservation != null) { value.close(); return }
-                    reservation = value
-                    resolve(token, value, before, upstreams)
+        // Snapshot existing non-p2p interfaces on IO so NetworkInterface enumeration never runs on Main.
+        scope.launch(Dispatchers.IO) {
+            val before = interfaces().filter { it.name != "p2p0" }.mapNotNull { it.siteLocalIpv4 }.toSet()
+            withContext(Dispatchers.Main) {
+                if (!current(token)) return@withContext
+                try {
+                    AppLog.i("LocalHotspot: starting Android=${Build.VERSION.RELEASE} sdk=${Build.VERSION.SDK_INT} with Wi-Fi client enabled=${wifi.isWifiEnabled}")
+                    startFiveGhzHotspot(object : WifiManager.LocalOnlyHotspotCallback() {
+                        override fun onStarted(value: WifiManager.LocalOnlyHotspotReservation) {
+                            if (!current(token) || reservation != null) { value.close(); return }
+                            reservation = value
+                            resolve(token, value, before, upstreams)
+                        }
+                        override fun onStopped() {
+                            if (current(token)) fail("Android stopped the local hotspot. Connect again when the Wi-Fi radio is available.")
+                        }
+                        override fun onFailed(reason: Int) {
+                            if (current(token)) fail("Local hotspot could not start (Android reason $reason). Disconnect home Wi-Fi or turn off the car's shared hotspot, then retry.")
+                        }
+                    })
+                } catch (_: SecurityException) {
+                    fail("Allow Nearby devices and Location in app permissions before starting the local hotspot.")
+                } catch (e: Exception) {
+                    AppLog.w("LocalHotspot: start failed: ${e.javaClass.simpleName}")
+                    fail("This car could not start a standalone 5 GHz hotspot. Choose Wi-Fi Direct or Car hotspot.")
                 }
-                override fun onStopped() {
-                    if (current(token)) fail("Android stopped the local hotspot. Connect again when the Wi-Fi radio is available.")
-                }
-                override fun onFailed(reason: Int) {
-                    if (current(token)) fail("Local hotspot could not start (Android reason $reason). Disconnect home Wi-Fi or turn off the car's shared hotspot, then retry.")
-                }
-            })
-        } catch (_: SecurityException) {
-            fail("Allow Nearby devices and Location in app permissions before starting the local hotspot.")
-        } catch (e: Exception) {
-            AppLog.w("LocalHotspot: start failed: ${e.javaClass.simpleName}")
-            fail("This car could not start a standalone 5 GHz hotspot. Choose Wi-Fi Direct or Car hotspot.")
+            }
         }
     } }
 
@@ -283,19 +289,20 @@ class LocalHotspotCredentialsProvider(private val context: Context, private val 
                                         addr[15].toInt() and 0xff
                                     ).takeIf(NativeCredentialsPolicy::isUsableBssid)
                                 }
-                            ?: "02:00:00:00:00:01"
-                        if (NativeCredentialsPolicy.isUsableBssid(mac)) {
-                            val credentials = Credentials(ssid, password, candidate.siteLocalIpv4!!, mac!!)
-                            withContext(Dispatchers.Main) {
-                                if (current(token) && reservation === owned) {
-                                    timeout?.let(main::removeCallbacks); timeout = null
-                                    ready = credentials
-                                    AppLog.i("LocalHotspot: reservation ready on ${candidate.name} (ip=${credentials.ip}, bssid=${credentials.bssid}); no upstream internet required")
-                                    publish()
-                                }
+                            ?: ""
+                        // Never fabricate a fake BSSID like 02:00:00:00:00:01: Android Auto matches
+                        // SSID+BSSID under a full mask and rejects fake BSSIDs. Leave blank so the
+                        // handshake omits the BSSID field cleanly.
+                        val credentials = Credentials(ssid, password, candidate.siteLocalIpv4!!, mac)
+                        withContext(Dispatchers.Main) {
+                            if (current(token) && reservation === owned) {
+                                timeout?.let(main::removeCallbacks); timeout = null
+                                ready = credentials
+                                AppLog.i("LocalHotspot: reservation ready on ${candidate.name} (ip=${credentials.ip}, bssid=${credentials.bssid.ifEmpty { "<omitted>" }}); no upstream internet required")
+                                publish()
                             }
-                            return@launch
                         }
+                        return@launch
                     }
                     delay(250)
                 }

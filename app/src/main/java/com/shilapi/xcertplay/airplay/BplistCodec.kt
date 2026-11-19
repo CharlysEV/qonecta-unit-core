@@ -46,7 +46,8 @@ object BplistCodec {
                     nodes[index] = if (number >= 0) {
                         Leaf(encodeInt(number))
                     } else {
-                        Leaf(byteArrayOf(0x23) + bigEndian(number.toDouble().toRawBits(), 8))
+                        // Apple bplist00 encodes negative integers as 8-byte signed two's complement (0x13).
+                        Leaf(byteArrayOf(0x13) + bigEndian(number, 8))
                     }
                 }
                 is Float, is Double -> {
@@ -220,7 +221,15 @@ object BplistCodec {
             else -> 0
         }
         val raw = number.toByteArray()
-        return byteArrayOf((0x10 or log).toByte()) + raw.copyOfRange(raw.size - size, raw.size)
+        val padded = ByteArray(size)
+        val copyLen = minOf(raw.size, size)
+        raw.copyInto(
+            destination = padded,
+            destinationOffset = size - copyLen,
+            startIndex = raw.size - copyLen,
+            endIndex = raw.size,
+        )
+        return byteArrayOf((0x10 or log).toByte()) + padded
     }
 
     private fun marker(type: Int, count: Int): ByteArray {

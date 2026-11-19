@@ -13,7 +13,7 @@ internal class P2pSessionOwnership(recordedName: String? = null) {
     var networkName: String? = recordedName
         private set
 
-    fun start() { requested = true }
+    fun start() { requested = true; generation++ }
     fun stop() { requested = false; generation++; created = false }
     fun setEnabled(value: Boolean) {
         if (enabled && !value) { generation++; created = false }

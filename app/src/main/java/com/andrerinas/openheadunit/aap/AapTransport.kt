@@ -136,6 +136,7 @@ class AapTransport(
     /** Set by [AapControl] when VIDEO_FOCUS_NATIVE triggers a stop (user tapped Exit). */
     @Volatile var wasUserExit: Boolean = false
     @Volatile var onQuit: ((Boolean) -> Unit)? = null
+    private val hasQuit = java.util.concurrent.atomic.AtomicBoolean(false)
     var isAssistantActive = false
     var onAudioFocusStateChanged: ((Boolean) -> Unit)? = null
 
@@ -517,8 +518,8 @@ class AapTransport(
         return 0
     }
 
-    internal fun stop() {
-        AppLog.i("AapTransport stopping and sending byebye")
+    internal fun sendByeByeOnly() {
+        AppLog.i("AapTransport sending byebye")
         val byebye = Control.ByeByeRequest.newBuilder()
             .setReason(Control.ByeByeReason.USER_SELECTION)
             .build()
@@ -526,15 +527,20 @@ class AapTransport(
             AapMessage(Channel.ID_CTR, Control.ControlMsgType.MESSAGE_BYEBYE_REQUEST_VALUE, byebye)
         send(msg)
         SystemClock.sleep(150)
+    }
+
+    internal fun stop() {
+        sendByeByeOnly()
         quit()
     }
 
     internal fun quit(clean: Boolean = false) {
-        val cb = onQuit ?: return
+        if (!hasQuit.compareAndSet(false, true)) return
+        val cb = onQuit
         onQuit = null
 
         AppLog.i("AapTransport quitting (clean=$clean)")
-        cb.invoke(clean)
+        cb?.invoke(clean)
         micRecorder.stop()
         micRecorder.listener = null
         sendHandler?.removeCallbacks(focusCycleGainRunnable)
@@ -794,8 +800,11 @@ class AapTransport(
         send(KeyCodeEvent(ts, aapKeyCode, isPress))
     }
 
+    @Synchronized
+    private fun isSensorStarted(sensorType: Int): Boolean = startedSensors.contains(sensorType)
+
     fun send(sensor: SensorEvent): Boolean {
-        if (isAlive && startedSensors.contains(sensor.sensorType)) {
+        if (isAlive && isSensorStarted(sensor.sensorType)) {
             send(sensor as AapMessage)
             return true
         }

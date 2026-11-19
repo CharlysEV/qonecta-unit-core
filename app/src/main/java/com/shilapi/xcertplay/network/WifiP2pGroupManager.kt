@@ -233,7 +233,7 @@ class WifiP2pGroupManager(
             stateLock.notifyAll()
             activeChannel = channel ?: attempt?.channel
             activeThread = callbackThread ?: attempt?.thread
-            removeGroup = created || attempt?.createSucceeded == true
+            removeGroup = created || attempt?.createSucceeded == true || attempt?.request != null
             channel = null
             callbackThread = null
             startAttempt = null

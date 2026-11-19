@@ -288,9 +288,16 @@ class CarPlayMediaEngine(
         sessionStreams
             .filter { isScreenStreamType(it.type) }
             .forEach { sink.onScreenStreamActive(it.type, false) }
+        val activeAudioTypes = buildSet {
+            addAll(audioMeta.keys)
+            addAll(sessionStreams.map { it.type }.filter { it == STREAM_TYPE_MAIN_AUDIO || it == 101 || it == 102 })
+        }
+        val activeMicTypes = pendingMicrophone.keys.toList()
         sessionStreams.forEach { streams.remove(it)?.close() }
         audioMeta.clear()
         pendingMicrophone.clear()
+        activeMicTypes.forEach { sink.onMicrophoneStopped(it) }
+        activeAudioTypes.forEach { sink.onAudioStopped(it) }
         audioCaptures.values.forEach(AudioPacketCapture::close)
         audioCaptures.clear()
     }

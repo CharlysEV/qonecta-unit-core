@@ -771,6 +771,9 @@ class MainActivity : BaseActivity() {
 
         if (intentAction == "com.andrerinas.openheadunit.ACTION_EXIT") {
             AppLog.i("MainActivity: Received exit action")
+            runCatching { com.shilapi.xcertplay.CarPlayBackgroundSession.stop() }
+            runCatching { stopService(Intent(this, com.shilapi.xcertplay.LeapCarPlaySessionService::class.java)) }
+            runCatching { stopService(Intent(this, com.shilapi.xcertplay.network.CarPlayVpnService::class.java)) }
             val exitIntent = Intent(this, AapService::class.java).apply {
                 this.action = AapService.ACTION_STOP_SERVICE
             }
@@ -824,6 +827,9 @@ class MainActivity : BaseActivity() {
                 ContextCompat.startForegroundService(this, stopIntent)
             } else if (intentData?.scheme == "headunit" && intentData.host == "exit") {
                 AppLog.i("Received full exit intent via deep link")
+                runCatching { com.shilapi.xcertplay.CarPlayBackgroundSession.stop() }
+                runCatching { stopService(Intent(this, com.shilapi.xcertplay.LeapCarPlaySessionService::class.java)) }
+                runCatching { stopService(Intent(this, com.shilapi.xcertplay.network.CarPlayVpnService::class.java)) }
                 val exitIntent = Intent(this, AapService::class.java).apply {
                     action = AapService.ACTION_STOP_SERVICE
                 }

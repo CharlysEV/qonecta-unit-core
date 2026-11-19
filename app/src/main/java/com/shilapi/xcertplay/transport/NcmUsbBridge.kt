@@ -135,7 +135,11 @@ class NcmUsbBridge internal constructor(
             }
         }
         connection.close()
-        runCatching { requestToClose?.close() }
+        // Wait for any in-flight requestWait() on readLock to unwind before closing the native UsbRequest,
+        // avoiding a JNI use-after-free race with Ipv6NcmBridge's ncm-ipv6-in thread.
+        synchronized(readLock) {
+            runCatching { requestToClose?.close() }
+        }
     }
 
     private fun drainStatus(endpoint: UsbEndpoint) {
@@ -178,12 +182,19 @@ class NcmUsbBridge internal constructor(
             }
             val blockLength = readU16(buffered, 8)
             if (blockLength < 28) throw failSession("Invalid NTB16 block length $blockLength")
-            val padded = blockLength % USB_PACKET_SIZE == 0
-            val wireLength = blockLength + if (padded) 1 else 0
-            if (bufferedSize < wireLength) return
-            if (padded && buffered[blockLength].toInt() != 0) {
-                throw failSession("Invalid NTB16 short-packet pad")
+            if (bufferedSize < blockLength) return
+            val hasZeroPad = (blockLength % USB_PACKET_SIZE == 0) &&
+                bufferedSize > blockLength &&
+                buffered[blockLength].toInt() == 0
+            // USB 2.0 512B-aligned NTBs may carry a 1-byte 0x00 short-packet pad, while USB 3.0
+            // (1024B) or ZLP-framed NTBs start the next NTH16 ('N') immediately after blockLength.
+            if ((blockLength % USB_PACKET_SIZE == 0) && bufferedSize > blockLength && !hasZeroPad) {
+                val nextByte = buffered[blockLength].toInt() and 0xff
+                if (nextByte != (Ntb16Codec.NTH16_SIG and 0xff)) {
+                    throw failSession("Invalid NTB16 short-packet pad")
+                }
             }
+            val wireLength = blockLength + if (hasZeroPad) 1 else 0
             for (frame in Ntb16Codec.parse(buffered, 0, blockLength)) enqueueFrame(frame)
             val remaining = bufferedSize - wireLength
             buffered.copyInto(buffered, 0, wireLength, bufferedSize)

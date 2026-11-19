@@ -117,11 +117,14 @@ class HomeFragment : Fragment() {
                 showUsbSwitchDialog("Dispositivo USB")
             } else {
                 app.settings.usbModeEnabled = true
+                app.settings.listenForUsbDevices = true
+                com.andrerinas.openheadunit.utils.Settings.setUsbAttachedActivityEnabled(requireContext(), true)
                 val usbManager = requireContext().getSystemService(Context.USB_SERVICE) as? UsbManager
-                val hasAppleUsb = usbManager?.deviceList?.values?.any { it.vendorId == 0x05AC } == true
-                if (hasAppleUsb) {
-                    launchCarPlay(view, "iPhone por USB")
+                val appleDevice = usbManager?.deviceList?.values?.firstOrNull { it.vendorId == 0x05AC }
+                if (appleDevice != null) {
+                    launchCarPlay(view, "iPhone por USB", usbDevice = appleDevice)
                 } else {
+                    stopCarPlayForAndroidAuto()
                     updateConnectionModeButtons(view)
                     beginConnectingUi(
                         view = view,
@@ -141,6 +144,7 @@ class HomeFragment : Fragment() {
             val next = !app.settings.wifi5gEnabled
             app.settings.wifi5gEnabled = next
             if (next) {
+                stopCarPlayForAndroidAuto()
                 app.settings.nativeApTransport = 0
                 ensureCarWifiEnabled()
                 ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
@@ -164,6 +168,7 @@ class HomeFragment : Fragment() {
             val next = !app.settings.hotspotModeEnabled
             app.settings.hotspotModeEnabled = next
             if (next) {
+                stopCarPlayForAndroidAuto()
                 ensureCarWifiEnabled()
                 ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
                     action = AapService.ACTION_START_WIRELESS_SCAN
@@ -185,6 +190,8 @@ class HomeFragment : Fragment() {
         view.findViewById<View>(R.id.mode_btn_usb)?.setOnClickListener {
             val next = !app.settings.usbModeEnabled
             app.settings.usbModeEnabled = next
+            app.settings.listenForUsbDevices = next
+            com.andrerinas.openheadunit.utils.Settings.setUsbAttachedActivityEnabled(requireContext(), next)
             if (next) {
                 if (!app.commManager.isConnected) {
                     ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
@@ -214,14 +221,12 @@ class HomeFragment : Fragment() {
         // Salida limpia: detiene por completo AA y CarPlay para no dejar nada vivo en segundo plano.
         view.findViewById<View>(R.id.exit_button)?.setOnClickListener {
             stopConnectingUi()
+            stopCarPlayForAndroidAuto()
             runCatching { app.commManager.disconnect(sendByeBye = true, isUserExit = true) }
             runCatching {
                 requireContext().startService(Intent(requireContext(), AapService::class.java).apply {
                     action = AapService.ACTION_STOP_SERVICE
                 })
-            }
-            runCatching {
-                requireContext().stopService(Intent(requireContext(), com.shilapi.xcertplay.LeapCarPlaySessionService::class.java))
             }
             requireActivity().finishAffinity()
         }
@@ -280,20 +285,46 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun launchCarPlay(view: View, targetName: String) {
+    private fun stopCarPlayForAndroidAuto() {
+        val ctx = context ?: return
+        runCatching { com.shilapi.xcertplay.CarPlayBackgroundSession.stop() }
+        runCatching { ctx.stopService(Intent(ctx, com.shilapi.xcertplay.LeapCarPlaySessionService::class.java)) }
+        runCatching { ctx.stopService(Intent(ctx, com.shilapi.xcertplay.network.CarPlayVpnService::class.java)) }
+    }
+
+    private fun launchCarPlay(
+        view: View,
+        targetName: String,
+        usbDevice: android.hardware.usb.UsbDevice? = null,
+    ) {
         stopConnectingUi()
+        // Yield AA wireless / BT / P2P / active session so CarPlay gets clean Wi-Fi & USB access.
+        runCatching {
+            ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
+                action = AapService.ACTION_STOP_WIRELESS
+            })
+        }
         beginConnectingUi(
             view = view,
             targetName = targetName,
             protocol = "CarPlay",
-            transportLabel = "🍎 Abriendo Apple CarPlay",
+            transportLabel = if (usbDevice != null) "🍎 Abriendo Apple CarPlay (USB)" else "🍎 Abriendo Apple CarPlay",
         )
         carPlayLaunchJob?.cancel()
         carPlayLaunchJob = viewLifecycleOwner.lifecycleScope.launch {
-            delay(400L)
+            delay(350L)
             if (isAdded) {
                 stopConnectingUi()
-                startActivity(Intent(requireContext(), com.shilapi.xcertplay.LeapCarPlayActivity::class.java))
+                val intent = if (usbDevice != null) {
+                    Intent(UsbManager.ACTION_USB_DEVICE_ATTACHED).apply {
+                        setClass(requireContext(), com.shilapi.xcertplay.CarPlayHostActivity::class.java)
+                        putExtra(UsbManager.EXTRA_DEVICE, usbDevice)
+                        addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    }
+                } else {
+                    Intent(requireContext(), com.shilapi.xcertplay.LeapCarPlayActivity::class.java)
+                }
+                startActivity(intent)
             }
         }
     }
@@ -582,6 +613,7 @@ class HomeFragment : Fragment() {
 
     private fun startPrimaryConnection() {
         val root = view ?: return
+        stopCarPlayForAndroidAuto()
         val s = app.settings
         val wirelessAaEnabled = s.wifi5gEnabled || s.hotspotModeEnabled
 
@@ -635,6 +667,7 @@ class HomeFragment : Fragment() {
             return
         }
 
+        stopCarPlayForAndroidAuto()
         val s = app.settings
         if (!s.wifi5gEnabled && !s.hotspotModeEnabled) {
             s.wifi5gEnabled = true

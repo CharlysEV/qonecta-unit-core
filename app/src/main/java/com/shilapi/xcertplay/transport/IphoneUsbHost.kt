@@ -134,6 +134,17 @@ class IphoneUsbHost(
             parseAttachedDevice(it)?.let(onAttached)
         }
 
+    /** Register once for this host instance and close the returned handle to unregister it. */
+    fun registerDetachReceiver(onDetached: (UsbDevice) -> Unit): Closeable =
+        registerReceiver(IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED)) { intent ->
+            if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED) {
+                val device = intent.usbDevice()
+                if (device != null && matcher.matches(device.vendorId, device.productId)) {
+                    onDetached(device)
+                }
+            }
+        }
+
     /**
      * Sends the LIVI-evidenced vendor request then closes the connection before re-enumeration.
      * The callback is invoked from [executor].
@@ -278,11 +289,16 @@ class IphoneUsbHost(
 
     private fun permissionPendingIntent(): PendingIntent {
         val intent = Intent(permissionAction).setPackage(appContext.packageName)
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
         return PendingIntent.getBroadcast(
             appContext,
             0,
             intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            flags,
         )
     }
 
@@ -334,6 +350,7 @@ class Iap2UsbSession internal constructor(
     private var closed = false
     private var failure: IphoneUsbException? = null
     private var pendingRead: UsbRequest? = null
+    private val reusableReadBuffer: ByteBuffer = ByteBuffer.allocateDirect(USBMUX_READ_CHUNK_BYTES)
 
     fun write(data: ByteArray, timeoutMillis: Int) = synchronized(writeLock) {
         checkOpen()
@@ -362,7 +379,8 @@ class Iap2UsbSession internal constructor(
                 checkOpenLocked()
                 pendingRead = request
             }
-            val buffer = ByteBuffer.allocateDirect(USBMUX_READ_CHUNK_BYTES)
+            val buffer = reusableReadBuffer
+            buffer.clear()
             if (!request.queue(buffer)) {
                 throw IphoneUsbException.DeviceUnavailable("Android could not queue USBMUX read request")
             }

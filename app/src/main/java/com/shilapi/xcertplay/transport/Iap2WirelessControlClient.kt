@@ -65,6 +65,7 @@ class Iap2WirelessControlClient(
         var wirelessCarPlayAvailableSeen = false
         var locationActive = false
         var locationSentLogged = false
+        try {
         while (true) {
                 val remaining = remainingMillis(deadlineNanos)
                 if (remaining == 0L) {
@@ -225,6 +226,11 @@ class Iap2WirelessControlClient(
                     }
                 }
         }
+        } finally {
+            if (locationActive) {
+                runCatching { locationProvider?.stop() }
+            }
+        }
     }
 
     private fun send(frame: Iap2Frame, deadlineNanos: Long) {
@@ -315,11 +321,12 @@ class Iap2WirelessControlClient(
         }
 
         private fun remainingMillis(deadlineNanos: Long): Long {
+            if (deadlineNanos == Long.MAX_VALUE) return MAX_RECV_TIMEOUT_MILLIS
             val remaining = deadlineNanos - System.nanoTime()
             if (remaining <= 0) return 0L
             return min(
                 MAX_RECV_TIMEOUT_MILLIS,
-                (remaining + NANOS_PER_MILLISECOND - 1) / NANOS_PER_MILLISECOND,
+                (remaining - 1L) / NANOS_PER_MILLISECOND + 1L,
             )
         }
     }

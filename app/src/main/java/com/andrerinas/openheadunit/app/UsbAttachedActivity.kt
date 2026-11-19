@@ -48,7 +48,12 @@ class UsbAttachedActivity : Activity() {
 
     private fun forwardAppleUsbToCarPlay(device: UsbDevice): Boolean {
         return try {
-            AppLog.i("Apple USB device attached (${UsbDeviceCompat(device).uniqueName}); forwarding to CarPlayHostActivity")
+            AppLog.i("Apple USB device attached (${UsbDeviceCompat(device).uniqueName}); stopping AA wireless and forwarding to CarPlayHostActivity")
+            runCatching {
+                ContextCompat.startForegroundService(this, Intent(this, AapService::class.java).apply {
+                    action = AapService.ACTION_STOP_WIRELESS
+                })
+            }
             val carPlayIntent = Intent(UsbManager.ACTION_USB_DEVICE_ATTACHED).apply {
                 component = ComponentName(this@UsbAttachedActivity, "com.shilapi.xcertplay.CarPlayHostActivity")
                 putExtra(UsbManager.EXTRA_DEVICE, device)
@@ -131,11 +136,18 @@ class UsbAttachedActivity : Activity() {
             }
         }
 
+        // Yield any active CarPlay session before claiming Android USB projection.
+        runCatching { com.shilapi.xcertplay.CarPlayBackgroundSession.stop() }
+        runCatching { stopService(Intent(this, com.shilapi.xcertplay.LeapCarPlaySessionService::class.java)) }
+
         val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
 
         if (UsbDeviceCompat.isInAccessoryMode(device)) {
             if (!usbManager.hasPermission(device)) {
-                AppLog.i("Usb in accessory mode but no permission. Requesting...")
+                AppLog.i("Usb in accessory mode but no permission. Starting AapService and requesting permission...")
+                // Ensure AapService (and its dynamic UsbReceiver) is running before requesting permission
+                // so the permission callback broadcast is never lost on a cold USB attach.
+                ContextCompat.startForegroundService(this, Intent(this, AapService::class.java))
                 val permissionIntent = UsbReceiver.createPermissionPendingIntent(this)
                 usbManager.requestPermission(device, permissionIntent)
                 finish()

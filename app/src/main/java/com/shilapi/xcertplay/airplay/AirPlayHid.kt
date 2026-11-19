@@ -42,10 +42,16 @@ object AirPlayHid {
 
     fun touchReport(contacts: List<AirPlayContact>): ByteArray {
         val report = ByteArray(BYTES_PER_FINGER * TOUCH_CONTACTS)
+        val bySlot = arrayOfNulls<AirPlayContact>(TOUCH_CONTACTS)
+        for (contact in contacts) {
+            if (contact.id in 0 until TOUCH_CONTACTS && bySlot[contact.id] == null) {
+                bySlot[contact.id] = contact
+            }
+        }
         for (slot in 0 until TOUCH_CONTACTS) {
             val offset = slot * BYTES_PER_FINGER
             report[offset] = slot.toByte()
-            val contact = contacts.getOrNull(slot) ?: continue
+            val contact = bySlot[slot] ?: contacts.getOrNull(slot)?.takeIf { it.id !in 0 until TOUCH_CONTACTS } ?: continue
             report[offset + 1] = if (contact.down) 0x01 else 0x00
             writeU16Le(report, offset + 2, Math.round(contact.x.coerceAtLeast(0.0)).toInt())
             writeU16Le(report, offset + 4, Math.round(contact.y.coerceAtLeast(0.0)).toInt())

@@ -206,11 +206,27 @@ class ManualHotspotManager(
         } ?: return null
         val primaryInterface = connectivityManager?.activeNetwork
             ?.let { connectivityManager.getLinkProperties(it)?.interfaceName }
+        val staIpAddress = runCatching {
+            @Suppress("DEPRECATION")
+            val ip = wifiManager.connectionInfo?.ipAddress ?: 0
+            if (ip != 0) {
+                byteArrayOf(
+                    (ip and 0xff).toByte(),
+                    ((ip ushr 8) and 0xff).toByte(),
+                    ((ip ushr 16) and 0xff).toByte(),
+                    ((ip ushr 24) and 0xff).toByte(),
+                )
+            } else null
+        }.getOrNull()
         return Collections.list(interfaces)
             .asSequence()
             .filter { isUsableInterface(it, primaryInterface) }
             .mapNotNull { networkInterface ->
                 networkInterface.hotspotAddress()?.let { address ->
+                    val isStaAddress = staIpAddress != null &&
+                        address is Inet4Address &&
+                        address.address.contentEquals(staIpAddress)
+                    if (isStaAddress) return@mapNotNull null
                     LocalHotspotInterface(
                         name = networkInterface.name,
                         hostAddress = address,
@@ -237,6 +253,7 @@ class ManualHotspotManager(
     private fun interfaceScore(name: String, address: InetAddress): Int {
         var score = when {
             name.startsWith("ap") || name.contains("softap", ignoreCase = true) -> 100
+            name == "wlan1" || name == "wlan2" -> 90
             name.startsWith("p2p") -> 80
             name.startsWith("wlan") -> 70
             else -> 0

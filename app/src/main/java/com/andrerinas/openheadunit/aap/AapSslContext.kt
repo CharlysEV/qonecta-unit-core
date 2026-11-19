@@ -133,7 +133,10 @@ class AapSslContext(keyManager: SingleKeyKeyManager): AapSsl {
         return payload
     }
 
-    private fun prepare(): Int {
+    private fun prepare(): Int = synchronized(this) {
+        // Reset per-session flag so a clean disconnect in a previous session never suppresses
+        // real TLS errors in a subsequent session on the shared AapSslContext.
+        isUserDisconnect = false
         // Use a consistent (host, port) key so JSSE's ClientSessionContext can find and reuse
         // the session from the previous connection.  The values are arbitrary — they are never
         // used for DNS resolution; they just serve as the cache lookup key.
@@ -152,7 +155,7 @@ class AapSslContext(keyManager: SingleKeyKeyManager): AapSsl {
             }
         }
         sslEngine.beginHandshake()
-        return 0
+        0
     }
 
     override fun postHandshakeReset() {

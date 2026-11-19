@@ -1699,18 +1699,25 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
             } catch (e: Exception) {}
 
             // Try ip link
+            var process: Process? = null
             try {
-                val process = Runtime.getRuntime().exec("ip link show $targetIface")
-                val reader = process.inputStream.bufferedReader()
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    val match = Regex("link/ether (([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})").find(line ?: "")
-                    if (match != null) {
-                        val mac = match.groupValues[1].lowercase()
-                        if (mac != "00:00:00:00:00:00" && mac != "02:00:00:00:00:00") return mac
+                process = Runtime.getRuntime().exec(arrayOf("ip", "link", "show", targetIface))
+                process.inputStream.bufferedReader().use { reader ->
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        val match = Regex("link/ether (([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})").find(line ?: "")
+                        if (match != null) {
+                            val mac = match.groupValues[1].lowercase()
+                            if (mac != "00:00:00:00:00:00" && mac != "02:00:00:00:00:00") return mac
+                        }
                     }
                 }
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+            } finally {
+                runCatching { process?.errorStream?.close() }
+                runCatching { process?.outputStream?.close() }
+                runCatching { process?.destroy() }
+            }
         }
 
         // LAST RESORT: Scan ALL interfaces in sysfs for anything that looks like P2P
@@ -1827,5 +1834,23 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
 
         isGroupOwner = false
         isConnected = false
+    }
+
+    /** Permanent teardown called from [AapService.onDestroy]: removes any owned group and closes the P2P Binder channel. */
+    fun close() {
+        val ch = channel
+        val hadGroup = sessionOwnership.networkName != null
+        stop()
+        if (ch != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            val closeChannel = Runnable {
+                if (channel === ch) channel = null
+                runCatching { ch.close() }
+            }
+            if (hadGroup) {
+                handler.postDelayed(closeChannel, 500L)
+            } else {
+                closeChannel.run()
+            }
+        }
     }
 }

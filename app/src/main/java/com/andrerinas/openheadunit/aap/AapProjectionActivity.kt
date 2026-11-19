@@ -73,6 +73,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
     private val settings: Settings by lazy { Settings(this) }
     private val cachedKeyCodes: Map<Int, Int> by lazy { settings.keyCodes }
     private var isSurfaceSet = false
+    private var activeSurface: android.view.Surface? = null
     private var overlayState = OverlayState.STARTING
     private val watchdogHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
@@ -395,19 +396,21 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
     }
     private fun checkAndForceSurface() {
         AppLog.i("Watchdog: checkAndForceSurface executing...")
-        if (projectionView is TextureView) {
-            val tv = projectionView as TextureView
-            if (tv.isAvailable) {
-                AppLog.w("Watchdog: TextureView IS available. Forcing onSurfaceChanged.")
-                onSurfaceChanged(android.view.Surface(tv.surfaceTexture), tv.width, tv.height)
+        if (projectionView is TextureProjectionView) {
+            val tv = projectionView as TextureProjectionView
+            val trackedSurface = if (tv.isAvailable) tv.getOrCreateSurface() else null
+            if (trackedSurface != null && trackedSurface.isValid) {
+                AppLog.w("Watchdog: TextureProjectionView IS available. Forcing onSurfaceChanged.")
+                onSurfaceChanged(trackedSurface, tv.width, tv.height)
             } else {
                 AppLog.e("Watchdog: TextureView NOT available. Vis=${tv.visibility}, W=${tv.width}, H=${tv.height}")
             }
         } else if (projectionView is GlProjectionView) {
              val gles = projectionView as GlProjectionView
-             if (gles.isSurfaceValid()) {
+             val glSurface = gles.getSurface()
+             if (glSurface != null && glSurface.isValid) {
                  AppLog.w("Watchdog: GlProjectionView IS valid. Forcing onSurfaceChanged.")
-                 onSurfaceChanged(gles.getSurface()!!, gles.width, gles.height)
+                 onSurfaceChanged(glSurface, gles.width, gles.height)
              } else {
                  AppLog.e("Watchdog: GlProjectionView NOT valid.")
              }
@@ -465,11 +468,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             AppLog.i("Recreating projection view due to settings change...")
             val container = findViewById<FrameLayout>(R.id.container)
             if (::projectionView.isInitialized) {
-                // Deregister before discarding the view: the GLES backend posts its
-                // onSurfaceDestroyed to the main looper, so a still-registered callback from the
-                // discarded view would land after the replacement's onSurfaceChanged and release
-                // video focus for the new view's running stream.
                 projectionView.removeCallback(this)
+                activeSurface = null
                 videoDecoder.softwareYuvFrameSink = null
                 videoDecoder.stop(DecoderStopPolicy.REASON_PROJECTION_VIEW_RECREATE)
                 container.removeView(projectionView as View)
@@ -1550,6 +1550,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
 
     override fun onSurfaceChanged(surface: android.view.Surface, width: Int, height: Int) {
         AppLog.i("[UI_DEBUG] [AapProjectionActivity] onSurfaceChanged. Actual surface dimensions: width=$width, height=$height")
+        activeSurface = surface
         isSurfaceSet = true
 
         videoDecoder.setSurface(surface)
@@ -1640,6 +1641,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             return
         }
         AppLog.i("SurfaceCallback: onSurfaceDestroyed. Surface: $surface")
+        if (activeSurface === surface) activeSurface = null
         isSurfaceSet = false
         commManager.send(VideoFocusEvent(gain = false, unsolicited = false))
         videoDecoder.stopIfCurrentSurface(surface, DecoderStopPolicy.REASON_SURFACE_DESTROYED)
@@ -1731,8 +1733,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
                     videoX = (px / viewW) * (videoW - marginW)
                     videoY = (py / viewH) * (videoH - marginH)
                 } else {
-                    val uiW = videoW - marginW
-                    val uiH = videoH - marginH
+                    val uiW = (videoW - marginW).coerceAtLeast(1f)
+                    val uiH = (videoH - marginH).coerceAtLeast(1f)
                     val uiRatio = uiW / uiH
                     val viewRatio = viewW / viewH
 
@@ -1837,6 +1839,13 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         // Deregister only what still belongs to this instance, or the teardown of the old
         // instance strips the live one: its view callback stays armed to fire a stale
         // surface-destroy, and its listeners get nulled out from under it.
+        // Stop decoder for this activity's surface BEFORE removing projectionView callbacks so the
+        // hardware MediaCodec never keeps rendering into a destroyed BufferQueue. Using
+        // stopIfCurrentSurface guarantees a singleTask relaunch's newer surface is never disturbed.
+        activeSurface?.let { s ->
+            videoDecoder.stopIfCurrentSurface(s, DecoderStopPolicy.REASON_SURFACE_DESTROYED)
+        }
+        activeSurface = null
         if (::projectionView.isInitialized) projectionView.removeCallback(this)
         if (videoDecoder.onFpsChanged === fpsListener) videoDecoder.onFpsChanged = null
         (if (::projectionView.isInitialized) projectionView as? SoftwareYuvFrameSink else null)?.let {

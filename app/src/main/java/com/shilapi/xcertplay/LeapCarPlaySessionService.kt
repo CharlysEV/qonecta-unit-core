@@ -19,6 +19,9 @@ class LeapCarPlaySessionService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             CarPlayBackgroundSession.stop()
+            runCatching { stopService(Intent(this, com.shilapi.xcertplay.network.CarPlayVpnService::class.java)) }
+            @Suppress("DEPRECATION")
+            stopForeground(true)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -28,21 +31,36 @@ class LeapCarPlaySessionService : Service() {
         val stop = PendingIntent.getService(this, 1, Intent(this, LeapCarPlaySessionService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_leapcarplay_notification)
-            .setContentTitle("LeapCarPlay")
+            .setContentTitle("Qonecta Unit · CarPlay")
             .setContentText("CarPlay connection running")
             .setContentIntent(open).setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Disconnect", stop).build()).build()
         if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
-        } else startForeground(1, notification)
+            val fgType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            try {
+                startForeground(NOTIFICATION_ID, notification, fgType)
+            } catch (_: Exception) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            }
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
         return START_NOT_STICKY
     }
     override fun onTaskRemoved(rootIntent: Intent?) {
         CarPlayBackgroundSession.stop()
+        runCatching { stopService(Intent(this, com.shilapi.xcertplay.network.CarPlayVpnService::class.java)) }
         stopSelf()
+    }
+    override fun onDestroy() {
+        CarPlayBackgroundSession.stop()
+        runCatching { stopService(Intent(this, com.shilapi.xcertplay.network.CarPlayVpnService::class.java)) }
+        super.onDestroy()
     }
     companion object {
         const val ACTION_STOP = "com.signxer.leapcarplay.DISCONNECT"
         private const val CHANNEL = "leapcarplay_connection"
+        const val NOTIFICATION_ID = 2001
     }
 }

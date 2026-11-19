@@ -59,13 +59,9 @@ object AppPermissions {
     }
 
     val ALL: List<Entry> = listOf(
-        Entry(
-            id = "mic",
-            titleRes = R.string.perm_mic_title,
-            helpRes = R.string.perm_mic_help,
-            kind = Kind.NORMAL,
-            permissions = listOf(Manifest.permission.RECORD_AUDIO),
-        ),
+        // RECORD_AUDIO intentionally omitted in Qonecta Unit Core (Leapmotor C10 safety):
+        // AndroidManifest.xml does not declare RECORD_AUDIO so requesting it here caused an
+        // infinite permission dialog loop on every MainActivity.onResume().
         Entry(
             id = "location",
             titleRes = R.string.perm_location_title,

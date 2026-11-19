@@ -162,12 +162,16 @@ class BluetoothRfcommDuplexStream(
     private fun takePendingLocked(maxBytes: Int): ByteArray? {
         val chunk = pending.pollFirst() ?: return null
         pendingBytes -= chunk.size
-        if (chunk.size <= maxBytes) return chunk
+        if (chunk.size <= maxBytes) {
+            lock.notifyAll()
+            return chunk
+        }
 
         val head = chunk.copyOf(maxBytes)
         val tail = chunk.copyOfRange(maxBytes, chunk.size)
         pending.addFirst(tail)
         pendingBytes += tail.size
+        lock.notifyAll()
         return head
     }
 

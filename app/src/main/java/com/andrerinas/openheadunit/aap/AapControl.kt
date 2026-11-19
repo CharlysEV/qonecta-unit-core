@@ -306,6 +306,7 @@ internal class AapControlService(
             }
             Control.ControlMsgType.MESSAGE_BYEBYE_RESPONSE_VALUE -> {
                 AppLog.i("Byebye Response received")
+                aapTransport.quit(clean = true)
                 return -1
             }
             Control.ControlMsgType.MESSAGE_VOICE_SESSION_NOTIFICATION_VALUE -> {
@@ -336,8 +337,9 @@ internal class AapControlService(
     }
 
     private fun pingRequest(request: Control.PingRequest, channel: Int): Int {
+        val ts = if (request.hasTimestamp()) request.timestamp else System.nanoTime()
         val response = Control.PingResponse.newBuilder()
-                .setTimestamp(System.nanoTime())
+                .setTimestamp(ts)
                 .build()
 
         val msg = AapMessage(channel, Control.ControlMsgType.MESSAGE_PING_RESPONSE_VALUE, response)
@@ -416,12 +418,10 @@ internal class AapControlService(
                 val isRelease = notification.request.number ==
                         Control.AudioFocusRequestNotification.AudioFocusRequestType.RELEASE_VALUE
                 if (aapAudio.shouldHonourProtocolFocusRequest(isRelease)) {
-                    aapAudio.requestFocusChange(AudioConfigs.stream(channel, settings.separateAudioStreams), notification.request.number, AudioManager.OnAudioFocusChangeListener {
-                        AppLog.i("System audio focus changed: $it ${systemFocusName[it]}")
-                        if (it == AudioManager.AUDIOFOCUS_LOSS || it == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-                            aapAudio.onExternalFocusLoss("protocolFocusListener($it)")
-                        }
-                    })
+                    aapAudio.requestFocusChange(
+                        AudioConfigs.stream(channel, settings.separateAudioStreams),
+                        notification.request.number,
+                    )
                 }
             }
         } else {

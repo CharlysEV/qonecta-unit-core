@@ -177,6 +177,7 @@ class VideoDecoder(
                 if (info.isEncoder) continue
                 for (type in info.supportedTypes) {
                     if (type.equals("video/hevc", ignoreCase = true)) {
+                        if (DecoderCapabilityReport.isSecureDecoder(info, type)) continue
                         val name = info.name.lowercase()
                         val isSoftware = name.startsWith("omx.google.") ||
                                 name.startsWith("c2.android.") ||
@@ -196,11 +197,12 @@ class VideoDecoder(
         }
     }
 
-    private var codec: MediaCodec? = null
+    @Volatile private var codec: MediaCodec? = null
     private var softwareHevcDecoder: FfmpegHevcDecoder? = null
-    private var codecBufferInfo: MediaCodec.BufferInfo? = null
+    @Volatile private var codecBufferInfo: MediaCodec.BufferInfo? = null
     private var mSurface: Surface? = null
-    private var outputThread: Thread? = null
+    @Volatile private var surfaceDetached = false
+    @Volatile private var outputThread: Thread? = null
     @Volatile private var running = false
     private var startTime = 0L
 
@@ -493,17 +495,12 @@ class VideoDecoder(
      */
     fun setSurface(surface: Surface?) {
         synchronized(this) {
-            if (mSurface === surface) return
+            if (mSurface === surface && !surfaceDetached) return
 
             AppLog.i("New surface set: $surface")
-            // Unconditional, not gated on a live codec: stop() is where the failure state
-            // (decoderPermanentlyFailed, the restart counters, the one-time fallback) is reset,
-            // and the failure paths release the codec on their way down - so gating this on
-            // codec != null made a latched failure permanent for the rest of the session, with a
-            // fresh surface arriving and nothing ever clearing the flag that blocks decode().
-            // stop() is idempotent when nothing is running.
             stop(DecoderStopPolicy.REASON_NEW_SURFACE)
             mSurface = surface
+            surfaceDetached = (surface == null)
             lastFrameRenderedMs = 0L
             keyframeRepair.reset()
         }
@@ -519,13 +516,14 @@ class VideoDecoder(
     fun isCurrentSurface(surface: Surface): Boolean = synchronized(this) { mSurface === surface }
 
     /** Whether a live surface is attached, so a granted video focus has somewhere to draw. */
-    fun hasValidSurface(): Boolean = synchronized(this) { mSurface?.isValid == true }
+    fun hasValidSurface(): Boolean = synchronized(this) { !surfaceDetached && mSurface?.isValid == true }
 
     /**
      * Stops the decoder only if [surface] still owns it. Compare-and-stop is atomic under the
      * same monitor [setSurface] and [stop] already hold, so a stale teardown from a torn-down
-     * view can never stop a decoder that a newer surface has since claimed. [mSurface] is left
-     * as it is either way — [stop] never cleared it, and [decode] guards on validity.
+     * view can never stop a decoder that a newer surface has since claimed. Marks the surface
+     * detached so [decode] cannot start a new codec against the dying surface before the next
+     * [setSurface] arrives.
      *
      * @return whether the decoder was actually stopped.
      */
@@ -534,6 +532,7 @@ class VideoDecoder(
             AppLog.i("Decoder stop ($reason) skipped: surface is no longer current")
             return false
         }
+        surfaceDetached = true
         stop(reason)
         true
     }
@@ -791,7 +790,7 @@ class VideoDecoder(
                     }
                 }
 
-                if (mSurface == null || !mSurface!!.isValid) return
+                if (surfaceDetached || mSurface == null || !mSurface!!.isValid) return
                 if (mWidth == 0 || mHeight == 0) return
 
                 if (shouldUseBundledHevc(typeToUse, settings.forceSoftwareDecoding || forceSoftware)) {
@@ -1112,15 +1111,17 @@ class VideoDecoder(
                     }
                 }
 
-                val rawNal = buffer.copyOfRange(nalStart, nalEnd)
-                val fixedNal = if (startCodeLen == 3) {
-                    // Normalize to 4-byte start codes for better decoder compatibility
-                    ByteArray(rawNal.size + 1).apply {
-                        this[0] = 0; System.arraycopy(rawNal, 0, this, 1, rawNal.size)
-                    }
-                } else rawNal
+                if (nalEnd > nalStart + startCodeLen) {
+                    val rawNal = buffer.copyOfRange(nalStart, nalEnd)
+                    val fixedNal = if (startCodeLen == 3) {
+                        // Normalize to 4-byte start codes for better decoder compatibility
+                        ByteArray(rawNal.size + 1).apply {
+                            this[0] = 0; System.arraycopy(rawNal, 0, this, 1, rawNal.size)
+                        }
+                    } else rawNal
 
-                callback(fixedNal, if (startCodeLen == 3) 4 else 4)
+                    callback(fixedNal, 4)
+                }
                 currentPos = nalEnd
             } else break
         }
@@ -1426,11 +1427,13 @@ class VideoDecoder(
 
             running = true
             clearFrameQueue()
-            outputThread = Thread {
+            val newOutputThread = Thread {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY)
                 LegacyOptimizer.setHighPriority()
                 outputThreadLoop()
-            }.apply { name = "VideoDecoder-Output"; start() }
+            }.apply { name = "VideoDecoder-Output" }
+            outputThread = newOutputThread
+            newOutputThread.start()
             // Published before start(): the loop's guard reads this field to prove its own
             // identity, and a thread that starts before the assignment lands can read the null a
             // prior stop() left and exit at birth - after which every frame queues into a feed
@@ -1488,19 +1491,35 @@ class VideoDecoder(
     }
 
     /**
-     * Reads the parameter sets of an access unit that carries them and reports a genuine change.
-     *
-     * Diagnostic only - see [ParameterSetTracker] for why nothing here writes to the stored CSD or
-     * the configured size. Runs only on units the config scanner says carry parameter sets, which is
-     * keyframes and config messages, so the per-NAL copying [forEachNalUnit] does is paid a few times
-     * a minute rather than sixty times a second.
+     * Scans an access unit zero-copy for parameter sets (VPS/SPS/PPS), copying only the tiny
+     * parameter-set NALs (never 100-500 KB IDR slices). Updates stored CSD so mid-session
+     * decoder restarts always configure with current parameter sets, and reports changes via
+     * [ParameterSetTracker].
      */
     private fun trackParameterSets(data: ByteArray, offset: Int, size: Int) {
         val hevc = currentCodecType == CodecType.H265
+        val limit = (offset + size).coerceAtMost(data.size)
+        var currentPos = offset
         var spsNal: ByteArray? = null
         var spsHeaderLen = 0
-        forEachNalUnit(data, offset, size) { nalData, headerLen ->
-            val first = nalData[headerLen].toInt()
+
+        while (currentPos < limit - 3) {
+            var nalStart = -1
+            var startCodeLen = 0
+            for (i in currentPos until limit - 3) {
+                if (data[i].toInt() == 0 && data[i + 1].toInt() == 0) {
+                    if (data[i + 2].toInt() == 0 && data[i + 3].toInt() == 1) {
+                        nalStart = i; startCodeLen = 4; break
+                    } else if (data[i + 2].toInt() == 1) {
+                        nalStart = i; startCodeLen = 3; break
+                    }
+                }
+            }
+            if (nalStart == -1) break
+            val headerPos = nalStart + startCodeLen
+            if (headerPos >= limit) break
+
+            val first = data[headerPos].toInt()
             val kind = if (hevc) {
                 when ((first and 0x7E) shr 1) {
                     32 -> ParameterSetTracker.Kind.VPS
@@ -1515,20 +1534,50 @@ class VideoDecoder(
                     else -> null
                 }
             }
-            if (kind != null) {
-                parameterSetTracker.offer(kind, nalData, headerLen, nalData.size - headerLen)
-                if (kind == ParameterSetTracker.Kind.SPS) {
-                    spsNal = nalData
-                    spsHeaderLen = headerLen
+
+            // Parameter sets precede VCL picture slices. Once we reach a VCL slice, stop scanning
+            // instead of walking through hundreds of kilobytes of compressed entropy data.
+            if (kind == null) {
+                val isVclSlice = if (hevc) ((first and 0x7E) shr 1) in 0..31 else (first and 0x1F) in 1..5
+                if (isVclSlice) break
+                currentPos = headerPos + 1
+                continue
+            }
+
+            var nalEnd = limit
+            for (j in (headerPos + 1) until limit - 3) {
+                if (data[j].toInt() == 0 && data[j + 1].toInt() == 0 &&
+                    (data[j + 2].toInt() == 1 || (data[j + 2].toInt() == 0 && data[j + 3].toInt() == 1))) {
+                    nalEnd = j; break
                 }
             }
+
+            val nalBodyLen = nalEnd - headerPos
+            if (nalBodyLen > 0) {
+                parameterSetTracker.offer(kind, data, headerPos, nalBodyLen)
+                // Normalize into a 4-byte Annex-B CSD buffer and refresh stored parameter sets
+                // so any future restart uses the latest stream parameters.
+                val normalized = ByteArray(4 + nalBodyLen).apply {
+                    this[3] = 1
+                    System.arraycopy(data, headerPos, this, 4, nalBodyLen)
+                }
+                when (kind) {
+                    ParameterSetTracker.Kind.VPS -> vps = normalized
+                    ParameterSetTracker.Kind.SPS -> {
+                        sps = normalized
+                        spsNal = normalized
+                        spsHeaderLen = 4
+                    }
+                    ParameterSetTracker.Kind.PPS -> pps = normalized
+                }
+            }
+            currentPos = nalEnd
         }
 
         val change = parameterSetTracker.takeChange() ?: return
         val kinds = change.kinds.joinToString(" ")
-        // Snapshotted because the lambda above assigns it; a captured var is not smart-castable.
-        val sps = spsNal
-        val sizeNote = if (sps != null) describeSizeChange(sps, spsHeaderLen, hevc) else "size unread"
+        val spsSnapshot = spsNal
+        val sizeNote = if (spsSnapshot != null) describeSizeChange(spsSnapshot, spsHeaderLen, hevc) else "size unread"
         AppLog.w(
             "VideoDecoder: parameter sets changed mid-session ($kinds, $sizeNote) - change #${change.ordinal}"
         )
@@ -1790,8 +1839,9 @@ class VideoDecoder(
 
         var consecutiveErrors = 0
         var lastOutputMs = SystemClock.elapsedRealtime()
+        val self = Thread.currentThread()
 
-        while (running) {
+        while (running && outputThread === self) {
             val currentCodec = codec
             val bufferInfo = codecBufferInfo
             if (currentCodec == null || bufferInfo == null) {
@@ -1802,22 +1852,6 @@ class VideoDecoder(
             try {
                 val outputIndex = currentCodec.dequeueOutputBuffer(bufferInfo, 10000L)
                 if (outputIndex >= 0) {
-                    // Catch up to the newest ready frame instead of replaying the backlog. A link
-                    // that goes quiet for a few hundred milliseconds delivers what it owed in one
-                    // burst; showing every frame of it walks the picture forward in slow motion and
-                    // never closes the gap against audio, which does not queue the same way. These
-                    // frames are already decoded, so discarding them costs no reference data and
-                    // cannot corrupt what follows: the one place load can be shed for free.
-                    //
-                    // "Another buffer is ready" on its own does NOT mean we are behind.
-                    // releaseOutputBuffer(true) hands the frame to the surface and returns without
-                    // waiting for vsync, so back-pressure lands a step later, on the codec asking
-                    // for a graphic buffer. One decoded frame sitting ahead of the display is
-                    // ordinary pipeline depth, and treating that as a backlog would discard half
-                    // the frames of a perfectly healthy 60fps stream. So nothing is discarded
-                    // until a third frame is ready: at depth two both are scheduled on distinct refresh intervals
-                    // on SurfaceView, and only a genuine burst - the one
-                    // that arrives after silence, dozens deep - reaches the discard path.
                     readyIndices[0] = outputIndex
                     var readyCount = 1
                     var passes = 0
@@ -1843,22 +1877,17 @@ class VideoDecoder(
                     for (i in firstToRender until readyCount - 1) {
                         if (releaseFrame(currentCodec, readyIndices[i])) alsoRendered++
                     }
-                    // These went to the surface too, so they belong in the rendered rate; counting
-                    // only the last one would understate it by half whenever the pipeline sits one
-                    // frame deep, which is the healthy case this is careful not to disturb.
-                    framesRendered += alsoRendered
-                    frameCount += alsoRendered
-                    framesRenderedThisSession += alsoRendered
                     val renderIndex = readyIndices[readyCount - 1]
+                    val lastRendered = releaseFrame(currentCodec, renderIndex)
+                    val totalRenderedThisPass = alsoRendered + if (lastRendered) 1 else 0
+                    if (totalRenderedThisPass == 0) {
+                        logThroughput()
+                        continue
+                    }
 
-                    if (!releaseFrame(currentCodec, renderIndex)) continue
                     lastFrameRenderedMs = SystemClock.elapsedRealtime()
                     renderedThisSession = true
                     lastOutputMs = lastFrameRenderedMs
-                    // bufferInfo carries the last successful dequeue, which is renderIndex. The
-                    // frames released ahead of it in this pass decoded earlier and so have smaller
-                    // timestamps, and the ones the catch-up branch discarded decoded too - so this
-                    // one stamp answers for the whole pass either way.
                     if (keyframeRepair.onFrameRendered(bufferInfo.presentationTimeUs)) {
                         if (keyframeRepair.timestampsUnusable && !loggedUnusableOutputTimestamps) {
                             loggedUnusableOutputTimestamps = true
@@ -1871,20 +1900,16 @@ class VideoDecoder(
                         AppLog.i("VideoDecoder: keyframe decoded - the picture is repaired")
                         onKeyframeObserved?.invoke()
                     }
-                    framesRenderedThisSession++
+                    framesRenderedThisSession += totalRenderedThisPass
                     consecutiveErrors = 0
-                    // The one landmark that says video actually reached the screen on the path
-                    // almost every unit runs. Driven by its own flag rather than the listener
-                    // below, which only exists while the projection activity is up — the sessions
-                    // worth timing are exactly the ones where it might not be.
                     if (!loggedFirstHardwareFrame) {
                         loggedFirstHardwareFrame = true
                         AppLog.i("First frame rendered (hardware decode)")
                     }
                     onFirstFrameListener?.let { it(); onFirstFrameListener = null }
 
-                    frameCount++
-                    framesRendered++
+                    frameCount += totalRenderedThisPass
+                    framesRendered += totalRenderedThisPass
 
                     val now = System.currentTimeMillis()
                     val elapsed = now - lastFpsLogTime
@@ -2005,7 +2030,11 @@ class VideoDecoder(
             (0 until count).map { MediaCodecList.getCodecInfoAt(it) }
         }
 
-        val infos = codecInfos.filter { !it.isEncoder && it.supportedTypes.any { t -> t.equals(mimeType, true) } }
+        val infos = codecInfos.filter { info ->
+            !info.isEncoder &&
+                info.supportedTypes.any { t -> t.equals(mimeType, true) } &&
+                !DecoderCapabilityReport.isSecureDecoder(info, mimeType)
+        }
         val hw = infos.find { isHardwareAccelerated(it) }
         val sw = infos.find { !isHardwareAccelerated(it) }
         val selected = if (preferHardware && hw != null) hw.name else sw?.name ?: hw?.name

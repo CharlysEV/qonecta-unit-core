@@ -311,11 +311,10 @@ class LocalOnlyHotspotManager(context: Context) : WirelessHotspotManager {
                 "SoftApConfiguration.getChannel",
                 allowAuto = true,
             )
-        } catch (failure: ReflectiveOperationException) {
-            throw IOException(
-                "Android ${Build.VERSION.RELEASE} does not expose SoftApConfiguration.getChannel",
-                failure,
-            )
+        } catch (_: ReflectiveOperationException) {
+            // Android 11 (API 30) with targetSdk 36 blocks @SystemApi SoftApConfiguration.getChannel().
+            // Channel 0 means auto-select; let iAP2 advertise the live band without aborting bring-up.
+            0
         }
         return channel to readLegacySoftApBandLabel(configuration, channel)
     }

@@ -366,8 +366,19 @@ class CarPlayLoopbackSimulator(
                         outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> break
                         outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                             val outFormat = encoder.outputFormat
-                            val sps = extractNaluWithoutStartCode(outFormat.getByteBuffer("csd-0"))
-                            val pps = extractNaluWithoutStartCode(outFormat.getByteBuffer("csd-1"))
+                            val csd0 = outFormat.getByteBuffer("csd-0")
+                            val csd1 = outFormat.getByteBuffer("csd-1")
+                            var sps = extractNaluWithoutStartCode(csd0)
+                            var pps = extractNaluWithoutStartCode(csd1)
+                            // Qualcomm H.264 encoders frequently pack SPS + PPS together into csd-0
+                            // with csd-1 == null; split Annex-B NALUs from csd-0 in that case.
+                            if (pps.isEmpty() && csd0 != null) {
+                                val dup = csd0.duplicate()
+                                val combined = ByteArray(dup.remaining()).also { dup.get(it) }
+                                val nalus = splitAnnexBNalus(combined)
+                                sps = nalus.firstOrNull { (it[0].toInt() and 0x1f) == 7 } ?: sps
+                                pps = nalus.firstOrNull { (it[0].toInt() and 0x1f) == 8 } ?: pps
+                            }
                             if (sps.isNotEmpty() && pps.isNotEmpty()) {
                                 val avcC = buildAvcRecord(sps, pps)
                                 writeScreenPacket(out, opcode = 1, body = avcC)
@@ -566,6 +577,36 @@ class CarPlayLoopbackSimulator(
             RectF(barLeft, barY, barLeft + (barRight - barLeft) * progress, barY + 10f),
             5f, 5f, barFgPaint,
         )
+    }
+
+    private fun splitAnnexBNalus(data: ByteArray): List<ByteArray> {
+        val starts = mutableListOf<Pair<Int, Int>>() // (startCodeOffset, startCodeLen)
+        var i = 0
+        while (i + 3 <= data.size) {
+            if (data[i] == 0.toByte() && data[i + 1] == 0.toByte()) {
+                if (data[i + 2] == 1.toByte()) {
+                    starts.add(i to 3)
+                    i += 3
+                    continue
+                }
+                if (i + 4 <= data.size && data[i + 2] == 0.toByte() && data[i + 3] == 1.toByte()) {
+                    starts.add(i to 4)
+                    i += 4
+                    continue
+                }
+            }
+            i++
+        }
+        if (starts.isEmpty()) return emptyList()
+        val nalus = ArrayList<ByteArray>(starts.size)
+        for (idx in starts.indices) {
+            val payloadStart = starts[idx].first + starts[idx].second
+            val payloadEnd = if (idx + 1 < starts.size) starts[idx + 1].first else data.size
+            if (payloadEnd > payloadStart) {
+                nalus.add(data.copyOfRange(payloadStart, payloadEnd))
+            }
+        }
+        return nalus
     }
 
     private fun extractNaluWithoutStartCode(buf: ByteBuffer?): ByteArray {

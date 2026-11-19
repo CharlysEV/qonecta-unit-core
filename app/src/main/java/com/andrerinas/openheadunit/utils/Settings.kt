@@ -891,7 +891,7 @@ class Settings(private val context: Context) {
         set(value) { prefs.edit().putString("auto-start-wifi-ssid", value).apply() }
 
     var listenForUsbDevices: Boolean
-        get() = prefs.getBoolean("listen-for-usb-devices", false)
+        get() = prefs.getBoolean("listen-for-usb-devices", true)
         set(value) { prefs.edit().putBoolean("listen-for-usb-devices", value).apply() }
 
     var showToastMessages: Boolean

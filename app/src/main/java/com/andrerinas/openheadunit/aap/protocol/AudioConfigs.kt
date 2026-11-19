@@ -13,7 +13,8 @@ object AudioConfigs {
     {
         if (separateAudioStreams) {
             return when(channel) {
-                Channel.ID_AU1 -> AudioManager.STREAM_VOICE_CALL
+                // Never use STREAM_VOICE_CALL on Leapmotor C10: it collides with com.aispeech.lyra.daemon / BT HFP.
+                Channel.ID_AU1 -> AudioManager.STREAM_NOTIFICATION
                 Channel.ID_AU2 -> AudioManager.STREAM_NOTIFICATION
                 else -> AudioManager.STREAM_MUSIC
             }

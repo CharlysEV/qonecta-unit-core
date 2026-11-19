@@ -24,8 +24,8 @@ object TouchCoordinateMapper {
         val surfaceH = inputSurfaceHeight.coerceAtLeast(1f)
         val px = if (hudMirroring) surfaceW - rawX else rawX
 
-        val uiW = negotiatedWidth - marginWidth
-        val uiH = negotiatedHeight - marginHeight
+        val uiW = (negotiatedWidth - marginWidth).coerceAtLeast(1f)
+        val uiH = (negotiatedHeight - marginHeight).coerceAtLeast(1f)
 
         val videoX: Float
         val videoY: Float

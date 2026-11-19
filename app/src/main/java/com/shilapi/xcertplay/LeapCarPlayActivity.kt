@@ -127,8 +127,15 @@ class LeapCarPlayActivity : ComponentActivity() {
         header.addView(ImageView(this).apply { setImageResource(R.drawable.ic_carplay); contentDescription = "CarPlay" }, LinearLayout.LayoutParams(dp(36), dp(36)))
         header.addView(label("Qonecta Unit Core · CarPlay", 26, TEXT, true).apply { setPadding(dp(12), 0, 0, 0) }, LinearLayout.LayoutParams(0, dp(56), 1f))
         header.addView(button(if (page == "home") "Android Auto" else "Back", false) {
-            if (page == "home") finish()
-            else { page = "home"; render() }
+            if (page == "home") {
+                if (CarPlayBackgroundSession.hasSession()) {
+                    CarPlayBackgroundSession.stop { runOnUiThread { finish() } }
+                } else {
+                    finish()
+                }
+            } else {
+                page = "home"; render()
+            }
         }, LinearLayout.LayoutParams(dp(160), dp(56)))
         content.addView(header)
         content.addView(space(24))
@@ -163,10 +170,12 @@ class LeapCarPlayActivity : ComponentActivity() {
             card.addView(button("Open car hotspot settings", false) { openCarWifiSettings() }, matchButton(10, 56))
         }
         val wifiMgr = applicationContext.getSystemService(android.net.wifi.WifiManager::class.java)
-        if (wifiMgr?.isWifiEnabled == true) {
+        if (AirPlayPersistence.loadWirelessHotspotMode(this) == WirelessHotspotMode.MANUAL &&
+            wifiMgr?.isWifiEnabled == true
+        ) {
             card.addView(
                 label(
-                    "⚠ Consejo C10: El cliente Wi-Fi del coche está activo. Apaga el icono Wi-Fi de la barra superior del C10 (dejando solo Zona Wi-Fi/Hotspot) para evitar tirones o cortes en vídeo inalámbrico.",
+                    "⚠ Consejo C10 (Modo Hotspot): El cliente Wi-Fi del coche está activo. Apaga el icono Wi-Fi de la barra superior del C10 (dejando solo Zona Wi-Fi/Hotspot) para evitar tirones o cortes en vídeo inalámbrico.",
                     14,
                     WARNING
                 ).apply { setPadding(0, dp(12), 0, 0) }
@@ -230,7 +239,6 @@ class LeapCarPlayActivity : ComponentActivity() {
         content.addView(label("Apply reconnects CarPlay for size, resolution, music buffer and frame rate. Other changes apply to your next connection.", 17, MUTED).apply { setPadding(0, dp(8), 0, dp(24)) })
         section(content, "Automatic connection") { card ->
             toggle(card, "Connect when LeapCarPlay opens", "Use your last connection type and selected iPhone.", LeapCarPlayPreferences.autoConnect(this)) { LeapCarPlayPreferences.saveAutoConnect(this, it) }
-            toggle(card, "Open after the car starts", "Availability depends on your head unit’s startup settings.", AirPlayPersistence.loadAutoStartOnBoot(this)) { AirPlayPersistence.saveAutoStartOnBoot(this, it) }
             card.addView(button("Choose iPhone · ${LeapCarPlayPreferences.phoneName(this)}", false) { choosePhone() }, matchButton(12, 60))
         }
         section(content, "Wireless connection") { card -> wirelessLinkControls(card) }

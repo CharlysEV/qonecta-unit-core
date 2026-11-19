@@ -117,8 +117,18 @@ class CommManager(
     }
 
     /** IO-bound coroutine scope for all async connection work. SupervisorJob prevents one
-     *  failing child from cancelling the rest. */
-    private val _scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+     *  failing child from cancelling the rest. Recreated lazily if previously cancelled. */
+    @Volatile
+    private var _scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val connectMutex = kotlinx.coroutines.sync.Mutex()
+
+    private fun activeScope(): CoroutineScope {
+        val current = _scope
+        if (current.isActive) return current
+        val recreated = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        _scope = recreated
+        return recreated
+    }
 
     /** Cached answer of the Bluetooth media probe used by media-key routing, and when it was taken. */
     private var btMediaLinkCached: Boolean? = null
@@ -271,42 +281,45 @@ class CommManager(
      * connection so it can be auto-reconnected on the next launch.
      */
     suspend fun connect(device: UsbDevice) = withContext(Dispatchers.IO) {
-        // Another caller already started the connection — do nothing.
-        if (_connectionState.value is ConnectionState.Connecting)
-            return@withContext
-
-
-        lastAttemptedEndpoint = null
-
-        val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-        if (!usbManager.hasPermission(device)) {
-            _connectionState.emit(ConnectionState.Error("USB permission not granted for device"))
-            return@withContext
-        }
-
-        // Wait for any in-progress cleanup to finish before opening the USB device.
-        // Without this, openDevice() on the same hardware can return null because the previous
-        // UsbDeviceConnection hasn't been close()d yet.
-        _disconnectJob?.join()
-
+        if (!connectMutex.tryLock()) return@withContext
         try {
-            _connectionState.emit(ConnectionState.Connecting)
-            _connection?.disconnect()
-            _connection = if (settings.useLibusb) {
-                LibusbAccessoryConnection(usbManager, device)
-            } else {
-                UsbAccessoryConnection(usbManager, device)
+            // Another caller already started or holds a connection — do nothing.
+            if (isBusy) return@withContext
+
+            lastAttemptedEndpoint = null
+
+            val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+            if (!usbManager.hasPermission(device)) {
+                _connectionState.emit(ConnectionState.Error("USB permission not granted for device"))
+                return@withContext
             }
 
-            if (_connection?.connect() ?: false) {
-                settings.saveLastConnection(type = Settings.CONNECTION_TYPE_USB, usbDevice = UsbDeviceCompat.getUniqueName(device))
-                _connectionState.emit(ConnectionState.Connected)
-            } else {
-                _connectionState.emit(ConnectionState.Disconnected())
+            // Wait for any in-progress cleanup to finish before opening the USB device.
+            // Without this, openDevice() on the same hardware can return null because the previous
+            // UsbDeviceConnection hasn't been close()d yet.
+            _disconnectJob?.join()
+
+            try {
+                _connectionState.emit(ConnectionState.Connecting)
+                _connection?.disconnect()
+                _connection = if (settings.useLibusb) {
+                    LibusbAccessoryConnection(usbManager, device)
+                } else {
+                    UsbAccessoryConnection(usbManager, device)
+                }
+
+                if (_connection?.connect() ?: false) {
+                    settings.saveLastConnection(type = Settings.CONNECTION_TYPE_USB, usbDevice = UsbDeviceCompat.getUniqueName(device))
+                    _connectionState.emit(ConnectionState.Connected)
+                } else {
+                    _connectionState.emit(ConnectionState.Disconnected())
+                }
+            } catch (e: Exception) {
+                _connectionState.emit(ConnectionState.Error("Connection failed: ${e.message}"))
+                disconnect(sendByeBye = false, isUserExit = false)
             }
-        } catch (e: Exception) {
-            _connectionState.emit(ConnectionState.Error("Connection failed: ${e.message}"))
-            disconnect()
+        } finally {
+            connectMutex.unlock()
         }
     }
 
@@ -318,45 +331,43 @@ class CommManager(
      * sets up the AAP framing layer.
      */
     suspend fun connect(socket: Socket) = withContext(Dispatchers.IO) {
-        // Another caller already started the connection — do nothing.
-        if (_connectionState.value is ConnectionState.Connecting) {
-            // [BUG_FIX] But close what we are refusing. A socket handed to connect() has no
-            // other owner: NetworkDiscovery gives ownership up at this call, and WirelessServer's
-            // accept loop closes the sockets it refuses itself, so returning without closing
-            // leaves the peer holding a session nobody will ever read from. This guard is the
-            // only one of the three that did not, and it is the reachable one — isConnected
-            // deliberately excludes Connecting, and WirelessServer checks it from a detached
-            // coroutine, so two connections arriving together both get past it.
-            //
-            // The cost is worst on the head unit server path, where the server binds to one
-            // connection for the life of its process and an abandoned one leaves it deaf until
-            // the user restarts it by hand.
-            AppLog.i("CommManager: Connect already in progress; closing the handed-over socket")
-            try { socket.close() } catch (e: Exception) {}
+        if (!connectMutex.tryLock()) {
+            AppLog.i("CommManager: Connect already in progress (mutex); closing the handed-over socket")
+            try { socket.close() } catch (_: Exception) {}
             return@withContext
         }
-
-        lastAttemptedEndpoint = socket.inetAddress?.hostAddress?.let { "$it:${socket.port}" }
-
-        _disconnectJob?.join()
-
         try {
-            _connectionState.emit(ConnectionState.Connecting)
-            _connection?.disconnect()
-            _connection = SocketAccessoryConnection(socket, context)
-
-            if (_connection?.connect() ?: false) {
-                // [FIX] Don't overwrite NEARBY connection type with WIFI + localhost IP (::1)
-                if (socket !is NearbySocket) {
-                    settings.saveLastConnection(type = Settings.CONNECTION_TYPE_WIFI, ip = socket.inetAddress?.hostAddress ?: "")
-                }
-                _connectionState.emit(ConnectionState.Connected)
-            } else {
-                _connectionState.emit(ConnectionState.Disconnected())
+            // Another caller already started or holds a connection — refuse and close.
+            if (isBusy) {
+                AppLog.i("CommManager: Connect already in progress or active; closing the handed-over socket")
+                try { socket.close() } catch (_: Exception) {}
+                return@withContext
             }
-        } catch (e: Exception) {
-            _connectionState.emit(ConnectionState.Error("Connection failed: ${e.message}"))
-            disconnect()
+
+            lastAttemptedEndpoint = socket.inetAddress?.hostAddress?.let { "$it:${socket.port}" }
+
+            _disconnectJob?.join()
+
+            try {
+                _connectionState.emit(ConnectionState.Connecting)
+                _connection?.disconnect()
+                _connection = SocketAccessoryConnection(socket, context)
+
+                if (_connection?.connect() ?: false) {
+                    // [FIX] Don't overwrite NEARBY connection type with WIFI + localhost IP (::1)
+                    if (socket !is NearbySocket) {
+                        settings.saveLastConnection(type = Settings.CONNECTION_TYPE_WIFI, ip = socket.inetAddress?.hostAddress ?: "")
+                    }
+                    _connectionState.emit(ConnectionState.Connected)
+                } else {
+                    _connectionState.emit(ConnectionState.Disconnected())
+                }
+            } catch (e: Exception) {
+                _connectionState.emit(ConnectionState.Error("Connection failed: ${e.message}"))
+                disconnect(sendByeBye = false, isUserExit = false)
+            }
+        } finally {
+            connectMutex.unlock()
         }
     }
 
@@ -366,28 +377,32 @@ class CommManager(
      * Used by the manual IP entry flow and the NSD-discovered device list.
      */
     suspend fun connect(ip: String, port: Int) = withContext(Dispatchers.IO) {
-        // Another caller already started the connection — do nothing.
-        if (_connectionState.value is ConnectionState.Connecting)
-            return@withContext
-
-        lastAttemptedEndpoint = "$ip:$port"
-
-        _disconnectJob?.join()
-
+        if (!connectMutex.tryLock()) return@withContext
         try {
-            _connectionState.emit(ConnectionState.Connecting)
-            _connection?.disconnect()
-            _connection = SocketAccessoryConnection(ip, port, context)
+            // Another caller already started or holds a connection — do nothing.
+            if (isBusy) return@withContext
 
-            if (_connection?.connect() ?: false) {
-                settings.saveLastConnection(type = Settings.CONNECTION_TYPE_WIFI, ip = ip)
-                _connectionState.emit(ConnectionState.Connected)
-            } else {
-                _connectionState.emit(ConnectionState.Disconnected())
+            lastAttemptedEndpoint = "$ip:$port"
+
+            _disconnectJob?.join()
+
+            try {
+                _connectionState.emit(ConnectionState.Connecting)
+                _connection?.disconnect()
+                _connection = SocketAccessoryConnection(ip, port, context)
+
+                if (_connection?.connect() ?: false) {
+                    settings.saveLastConnection(type = Settings.CONNECTION_TYPE_WIFI, ip = ip)
+                    _connectionState.emit(ConnectionState.Connected)
+                } else {
+                    _connectionState.emit(ConnectionState.Disconnected())
+                }
+            } catch (e: Exception) {
+                _connectionState.emit(ConnectionState.Error("Connection failed: ${e.message}"))
+                disconnect(sendByeBye = false, isUserExit = false)
             }
-        } catch (e: Exception) {
-            _connectionState.emit(ConnectionState.Error("Connection failed: ${e.message}"))
-            disconnect()
+        } finally {
+            connectMutex.unlock()
         }
     }
 
@@ -462,7 +477,7 @@ class CommManager(
                     _connectionState.emit(
                         ConnectionState.Error(if (silent) ERROR_HANDSHAKE_PEER_SILENT else "Handshake failed")
                     )
-                    disconnect()
+                    disconnect(sendByeBye = false, isUserExit = false)
                     if (isUsb) {
                         onUsbHandshakeTimeout?.invoke()
                     }
@@ -476,7 +491,7 @@ class CommManager(
             // to age into a backoff that no longer describes what is happening.
             noteHandshakeOutcome(silent = false)
             _connectionState.emit(ConnectionState.Error("Handshake failed: ${e.message}"))
-            disconnect()
+            disconnect(sendByeBye = false, isUserExit = false)
             if (isUsb) {
                 onUsbHandshakeTimeout?.invoke()
             }
@@ -551,10 +566,9 @@ class CommManager(
                         staticAudioFocus = true,
                         audioSinkEnabled = true,
                         btMediaLinkActive = btMediaLinkActive)) {
-                    transport.aapAudio?.requestFocusChange(
+                    transport.aapAudio.requestFocusChange(
                         AudioManager.STREAM_MUSIC,
                         AudioManager.AUDIOFOCUS_GAIN,
-                        AudioManager.OnAudioFocusChangeListener { }
                     )
                 } else {
                     AppLog.i("CommManager: Static Audio Focus - leaving system audio focus alone " +
@@ -565,7 +579,7 @@ class CommManager(
             _connectionState.emit(ConnectionState.TransportStarted)
         } catch (e: Exception) {
             _connectionState.emit(ConnectionState.Error("Start reading failed: ${e.message}"))
-            disconnect()
+            disconnect(sendByeBye = false, isUserExit = false)
         }
     }
 
@@ -583,7 +597,7 @@ class CommManager(
         // as isUserExit=false and the service reconnected 1.5 s later (#35).
         _connectionState.value = ConnectionState.Disconnected(isClean, isUserExit = wasUserExit)
         // Transport already quit on its own — no ByeByeRequest needed (connection is dead).
-        _disconnectJob = _scope.launch { doDisconnect(sendByeBye = false) }
+        _disconnectJob = activeScope().launch { doDisconnect(sendByeBye = false) }
         if (settings.killOnDisconnect) {
             context.sendBroadcast(android.content.Intent("com.andrerinas.openheadunit.ACTION_FINISH_ACTIVITIES").apply {
                 setPackage(context.packageName)
@@ -608,7 +622,7 @@ class CommManager(
     // send() overloads — fire-and-forget; silently dropped if not TransportStarted
     // -----------------------------------------------------------------------------------------
 
-    private val keyStates = mutableMapOf<Int, KeyDebouncePolicy.KeyState>()
+    private val keyStates = java.util.concurrent.ConcurrentHashMap<Int, KeyDebouncePolicy.KeyState>()
 
     /**
      * Sends a key press or release event to the phone with remapping and de-duplication.
@@ -778,8 +792,8 @@ class CommManager(
 
         // open
         } else {
-            sendKey(KeyEvent.KEYCODE_SEARCH, false, null, "assistant") // up/down must be reversed
             sendKey(KeyEvent.KEYCODE_SEARCH, true, null, "assistant")
+            sendKey(KeyEvent.KEYCODE_SEARCH, false, null, "assistant")
         }
     }
 
@@ -790,6 +804,11 @@ class CommManager(
         transport.send(TouchEvent(
             ts,
             PointerAction.TOUCH_ACTION_DOWN,
+            0,
+            mutableListOf(Triple(0, 0, 0))))
+        transport.send(TouchEvent(
+            ts + 1,
+            PointerAction.TOUCH_ACTION_UP,
             0,
             mutableListOf(Triple(0, 0, 0))))
     }
@@ -895,7 +914,7 @@ class CommManager(
         if (isUserExit) {
             _transport?.wasUserExit = true
         }
-        _disconnectJob = _scope.launch { doDisconnect(sendByeBye) }
+        _disconnectJob = activeScope().launch { doDisconnect(sendByeBye) }
         if (settings.killOnDisconnect) {
             context.sendBroadcast(android.content.Intent("com.andrerinas.openheadunit.ACTION_FINISH_ACTIVITIES").apply {
                 setPackage(context.packageName)
@@ -935,11 +954,9 @@ class CommManager(
      * → [transportedQuited] → a second [doDisconnect] call — which now finds both fields null
      * and exits cleanly.
      *
-     * @param sendByeBye `true` (default) when the user initiates the disconnect — calls
-     *   `AapTransport.stop()`, which sends a `ByeByeRequest` to the phone and waits ~150 ms
-     *   for acknowledgement. `false` when the transport self-quit (read error, socket timeout):
-     *   the connection is already dead, so `AapTransport.quit()` is called directly to skip
-     *   the send and the sleep.
+     * When [sendByeBye] is true, sends `ByeByeRequest` first while the link is still open, then
+     * closes the physical [connection] BEFORE [AapTransport.quit] joins `pollThread` so any
+     * blocking `recvBlocking()` unblocks immediately instead of stalling 1s.
      */
     private fun doDisconnect(sendByeBye: Boolean = true) {
         // Capture and null out immediately to prevent a second doDisconnect() call
@@ -951,24 +968,19 @@ class CommManager(
         keyStates.clear()
         btMediaLinkCached = null
         btMediaLinkCheckedAt = null
-        // Counts frames over the whole session rather than reading lastFrameRenderedMs, which the
-        // decoder zeroes every time the projection surface goes away — leaving projection before
-        // disconnecting is normal, and would otherwise make every such session look starved.
-        // Self-guarding against the re-entrant second call described above: the flag is consumed
-        // here, so the second pass sees a session that never reached the handshake and counts
-        // nothing.
         noteSessionEnded(renderedAnyFrame = videoDecoder.framesRenderedThisSession > 0L)
         try {
-            // Only send ByeByeRequest when we are initiating the disconnect (e.g. user pressed
-            // disconnect). When the transport self-quit (read error, soTimeout), the connection
-            // is already dead — skip the send and the 150 ms sleep inside stop().
-            if (sendByeBye) transport?.stop() else transport?.quit()
+            if (sendByeBye) {
+                runCatching { transport?.sendByeByeOnly() }
+            }
+            // Close the underlying socket/USB pipe BEFORE joining pollThread in transport.quit()
+            // so a blocking read wakes immediately instead of stalling until join timeout.
+            runCatching { connection?.disconnect() }
+            runCatching { transport?.quit() }
 
             // Explicitly stop and release decoders to prevent MediaCodec finalize() timeouts
             videoDecoder.stop("CommManager: doDisconnect")
             audioDecoder.stop()
-
-            connection?.disconnect()
         } catch (e: Exception) {
             AppLog.e("doDisconnect error: ${e.message}")
         } finally {
@@ -1003,23 +1015,8 @@ class CommManager(
     }
 
     /**
-     * Performs a final disconnect and cancels the internal coroutine scope.
-     *
-     * Call this when the owning component (e.g. the foreground service) is destroyed.
-     * After [destroy], the CommManager instance must not be used again.
-     */
-    /**
      * Closes the session because the link carrying it is about to go away, and blocks until the
      * socket is actually closed or [timeoutMs] elapses. Never call from the main thread.
-     *
-     * Deliberately not [disconnect]. That one means "the user pressed Exit": it marks a user exit,
-     * which suppresses the reconnect, and it honours `killOnDisconnect`, which would finish the
-     * activities and stop the service. Neither is right for a WiFi toggle the user expects to come
-     * back from.
-     *
-     * Blocking is the whole point. [disconnect] only schedules the teardown, which is fine when
-     * something will still be running afterwards to notice; it is not fine when the interface is
-     * on its way down and what matters is that the close goes out before it.
      */
     fun disconnectForLinkLoss(timeoutMs: Long) {
         if (_connectionState.value is ConnectionState.Disconnected) return
@@ -1028,9 +1025,20 @@ class CommManager(
         // Not clean and not a user exit: an unexpected end the app should try to recover from,
         // which is what the existing reconnect paths already key on.
         _connectionState.value = ConnectionState.Disconnected(isClean = false, isUserExit = false)
-        val job = _scope.launch { doDisconnect(sendByeBye = true) }
+        val job = activeScope().launch { doDisconnect(sendByeBye = true) }
         _disconnectJob = job
         runBlocking { withTimeoutOrNull(timeoutMs) { job.join() } }
+    }
+
+    /**
+     * Tears down any active session when the owning foreground service is destroyed without
+     * permanently cancelling the singleton [CommManager]'s coroutine scope (so restarting
+     * [AapService] within the same process keeps working).
+     */
+    fun shutdownSession() {
+        HeadUnitScreenConfig.unlockResolution()
+        _connectionState.value = ConnectionState.Disconnected(isClean = false, isUserExit = false)
+        _disconnectJob = activeScope().launch { doDisconnect(sendByeBye = false) }
     }
 
     fun destroy() {

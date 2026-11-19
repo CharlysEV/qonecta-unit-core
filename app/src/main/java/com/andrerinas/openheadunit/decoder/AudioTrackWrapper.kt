@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Process
+import com.andrerinas.openheadunit.aap.protocol.Channel
 import com.andrerinas.openheadunit.utils.AppLog
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
@@ -45,7 +46,8 @@ class AudioTrackWrapper(
     private var decoder: MediaCodec? = null
     private var codecHandlerThread: HandlerThread? = null
     private val freeInputBuffers = LinkedBlockingQueue<Int>()
-    private val writeExecutor = Executors.newSingleThreadExecutor()
+    private val writeExecutor: java.util.concurrent.ExecutorService? =
+        if (isAac) Executors.newSingleThreadExecutor() else null
     private val writeSemaphore = java.util.concurrent.Semaphore(3)
     private var equalizer: Equalizer? = null
 
@@ -171,12 +173,21 @@ class AudioTrackWrapper(
 
                                 writeSemaphore.acquire()
                                 // Write to AudioTrack or Mixer using executor
-                                writeExecutor.submit {
+                                val exec = writeExecutor
+                                if (exec == null) {
+                                    writeSemaphore.release()
+                                } else {
                                     try {
-                                        writeToTrack(chunk)
-                                    } catch (e: Exception) {
-                                        AppLog.e("Error writing decoded AAC to AudioTrack", e)
-                                    } finally {
+                                        exec.submit {
+                                            try {
+                                                writeToTrack(chunk)
+                                            } catch (e: Exception) {
+                                                AppLog.e("Error writing decoded AAC to AudioTrack", e)
+                                            } finally {
+                                                writeSemaphore.release()
+                                            }
+                                        }
+                                    } catch (e: java.util.concurrent.RejectedExecutionException) {
                                         writeSemaphore.release()
                                     }
                                 }
@@ -371,18 +382,30 @@ class AudioTrackWrapper(
             if (bitDepth == 16) AudioFormat.ENCODING_PCM_16BIT else AudioFormat.ENCODING_PCM_8BIT
 
         val minBufferSize = AudioTrack.getMinBufferSize(sampleRateInHz, channelConfig, dataFormat)
-        val bufferSize = if (minBufferSize > 0) minBufferSize * multiplier else minBufferSize
+        val safeMin = if (minBufferSize > 0) {
+            minBufferSize
+        } else {
+            ((sampleRateInHz * bytesPerFrame) / 25).coerceAtLeast(4096)
+        }
+        val bufferSize = safeMin * multiplier.coerceAtLeast(1)
 
-        AppLog.i("Audio stream: $stream buffer size: $bufferSize (min: $minBufferSize) sampleRateInHz: $sampleRateInHz channelCount: $channelCount")
+        AppLog.i("Audio stream: $stream channel: $channelId buffer size: $bufferSize (min: $minBufferSize) sampleRateInHz: $sampleRateInHz channelCount: $channelCount")
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val (usage, contentType) = when (stream) {
-                AudioManager.STREAM_NOTIFICATION -> Pair(
-                    AudioAttributes.USAGE_NOTIFICATION,
-                    AudioAttributes.CONTENT_TYPE_SONIFICATION
+            // Never use USAGE_VOICE_COMMUNICATION on AAOS/LeapOS: it hijacks the car's
+            // hands-free HFP/Lyra voice bus. Route Assistant to USAGE_ASSISTANT,
+            // Navigation to USAGE_ASSISTANCE_NAVIGATION_GUIDANCE, and Media to USAGE_MEDIA.
+            val (usage, contentType) = when {
+                channelId == Channel.ID_AU1 -> Pair(
+                    AudioAttributes.USAGE_ASSISTANT,
+                    AudioAttributes.CONTENT_TYPE_SPEECH
                 )
-                AudioManager.STREAM_VOICE_CALL -> Pair(
-                    AudioAttributes.USAGE_VOICE_COMMUNICATION,
+                channelId == Channel.ID_AU2 -> Pair(
+                    AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE,
+                    AudioAttributes.CONTENT_TYPE_SPEECH
+                )
+                stream == AudioManager.STREAM_NOTIFICATION -> Pair(
+                    AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE,
                     AudioAttributes.CONTENT_TYPE_SPEECH
                 )
                 else -> Pair(
@@ -391,11 +414,14 @@ class AudioTrackWrapper(
                 )
             }
 
-            val audioAttributes = AudioAttributes.Builder()
+            val attrsBuilder = AudioAttributes.Builder()
                 .setUsage(usage)
                 .setContentType(contentType)
-                .setLegacyStreamType(stream)
-                .build()
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                @Suppress("DEPRECATION")
+                attrsBuilder.setLegacyStreamType(stream)
+            }
+            val audioAttributes = attrsBuilder.build()
 
             val audioFormat = AudioFormat.Builder()
                 .setSampleRate(sampleRateInHz)
@@ -463,6 +489,12 @@ class AudioTrackWrapper(
 
     fun stopPlayback() {
         isRunning = false
+        // Pause and flush before interrupting so any blocking AudioTrack.write() returns immediately
+        // instead of stalling teardown.
+        runCatching {
+            audioTrack?.pause()
+            audioTrack?.flush()
+        }
         this.interrupt()
     }
 
@@ -480,57 +512,52 @@ class AudioTrackWrapper(
         }
 
         // 2. Wait for AAC writes that were already submitted to the executor
-        writeExecutor.shutdown()
-        try {
-            if (!writeExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-                AppLog.w("Audio write executor did not terminate in time")
-                writeExecutor.shutdownNow()
+        writeExecutor?.let { exec ->
+            exec.shutdown()
+            try {
+                if (!exec.awaitTermination(1, TimeUnit.SECONDS)) {
+                    AppLog.w("Audio write executor did not terminate in time")
+                    exec.shutdownNow()
+                }
+            } catch (e: InterruptedException) {
+                AppLog.w("Audio write executor interrupted during shutdown")
+                exec.shutdownNow()
             }
-        } catch (e: InterruptedException) {
-            AppLog.w("Audio write executor interrupted during shutdown")
-            writeExecutor.shutdownNow()
+            Unit
         }
 
         if (mixer != null) {
             mixer.unregisterChannel(channelId)
         }
 
-        // 3. Gracefully stop the AudioTrack – stop() plays remaining buffer data
-        val track = audioTrack
-        if (track != null && track.playState == AudioTrack.PLAYSTATE_PLAYING) {
-            try {
-                track.stop()
+        // 3. Release optional HW DSP equalizer before tearing down AudioTrack
+        runCatching { equalizer?.release() }
+        equalizer = null
 
-                // Wait for the AudioTrack hardware buffer to drain.
-                // Especially important on older devices (KitKat etc.).
-                var lastPos = -1
-                var stagnantCount = 0
-                val startTime = System.currentTimeMillis()
-                while (System.currentTimeMillis() - startTime < 2500) {
-                    val pos = track.playbackHeadPosition
-                    if (framesWritten > 0 && pos >= framesWritten) break
-                    if (pos == lastPos && pos > 0) {
-                        stagnantCount++
-                        if (stagnantCount >= 3) break
-                    } else {
-                        lastPos = pos
-                        stagnantCount = 0
-                    }
-                    Thread.sleep(100)
+        // 4. Stop and flush the AudioTrack cleanly without a multi-second drain stall
+        val track = audioTrack
+        if (track != null) {
+            try {
+                if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                    track.pause()
+                    track.flush()
+                }
+                if (track.playState != AudioTrack.PLAYSTATE_STOPPED) {
+                    track.stop()
                 }
             } catch (e: Exception) {
                 AppLog.e("Error during audio track cleanup", e)
             }
         }
 
-        // 4. Release the AudioTrack
+        // 5. Release the AudioTrack
         try {
             audioTrack?.release()
         } catch (e: Exception) {
             AppLog.e("Error releasing audio track", e)
         }
 
-        // 5. Clean up the codec handler thread
+        // 6. Clean up the codec handler thread
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
                 codecHandlerThread?.quitSafely()

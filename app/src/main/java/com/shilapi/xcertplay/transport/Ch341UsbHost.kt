@@ -121,11 +121,16 @@ class Ch341UsbHost(
 
     private fun permissionPendingIntent(): PendingIntent {
         val intent = Intent(permissionAction).setPackage(appContext.packageName)
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
         return PendingIntent.getBroadcast(
             appContext,
             0,
             intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            flags,
         )
     }
 
@@ -278,7 +283,9 @@ class Ch341UsbSession internal constructor(
         if (transferred < 0) {
             // Android's bulkTransfer result does not identify whether the device timed out, NAKed,
             // or reported another USB failure. Do not manufacture a CH341 NAK classification.
-            clearEndpointHalt(endpoint, operation)
+            if (clearHaltOnFailure) {
+                clearEndpointHalt(endpoint, operation)
+            }
             throw I2cTransportException.DeviceUnavailable("CH341 bulk $operation failed or timed out")
         }
         return transferred

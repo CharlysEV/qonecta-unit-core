@@ -56,7 +56,9 @@ class LockdownCarKitClient(
         }
 
         val secureLockdown = LockdownPlistChannel(sessionTls)
-        var serviceStream: BlockingDuplexByteStream? = null
+        var serviceConnection: BlockingDuplexByteStream? = null
+        var readyStream: BlockingDuplexByteStream? = null
+        var transferred = false
         try {
             val response = secureLockdown.request(
                 LockdownPlistValue.Dictionary(
@@ -76,11 +78,11 @@ class LockdownCarKitClient(
             val enableServiceSsl = (response.entries["EnableServiceSSL"] as? LockdownPlistValue.Boolean)?.value
                 ?: false
 
-            val serviceConnection = host.connect(
+            serviceConnection = host.connect(
                 destinationPort = port.toInt(),
                 timeoutMillis = STEP_TIMEOUT_MILLIS,
             )
-            val readyStream = if (enableServiceSsl) {
+            readyStream = if (enableServiceSsl) {
                 TlsDuplexChannel.open(
                     underlying = serviceConnection,
                     pairRecord = pairRecord,
@@ -89,17 +91,13 @@ class LockdownCarKitClient(
             } else {
                 serviceConnection
             }
-            serviceStream = readyStream
             val ownedStream = CarkitServiceStream(readyStream, secureLockdown)
-            serviceStream = null
+            transferred = true
             return ownedStream
         } finally {
-            if (serviceStream != null) {
-                try {
-                    serviceStream.close()
-                } finally {
-                    secureLockdown.close()
-                }
+            if (!transferred) {
+                runCatching { (readyStream ?: serviceConnection)?.close() }
+                runCatching { secureLockdown.close() }
             }
         }
     }

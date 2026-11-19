@@ -211,22 +211,36 @@ class LibusbAccessoryConnection(private val usbMgr: UsbManager, private val devi
             isConnectedVal = false
         }
 
-        // Wait for active JNI transfers (readers/writers) to finish before freeing context.
-        // Capped at 1500ms because the JNI read timeout chunk is capped at 1000ms.
+        // Wait for active JNI transfers (readers/writers) to finish before freeing native context.
+        // Capped at 2500ms so a 2000ms bulk write or 1000ms bulk read completes cleanly instead of
+        // risking a native use-after-free on usbNative.close().
         val start = android.os.SystemClock.elapsedRealtime()
-        while (activeTransfers.get() > 0 && android.os.SystemClock.elapsedRealtime() - start < 1500) {
+        while (activeTransfers.get() > 0 && android.os.SystemClock.elapsedRealtime() - start < 2500) {
             try {
-                Thread.sleep(50)
+                Thread.sleep(25)
             } catch (e: InterruptedException) {
                 break
             }
         }
 
         synchronized(stateLock) {
-            try {
-                usbNative?.close()
-            } catch (e: Exception) {
-                AppLog.e("LibusbAccessoryConnection: Error closing native: ${e.message}")
+            if (activeTransfers.get() > 0) {
+                // Force kernel URB cancellation by closing the USB fd first, then give JNI a moment to unwind.
+                try { usbDeviceConnection?.close() } catch (_: Exception) {}
+                val abortStart = android.os.SystemClock.elapsedRealtime()
+                while (activeTransfers.get() > 0 && android.os.SystemClock.elapsedRealtime() - abortStart < 500) {
+                    try { Thread.sleep(25) } catch (_: InterruptedException) { break }
+                }
+            }
+
+            if (activeTransfers.get() == 0) {
+                try {
+                    usbNative?.close()
+                } catch (e: Exception) {
+                    AppLog.e("LibusbAccessoryConnection: Error closing native: ${e.message}")
+                }
+            } else {
+                AppLog.w("LibusbAccessoryConnection: skipping usbNative.close() while ${activeTransfers.get()} JNI transfer(s) remain active")
             }
             usbNative = null
             
@@ -255,7 +269,7 @@ class LibusbAccessoryConnection(private val usbMgr: UsbManager, private val devi
         activeTransfers.incrementAndGet()
         try {
             if (!isConnectedVal) return -1
-            return native.write(buf, length, timeout)
+            return native.write(buf, length, timeout.coerceIn(1, 2000))
         } finally {
             activeTransfers.decrementAndGet()
         }

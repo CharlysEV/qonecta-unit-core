@@ -2,6 +2,7 @@ package com.shilapi.xcertplay.media
 
 import android.media.AudioAttributes
 import android.media.AudioFormat as AndroidAudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
 import android.media.MediaCodec
 import android.media.MediaCodecList
@@ -18,6 +19,7 @@ import com.shilapi.xcertplay.airplay.toHexString
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -41,6 +43,8 @@ class AndroidMediaSink(
     onScreenStreamActiveChanged: ((Int, Boolean) -> Unit)? = null,
     private val mediaBufferMillis: Int = MediaAudioBuffer.DEFAULT_MILLIS,
     private val onAudioDiagnostic: (String) -> Unit = {},
+    audioManager: AudioManager? = null,
+    onExternalAudioFocusLost: () -> Unit = {},
 ) : MediaSink {
     private val screenStateLock = Any()
     private val activeScreenTypes = mutableSetOf<Int>()
@@ -53,6 +57,7 @@ class AndroidMediaSink(
     private val pendingVideoCodec = ConcurrentHashMap<Int, VideoCodec>()
     private val videoRecoveryHandlers = ConcurrentHashMap<Int, () -> Unit>()
     private val videoDiagnosticHandlers = ConcurrentHashMap<Int, (String) -> Unit>()
+    private val audioFocusController = CarPlayAudioFocusController(audioManager, onExternalAudioFocusLost)
     private val recoveryPending = AtomicBoolean(false)
     private val recoveryExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "carplay-video-recovery").apply { isDaemon = true }
@@ -78,12 +83,15 @@ class AndroidMediaSink(
     }
 
     fun setSurface(type: Int, surface: Surface) {
+        if (type == ALT_SCREEN_TYPE) return
         surfaces[type] = surface
         videoDecoders[type]?.setSurface(surface)
     }
 
     fun clearSurface(type: Int, surface: Surface) {
-        if (surfaces.remove(type, surface)) videoDecoders[type]?.setSurface(null)
+        if (surfaces.remove(type, surface)) {
+            videoDecoders[type]?.detachSurfaceSync()
+        }
     }
 
     fun setScreenStreamActiveChangedListener(listener: ((Int, Boolean) -> Unit)?) {
@@ -94,19 +102,23 @@ class AndroidMediaSink(
     }
 
     override fun onVideoCodec(type: Int, codec: VideoCodec) {
+        if (type == ALT_SCREEN_TYPE) return
         pendingVideoCodec[type] = codec
     }
 
     override fun onVideoConfig(type: Int, codecData: ByteArray) {
+        if (type == ALT_SCREEN_TYPE) return
         val codec = pendingVideoCodec[type] ?: VideoCodec.H264
         videoDecoder(type).configure(codec, codecData)
     }
 
     override fun onVideoFrame(type: Int, naluBytes: ByteArray) {
+        if (type == ALT_SCREEN_TYPE) return
         videoDecoder(type).submit(naluBytes)
     }
 
     override fun onScreenStreamActive(type: Int, active: Boolean) {
+        if (type == ALT_SCREEN_TYPE) return
         if (!active) {
             videoRecoveryHandlers.remove(type)
             videoDiagnosticHandlers.remove(type)
@@ -120,6 +132,16 @@ class AndroidMediaSink(
     }
 
     override fun onAudioStarted(type: Int, format: AudioFormat, firstSample: Int) {
+        val selection = AudioChannelMapper.map(
+            audioType = format.audioType,
+            payloadType = format.payloadType,
+            mode = if (advancedAudioChannelMapping) {
+                AudioChannelMappingMode.AUTOMOTIVE_BUS
+            } else {
+                AudioChannelMappingMode.MOBILE_COMPATIBLE
+            },
+        )
+        audioFocusController.onStreamStarted(type, selection.channel)
         audioRenderer(type, format).start()
     }
 
@@ -129,11 +151,11 @@ class AndroidMediaSink(
 
     override fun onAudioStopped(type: Int) {
         audioRenderers.remove(type)?.close()
+        audioFocusController.onStreamStopped(type)
     }
 
     override fun onMicrophoneStarted(type: Int, config: MicrophoneConfig) {
-        val uplink = microphoneUplinks.computeIfAbsent(type) { MicrophoneUplink(config) }
-        if (!uplink.start()) microphoneUplinks.remove(type, uplink)
+        // Core C10 safety invariant: never open head-unit AudioRecord / VOICE_COMMUNICATION.
     }
 
     override fun onMicrophoneStopped(type: Int) {
@@ -153,6 +175,7 @@ class AndroidMediaSink(
         recoveryExecutor.shutdownNow()
         audioRenderers.values.forEach(AudioRenderer::close)
         audioRenderers.clear()
+        audioFocusController.releaseAll()
         microphoneUplinks.values.forEach(MicrophoneUplink::close)
         microphoneUplinks.clear()
     }
@@ -218,12 +241,41 @@ private class VideoDecoder(
     }
 
     fun setSurface(surface: Surface?) {
-        queue.offer(VideoJob.SurfaceChanged(surface))
+        if (surface == null) {
+            queue.offerPriority(VideoJob.SurfaceChanged(null))
+        } else {
+            queue.offer(VideoJob.SurfaceChanged(surface))
+        }
+    }
+
+    /**
+     * Synchronously detaches the active Surface (bounded wait) so TextureView / Activity teardown
+     * never calls `surface.release()` while Qualcomm `c2.qti.avc.decoder` is still attached.
+     */
+    fun detachSurfaceSync(timeoutMillis: Long = SURFACE_DETACH_TIMEOUT_MS) {
+        if (!running) return
+        val latch = CountDownLatch(1)
+        queue.offerPriority(VideoJob.SurfaceChanged(null, latch))
+        if (Thread.currentThread() !== thread) {
+            try {
+                latch.await(timeoutMillis, TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
     }
 
     override fun close() {
         running = false
+        queue.offerPriority(VideoJob.SurfaceChanged(null))
         thread.interrupt()
+        if (Thread.currentThread() !== thread) {
+            try {
+                thread.join(CLOSE_JOIN_TIMEOUT_MS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
     }
 
     private fun run() {
@@ -236,17 +288,24 @@ private class VideoDecoder(
                         is VideoJob.Frame -> {
                             if (System.nanoTime() - job.receivedNs > MAX_FRAME_AGE_NS) {
                                 queue.discardFrames()
-                                recover("video backlog exceeded 250 ms")
+                                recoverSoft("video backlog exceeded 250 ms")
                             } else feed(job.nalus)
                         }
-                        is VideoJob.SurfaceChanged -> changeSurface(job.surface)
-                        is VideoJob.Resync -> recover("video queue overflow")
+                        is VideoJob.SurfaceChanged -> {
+                            try {
+                                changeSurface(job.surface)
+                            } finally {
+                                job.done?.countDown()
+                            }
+                        }
+                        is VideoJob.Resync -> recoverSoft("video queue overflow")
                         null -> Unit
                     }
                     decoder?.let(::drainOutput)
                     stats.logIfDue()?.let(report)
                     if (referenceChain.needsKeyFrame && lastConfig != null && outputSurface != null) requestKeyFrameIfDue()
                 } catch (error: Exception) {
+                    if (job is VideoJob.SurfaceChanged) job.done?.countDown()
                     if (running) Log.e(TAG, "video decoder job failed: ${job?.javaClass?.simpleName}", error)
                     if (running) report("decoder error ${error.javaClass.simpleName}; waiting for keyframe")
                     releaseDecoder()
@@ -279,38 +338,63 @@ private class VideoDecoder(
         releaseDecoder()
         referenceChain.reset()
         val surface = outputSurface ?: return
+        if (!surface.isValid) {
+            Log.w(TAG, "video decoder configure skipped: surface is no longer valid")
+            return
+        }
         val codec = config.codec
         val codecData = config.codecData
         val mime = if (codec == VideoCodec.H265) MediaFormat.MIMETYPE_VIDEO_HEVC
         else MediaFormat.MIMETYPE_VIDEO_AVC
-        val format = MediaFormat.createVideoFormat(mime, width, height).apply {
-            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_SIZE)
-            setInteger(MediaFormat.KEY_PRIORITY, 0)
-        }
-        if (codec == VideoCodec.H265) {
-            val csd = MediaCodecSupport.hevcCodecSpecificData(codecData)
-            if (csd.isNotEmpty()) format.setByteBuffer("csd-0", ByteBuffer.wrap(csd))
-        } else {
-            val (sps, pps) = MediaCodecSupport.avcParameterSets(codecData)
-            if (sps.isNotEmpty()) format.setByteBuffer("csd-0", ByteBuffer.wrap(START_CODE + sps))
-            if (pps.isNotEmpty()) format.setByteBuffer("csd-1", ByteBuffer.wrap(START_CODE + pps))
-        }
-        var candidate: MediaCodec? = null
-        val next = try {
-            createDecoder(mime).also {
-                candidate = it
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                    it.codecInfo.getCapabilitiesForType(mime).isFeatureSupported("low-latency")) {
-                    format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+
+        fun buildFormat(includeLowLatency: Boolean, includePriority: Boolean): MediaFormat =
+            MediaFormat.createVideoFormat(mime, width, height).apply {
+                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_SIZE)
+                if (includePriority) setInteger(MediaFormat.KEY_PRIORITY, 0)
+                if (includeLowLatency && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
                 }
-                it.configure(format, surface, null, 0)
-                it.start()
+                if (codec == VideoCodec.H265) {
+                    val csd = MediaCodecSupport.hevcCodecSpecificData(codecData)
+                    if (csd.isNotEmpty()) setByteBuffer("csd-0", ByteBuffer.wrap(csd))
+                } else {
+                    val (sps, pps) = MediaCodecSupport.avcParameterSets(codecData)
+                    if (sps.isNotEmpty()) setByteBuffer("csd-0", ByteBuffer.wrap(START_CODE + sps))
+                    if (pps.isNotEmpty()) setByteBuffer("csd-1", ByteBuffer.wrap(START_CODE + pps))
+                }
             }
-        } catch (error: Exception) {
-            runCatching { candidate?.release() }
-            Log.e(TAG, "video decoder configure failed mime=$mime size=${width}x$height", error)
-            report("decoder configuration failed mime=$mime size=${width}x$height error=${error.javaClass.simpleName}")
-            null
+
+        // 3-step configure ladder: some Qualcomm/Automotive MediaCodecs reject KEY_PRIORITY or KEY_LOW_LATENCY.
+        val attempts = listOf(
+            Pair(true, true),
+            Pair(true, false),
+            Pair(false, false),
+        )
+        var next: MediaCodec? = null
+        var lastError: Exception? = null
+        for ((tryLowLatency, tryPriority) in attempts) {
+            var candidate: MediaCodec? = null
+            try {
+                val created = createDecoder(mime)
+                candidate = created
+                val supportsLowLatency = tryLowLatency &&
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                    runCatching {
+                        created.codecInfo.getCapabilitiesForType(mime).isFeatureSupported("low-latency")
+                    }.getOrDefault(false)
+                val fmt = buildFormat(includeLowLatency = supportsLowLatency, includePriority = tryPriority)
+                created.configure(fmt, surface, null, 0)
+                created.start()
+                next = created
+                break
+            } catch (error: Exception) {
+                lastError = error
+                runCatching { candidate?.release() }
+            }
+        }
+        if (next == null && lastError != null) {
+            Log.e(TAG, "video decoder configure failed mime=$mime size=${width}x$height", lastError)
+            report("decoder configuration failed mime=$mime size=${width}x$height error=${lastError.javaClass.simpleName}")
         }
         decoder = next
         renderedFrameLogged = false
@@ -402,6 +486,24 @@ private class VideoDecoder(
         drainOutput(codec)
     }
 
+    private fun recoverSoft(reason: String) {
+        val active = decoder
+        if (active != null && renderedFrameLogged) {
+            try {
+                Log.w(TAG, "Video soft recovery (flush): $reason; waiting for keyframe")
+                stats.onRecovery()
+                report("soft recovery: $reason; waiting for keyframe")
+                active.flush()
+                referenceChain.reset()
+                requestKeyFrameIfDue()
+                return
+            } catch (error: Exception) {
+                Log.w(TAG, "Video flush failed, falling back to full decoder rebuild", error)
+            }
+        }
+        recover(reason)
+    }
+
     private fun recover(reason: String) {
         Log.w(TAG, "Video recovery: $reason; waiting for keyframe")
         stats.onRecovery()
@@ -483,9 +585,11 @@ private class VideoDecoder(
     private companion object {
         const val TAG = "xcertplay-usb"
         const val ALT_SCREEN_TYPE = 111
-        const val MAX_INPUT_SIZE = 8 * 1024 * 1024
+        const val MAX_INPUT_SIZE = 2 * 1024 * 1024
         const val INPUT_TIMEOUT_US = 10_000L
         const val MAX_FRAME_AGE_NS = 250_000_000L
+        const val SURFACE_DETACH_TIMEOUT_MS = 600L
+        const val CLOSE_JOIN_TIMEOUT_MS = 1_000L
         val START_CODE = byteArrayOf(0x00, 0x00, 0x00, 0x01)
     }
 }
@@ -514,7 +618,7 @@ private class AudioRenderer(
     @Volatile private var running = true
     @Volatile private var started = false
     private var codec: MediaCodec? = null
-    private var track: AudioTrack? = null
+    @Volatile private var track: AudioTrack? = null
     private var pcm = ByteArray(64 * 1024)
     private var playbackStarted = false
     private var prebufferBytes = 0
@@ -567,7 +671,21 @@ private class AudioRenderer(
 
     override fun close() {
         running = false
+        // Unblock any AudioTrack.write(WRITE_BLOCKING) call (native write ignores Thread.interrupt()).
+        val activeTrack = track
+        if (activeTrack != null) {
+            runCatching { activeTrack.pause() }
+            runCatching { activeTrack.flush() }
+            runCatching { activeTrack.stop() }
+        }
         thread.interrupt()
+        if (started && Thread.currentThread() !== thread) {
+            try {
+                thread.join(500L)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
     }
 
     private fun run() {
@@ -645,18 +763,28 @@ private class AudioRenderer(
         val plan = MediaAudioBuffer.plan(format.audioType, format.sampleRate, format.channels, minBuffer, mediaBufferMillis)
         val frameBytes = if (format.channels >= 2) 4 else 2
         bytesPerSecond = format.sampleRate * frameBytes
-        val built = AudioTrack.Builder()
-            .setAudioAttributes(audioAttributes())
-            .setAudioFormat(
-                AndroidAudioFormat.Builder()
-                    .setEncoding(encoding)
-                    .setSampleRate(format.sampleRate)
-                    .setChannelMask(channelMask)
-                    .build(),
-            )
-            .setBufferSizeInBytes(plan.trackBufferBytes)
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
+        val built = try {
+            AudioTrack.Builder()
+                .setAudioAttributes(audioAttributes())
+                .setAudioFormat(
+                    AndroidAudioFormat.Builder()
+                        .setEncoding(encoding)
+                        .setSampleRate(format.sampleRate)
+                        .setChannelMask(channelMask)
+                        .build(),
+                )
+                .setBufferSizeInBytes(plan.trackBufferBytes)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+        } catch (error: Exception) {
+            Log.e(TAG, "AudioTrack creation failed audioType=${format.audioType}", error)
+            return
+        }
+        if (built.state != AudioTrack.STATE_INITIALIZED) {
+            Log.e(TAG, "AudioTrack failed to initialize audioType=${format.audioType} state=${built.state}")
+            runCatching { built.release() }
+            return
+        }
         track = built
         val capacityBytes = built.bufferSizeInFrames * frameBytes
         startThresholdBytes = MediaAudioBuffer.startBytesFor(plan.startBytes, capacityBytes, PREBUFFER_WRITE_CHUNK_BYTES)
@@ -709,7 +837,9 @@ private class AudioRenderer(
 
     private fun usageFor(channel: AudioChannel): Int = when (channel) {
         AudioChannel.MEDIA -> AudioAttributes.USAGE_MEDIA
-        AudioChannel.PHONE -> AudioAttributes.USAGE_VOICE_COMMUNICATION
+        // Never open USAGE_VOICE_COMMUNICATION on Leapmotor C10: it collides with
+        // com.aispeech.lyra.daemon / BT HFP voice bus.
+        AudioChannel.PHONE -> AudioAttributes.USAGE_MEDIA
         AudioChannel.ASSISTANT -> AudioAttributes.USAGE_ASSISTANT
         AudioChannel.NAVIGATION -> AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
     }

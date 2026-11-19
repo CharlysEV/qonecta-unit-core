@@ -125,6 +125,15 @@ class TextureProjectionView @JvmOverloads constructor(
 
     override fun longFrameEvents(): Long = longFrameEventsValue
 
+    /** Returns the tracked Surface for the current SurfaceTexture, creating it once if needed. */
+    fun getOrCreateSurface(): Surface? {
+        val current = surface
+        if (current != null && current.isValid) return current
+        val st = surfaceTexture ?: return null
+        current?.release()
+        return Surface(st).also { surface = it }
+    }
+
     // ----------------------------------------------------------------
     // Callbacks
     // ----------------------------------------------------------------

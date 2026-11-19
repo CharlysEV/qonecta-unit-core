@@ -120,11 +120,13 @@ class IapTunnel(
                 return
             }
             accepted.setSoLinger(true, 0)
+            accepted.tcpNoDelay = true
             socket = accepted
             readCounter.set(0)
             peerConnected.countDown()
             listener.onOpen(accepted.remoteSocketAddress?.toString())
             run(accepted)
+            return
         }
     }
 
@@ -157,7 +159,7 @@ class IapTunnel(
         } finally {
             if (socket === sock) socket = null
             safeClose(sock)
-            if (!closed.get() && failure != null) listener.onClosed(failure)
+            if (!closed.get()) listener.onClosed(failure)
         }
     }
 

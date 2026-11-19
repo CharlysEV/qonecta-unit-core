@@ -136,7 +136,8 @@ class NativeAaHandshakeManager(
     // closeAaListeners()) without taking down the HFP ones too.
     private val extraAaServerSockets = java.util.Collections.synchronizedList(mutableListOf<BluetoothServerSocket>())
     private val extraHfpServerSockets = java.util.Collections.synchronizedList(mutableListOf<BluetoothServerSocket>())
-    private var isRunning = false
+    private val serverJobs = java.util.Collections.synchronizedList(mutableListOf<Job>())
+    @Volatile private var isRunning = false
     // Set by closeAaListeners() so the AA accept loops can tell "we closed this on purpose
     // after a successful handoff" apart from a real socket error, for logging only.
     @Volatile private var aaListenersClosedForSession = false
@@ -314,7 +315,7 @@ class NativeAaHandshakeManager(
         AppLog.i("NativeAA: Starting Bluetooth Handshake Servers (primary radio [$localRadioName])...")
 
         // Start AA RFCOMM Server
-        scope.launch(Dispatchers.IO + CoroutineName("NativeAa-RfcommServer")) {
+        val primaryAaJob = scope.launch(Dispatchers.IO + CoroutineName("NativeAa-RfcommServer")) {
             try {
                 aaServerSocket = adapter.listenUsingRfcommWithServiceRecord("AA BT Listener", AA_UUID)
                 AppLog.i("NativeAA: ACTIVELY LISTENING on Android Auto UUID ($AA_UUID) on radio [$localRadioName]... Waiting for phone to connect back!")
@@ -339,43 +340,16 @@ class NativeAaHandshakeManager(
                 }
             }
         }
+        serverJobs.add(primaryAaJob)
 
-        // Start HFP RFCOMM Server (Required by some phones to detect HU)
-        scope.launch(Dispatchers.IO + CoroutineName("NativeAa-HfpServer")) {
-            try {
-                hfpServerSocket = adapter.listenUsingRfcommWithServiceRecord("Hands-Free Unit", HFP_UUID)
-                while (isRunning && isActive) {
-                    val socket = hfpServerSocket?.accept()
-                    if (socket != null) {
-                        logHfpAccept(socket, localRadioName)
-                        scope.launch(Dispatchers.IO + CoroutineName("NativeAa-HfpResponder-${socket.remoteDevice.address}")) {
-                            handleHfp(socket)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                if (isRunning) {
-                    AppLog.e("NativeAA: HFP Server socket error: ${e.message}", e)
-                } else {
-                    AppLog.d("NativeAA: HFP Server socket closed cleanly.")
-                }
-            }
-        }
+        // Core mode: Do NOT open an HFP_UUID RFCOMM server ("Hands-Free Unit") on OEM head units
+        // (Leapmotor C10 / LeapOS). The car's native Bluetooth stack owns HFP for phone calls;
+        // accepting HFP sockets here silently hijacks incoming/outgoing call audio.
 
-        // Some head units have two Bluetooth radios (e.g. "K706" and "CAR8032"). The phone may
-        // be bonded to whichever one isn't the primary, so it never reaches the listener above.
-        // Match radios by system service name, not MAC address: BluetoothAdapter.getAddress()
-        // returns the fixed placeholder "02:00:00:00:00:00" for any non-privileged app since
-        // Android 6.0 (API 23), on every device - primary and secondary always look identical
-        // by address alone.
         val handles = try {
             BluetoothHelper.getAllBluetoothAdapterHandles(context)
         } catch (e: Exception) { emptyList() }
 
-        // Manual fallback: some ROMs' second radio isn't discoverable via
-        // ServiceManager.listServices() at all (blocked, or named without "bluetooth"), so
-        // automatic enumeration never finds it. Let the user force it by exact system service
-        // name instead.
         val manualServiceName = settings.manualSecondaryBluetoothServiceName
         val allHandles = if (manualServiceName.isNotEmpty() && handles.none { it.serviceName == manualServiceName }) {
             val manualHandle = try { BluetoothHelper.getAdapterHandleForService(context, manualServiceName) } catch (e: Exception) { null }
@@ -400,15 +374,13 @@ class NativeAaHandshakeManager(
     }
 
     /**
-     * Open supplementary AA + HFP RFCOMM listeners on a secondary Bluetooth radio, so a phone
-     * bonded to that radio (dual-Bluetooth head units) can still reach us. Experimental, and
-     * fully guarded so a bad radio cannot affect the primary listener.
+     * Open supplementary AA RFCOMM listener on a secondary Bluetooth radio, so a phone
+     * bonded to that radio (dual-Bluetooth head units) can still reach us. HFP is intentionally
+     * not advertised here so native OEM hands-free calls remain untouched.
      */
     private fun launchExtraServers(serviceName: String, extra: BluetoothAdapter) {
-        // extra.name, not extra.address - see the comment on localRadioName in start(); the
-        // address is always the masked placeholder, the name is the real, useful identifier.
         val radioName = try { extra.name ?: "?" } catch (e: Exception) { "?" }
-        scope.launch(Dispatchers.IO + CoroutineName("NativeAa-RfcommServer-2")) {
+        val extraAaJob = scope.launch(Dispatchers.IO + CoroutineName("NativeAa-RfcommServer-2")) {
             try {
                 val server = extra.listenUsingRfcommWithServiceRecord("AA BT Listener", AA_UUID)
                 extraAaServerSockets.add(server)
@@ -429,24 +401,7 @@ class NativeAaHandshakeManager(
                 else AppLog.d("NativeAA: Secondary AA server closed cleanly ['$serviceName' $radioName].")
             }
         }
-        scope.launch(Dispatchers.IO + CoroutineName("NativeAa-HfpServer-2")) {
-            try {
-                val server = extra.listenUsingRfcommWithServiceRecord("Hands-Free Unit", HFP_UUID)
-                extraHfpServerSockets.add(server)
-                while (isRunning && isActive) {
-                    val socket = server.accept()
-                    if (socket != null) {
-                        logHfpAccept(socket, "$serviceName $radioName")
-                        scope.launch(Dispatchers.IO + CoroutineName("NativeAa-HfpResponder-${socket.remoteDevice.address}")) {
-                            handleHfp(socket)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                if (isRunning) AppLog.e("NativeAA: Secondary HFP server error ['$serviceName' $radioName]: ${e.message}", e)
-                else AppLog.d("NativeAA: Secondary HFP server closed cleanly ['$serviceName' $radioName].")
-            }
-        }
+        serverJobs.add(extraAaJob)
     }
 
     /**
@@ -1440,7 +1395,9 @@ class NativeAaHandshakeManager(
         val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
         cos.writeString(1, ssid)
         cos.writeString(2, key)
-        cos.writeString(3, bssid.orEmpty())
+        if (!bssid.isNullOrBlank()) {
+            cos.writeString(3, bssid)
+        }
         cos.writeEnum(4, securityMode)
         cos.writeEnum(5, apType)
         for (ch in channels) {
@@ -1506,7 +1463,9 @@ class NativeAaHandshakeManager(
         val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
         cos.writeString(1, ssid)
         cos.writeString(2, key)
-        cos.writeString(3, bssid.orEmpty())
+        if (!bssid.isNullOrBlank()) {
+            cos.writeString(3, bssid)
+        }
         cos.writeEnum(4, Wireless.SecurityMode.WPA2_PERSONAL_VALUE)
         cos.writeEnum(5, Wireless.AccessPointType.DYNAMIC_VALUE)
         for (ch in DEFAULT_5GHZ_CHANNELS_MHZ) {
@@ -1552,27 +1511,23 @@ class NativeAaHandshakeManager(
             extraHfpServerSockets.forEach { try { it.close() } catch (e: Exception) {} }
             extraHfpServerSockets.clear()
         }
+        synchronized(serverJobs) {
+            serverJobs.forEach { it.cancel() }
+            serverJobs.clear()
+        }
         aaServerSocket = null
         hfpServerSocket = null
         credentials = null
         pokeJob?.cancel()
         pokeJob = null
         lastPokeTriggerCredentials = null
-        // Neither a handshake nor a settle can outlive the manager: leaving these set would keep
-        // isAttemptInFlight() true across a restart, blocking the very poke the next start()
-        // needs.
         handshakeStartedAt = 0L
         handoffSettlingSince = 0L
-        // Cancel before dropping the reference, for the same reason a supersede does: the socket
-        // this manager just closed does not necessarily end the coroutine reading from it.
         activeHandshakeJob?.cancel()
         activeHandshakeJob = null
+        try { activeHandshakeSocket?.close() } catch (_: Exception) {}
         activeHandshakeSocket = null
-        // Only the per-attempt count resets: everAcceptedAaConnection is deliberately kept, so a
-        // unit that has connected before is not warned just because the manager was re-armed.
         pokesSinceLastAccept = 0
-        // A mode change or a user exit is a fresh start, so the next start() serves handshakes
-        // again rather than inheriting a backoff the user cannot see.
         resetHandshakeBackoff()
     }
 }

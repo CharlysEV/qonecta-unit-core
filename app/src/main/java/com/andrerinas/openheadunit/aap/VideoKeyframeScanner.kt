@@ -41,6 +41,7 @@ object VideoKeyframeScanner {
      * keeps this off the profile on a path that runs per frame at 60fps.
      */
     private const val MAX_NAL_HEADERS_SCANNED = 8
+    private const val MAX_BYTES_SCANNED = 1024
 
     /**
      * Whether the access unit in [data] between [offset] and [offset] + [size] contains a keyframe.
@@ -49,7 +50,8 @@ object VideoKeyframeScanner {
      */
     fun containsKeyframe(data: ByteArray, offset: Int, size: Int, isHevc: Boolean): Boolean {
         if (size < 4) return false
-        val end = (offset + size).coerceAtMost(data.size)
+        val rawEnd = (offset + size).coerceAtMost(data.size)
+        val end = rawEnd.coerceAtMost(offset + MAX_BYTES_SCANNED)
         var i = offset
         var headersSeen = 0
 
@@ -61,12 +63,17 @@ object VideoKeyframeScanner {
             }
             headersSeen++
             val b = data[headerPos].toInt()
-            val isKeyframe = if (isHevc) {
-                ((b and 0x7E) shr 1) in HEVC_IRAP_RANGE
+            if (isHevc) {
+                val nalType = (b and 0x7E) shr 1
+                if (nalType in HEVC_IRAP_RANGE) return true
+                // Non-IRAP VCL slice (0..15): an access unit never mixes non-IRAP and IRAP slices.
+                if (nalType in 0..15) return false
             } else {
-                (b and 0x1F) == AVC_NAL_IDR
+                val nalType = b and 0x1F
+                if (nalType == AVC_NAL_IDR) return true
+                // Non-IDR VCL slice (1..4): stop immediately instead of scanning compressed slice bytes.
+                if (nalType in 1..4) return false
             }
-            if (isKeyframe) return true
             i = headerPos + 1
         }
         return false

@@ -394,6 +394,16 @@ class CarPlayHostActivity : ComponentActivity() {
         if (intent.action == "android.hardware.usb.action.USB_DEVICE_ATTACHED") {
             AirPlayPersistence.saveWirelessEnabled(this, false)
         }
+        // Yield Android Auto wireless P2P/BT/active session before CarPlay claims the radios or USB.
+        if (!simulateIphone) {
+            runCatching {
+                startService(
+                    Intent(this, com.andrerinas.openheadunit.aap.AapService::class.java).apply {
+                        action = com.andrerinas.openheadunit.aap.AapService.ACTION_STOP_WIRELESS
+                    },
+                )
+            }
+        }
         if (runCatching { LeapCarPlayBootstrap.ensure(this) }.isFailure) {
             startActivity(Intent(this, LeapCarPlayActivity::class.java))
             finish(); return
@@ -560,10 +570,14 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.action == "android.hardware.usb.action.USB_DEVICE_ATTACHED" && wirelessEnabled) {
+        if (intent.action == "android.hardware.usb.action.USB_DEVICE_ATTACHED" && (wirelessEnabled || simulateIphone)) {
+            val appCtx = applicationContext
             shutdown(false, "switching to USB") {
-                AirPlayPersistence.saveWirelessEnabled(this, false)
-                startActivity(Intent(this, CarPlayHostActivity::class.java))
+                AirPlayPersistence.saveWirelessEnabled(appCtx, false)
+                appCtx.startActivity(
+                    Intent(appCtx, CarPlayHostActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                )
             }
             finish()
         }
@@ -585,6 +599,37 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        // NEVER intercept volume keys on Leapmotor C10 — let com.leapmotor.volumecontrol own them.
+        when (event.keyCode) {
+            android.view.KeyEvent.KEYCODE_VOLUME_UP,
+            android.view.KeyEvent.KEYCODE_VOLUME_DOWN,
+            android.view.KeyEvent.KEYCODE_VOLUME_MUTE -> return super.dispatchKeyEvent(event)
+        }
+        val session = activeAirPlaySession
+        if (session != null && !menuOpen && event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            val mediaIndex = when (event.keyCode) {
+                android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> 1
+                android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> 2
+                android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                android.view.KeyEvent.KEYCODE_HEADSETHOOK -> 3
+                android.view.KeyEvent.KEYCODE_MEDIA_NEXT -> 4
+                android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> 5
+                else -> null
+            }
+            if (mediaIndex != null) {
+                val settings = com.andrerinas.openheadunit.App.provide(this).settings
+                val btMediaLink = com.andrerinas.openheadunit.utils.BluetoothHelper.a2dpMediaLinkState(this)
+                if (com.andrerinas.openheadunit.aap.MediaKeyRoutingPolicy.shouldForward(
+                        settings.mediaKeyRouting,
+                        true,
+                        btMediaLink,
+                    )
+                ) {
+                    runCatching { airPlayCommandExecutor.execute { session.sendMedia(mediaIndex) } }
+                    return true
+                }
+            }
+        }
         return super.dispatchKeyEvent(event)
     }
 
@@ -630,6 +675,23 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         currentSurface = null
         currentSurfaceTexture = null
+        // Always tear down simulator resources (and any non-background-owned sink) on Activity destroy.
+        val simToClose = simulator
+        simulator = null
+        val ownedByBackground = CarPlayBackgroundSession.hasSession() && CarPlayBackgroundSession.isOwner(this)
+        val sinkToClose = if (!ownedByBackground) sink.also { sink = null } else null
+        if (simToClose != null || sinkToClose != null) {
+            runCatching {
+                teardownExecutor.execute {
+                    runCatching { simToClose?.close() }
+                    runCatching { sinkToClose?.close() }
+                }
+            }
+        }
+        if (!ownedByBackground && !shuttingDown.get()) {
+            airPlayCommandExecutor.shutdown()
+            teardownExecutor.shutdown()
+        }
         sessionLog?.append("Activity destroyed")
         sessionLog?.close()
         sessionLog = null
@@ -2807,12 +2869,13 @@ class CarPlayHostActivity : ComponentActivity() {
     ): AndroidMediaSink {
         // Capture this session's log: late decoder shutdown must not write into a new session.
         val diagnosticLog = sessionLog
+        val audioManager = getSystemService(android.media.AudioManager::class.java)
         return AndroidMediaSink(
             surface = null,
             videoWidth = videoWidth,
             videoHeight = videoHeight,
-            alternateVideoWidth = clusterDisplaySize?.width,
-            alternateVideoHeight = clusterDisplaySize?.height,
+            alternateVideoWidth = null,
+            alternateVideoHeight = null,
             preferSoftwareHevcDecoder = hevcSoftwareDecoderEnabled,
             advancedAudioChannelMapping = advancedAudioChannelMapping,
             onScreenStreamActiveChanged = { type, active ->
@@ -2821,6 +2884,17 @@ class CarPlayHostActivity : ComponentActivity() {
             mediaBufferMillis = AirPlayPersistence.loadMediaBufferMillis(this),
             onAudioDiagnostic = { message ->
                 diagnosticLog?.append(formattedLogLine(message, System.currentTimeMillis()))
+            },
+            audioManager = audioManager,
+            onExternalAudioFocusLost = {
+                val session = activeAirPlaySession
+                if (session != null && !shuttingDown.get()) {
+                    runCatching {
+                        airPlayCommandExecutor.execute {
+                            session.sendMedia(2) // HID Consumer Pause
+                        }
+                    }
+                }
             },
         )
     }
@@ -2903,7 +2977,11 @@ class CarPlayHostActivity : ComponentActivity() {
                     wifiRecoveryButton?.visibility = View.VISIBLE
                 } else {
                     wifiRecoveryButton?.visibility = View.GONE
-                    reconnectAfterLoss(description)
+                    if (status.retryable) {
+                        reconnectAfterLoss(description)
+                    } else {
+                        appendLog("CarPlay paused on non-retryable error: $description")
+                    }
                 }
                 else -> Unit
             }
@@ -3161,6 +3239,11 @@ class CarPlayHostActivity : ComponentActivity() {
         if (!CarPlayBackgroundSession.isOwner(this)) return
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress) return
         if (reconnectScheduled) return
+        if (reconnectAttempts >= MAX_AUTO_RECONNECT_ATTEMPTS) {
+            appendLog("CarPlay paused after $reconnectAttempts retries ($reason). Tap Connect phone to retry.")
+            setConnectionStage("Could not reach iPhone. Return to CarPlay home to retry.")
+            return
+        }
         reconnectScheduled = true
         val generation = restartGeneration
         val delayMillis = if (reason.contains("AirPlay iAP tunnel", ignoreCase = true)) {
@@ -3285,9 +3368,7 @@ class CarPlayHostActivity : ComponentActivity() {
             val clean = oldController?.awaitClosed(CONTROLLER_CLOSE_TIMEOUT_MILLIS) ?: true
             oldSink?.close()
             airPlayCommandExecutor.shutdown()
-            if (terminateProcess) {
-                applicationContext.stopService(Intent(applicationContext, CarPlayVpnService::class.java))
-            }
+            applicationContext.stopService(Intent(applicationContext, CarPlayVpnService::class.java))
             Log.i(TAG, "shutdown complete clean=$clean")
             applicationContext.stopService(Intent(applicationContext, LeapCarPlaySessionService::class.java))
             teardownExecutor.shutdown()
@@ -3297,62 +3378,8 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun refreshClusterDisplay() {
-        val displays = displayManager
-            .getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
-            .filter { it.displayId != Display.DEFAULT_DISPLAY }
-        val candidateSizes = displays.mapNotNull { display ->
-            val metrics = DisplayMetrics()
-            display.getRealMetrics(metrics)
-            if (metrics.widthPixels > 0 && metrics.heightPixels > 0) {
-                PresentationDisplayCandidate(
-                    displayId = display.displayId,
-                    name = display.name,
-                    widthPixels = metrics.widthPixels,
-                    heightPixels = metrics.heightPixels,
-                )
-            } else {
-                null
-            }
-        }
-        val selected = PresentationDisplaySelector.select(candidateSizes)
-        val target = selected?.let { candidate -> displays.firstOrNull { it.displayId == candidate.displayId } }
-        val targetSize = selected?.let { DisplaySize(it.widthPixels, it.heightPixels) }
-        val unchanged = clusterDisplay?.displayId == target?.displayId &&
-            clusterDisplaySize == targetSize
-        if (unchanged) return
-
-        val previous = clusterDisplaySize
-        clusterPresentation?.dismiss()
-        clusterPresentation = null
-        clusterDisplay = target.takeIf { targetSize != null }
-        clusterDisplaySize = targetSize
-        if (target != null && targetSize != null) {
-            lateinit var presentation: CarPlaySecondaryDisplay
-            try {
-                presentation = CarPlaySecondaryDisplay(this, target) { surface ->
-                    if (clusterPresentation === presentation) onClusterSurfaceChanged(surface)
-                }
-                clusterPresentation = presentation
-                presentation.show()
-                appendLog("CarPlay secondary display detected: ${target.name} ${targetSize.width}x${targetSize.height}")
-            } catch (error: Exception) {
-                clusterPresentation?.dismiss()
-                clusterPresentation = null
-                clusterDisplay = null
-                clusterDisplaySize = null
-                appendLog("CarPlay secondary display unavailable: ${error.javaClass.simpleName}")
-            }
-        } else {
-            appendLog("CarPlay secondary display unavailable")
-        }
-
-        val current = clusterDisplaySize
-        if (previous != current && controller != null) {
-            restartCarPlay(
-                if (current == null) "CarPlay secondary display disconnected"
-                else "CarPlay secondary display changed to ${current.width}x${current.height}",
-            )
-        }
+        // Core Phase 0 (Leapmotor C10 safety): single main CarPlay display only.
+        // Never open a secondary Presentation or second hardware H.264 decoder on Display 2.
     }
 
     private fun unregisterExternalDisplayListener() {
@@ -3419,7 +3446,8 @@ class CarPlayHostActivity : ComponentActivity() {
         }
 
         val contacts = CarPlayTouchMapper.contacts(event, view.width, view.height)
-        val queued = controller?.sendTouch(contacts) ?: false
+        val isMove = event.actionMasked == MotionEvent.ACTION_MOVE
+        val queued = controller?.sendTouch(contacts, coalesce = isMove) ?: false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN,
             MotionEvent.ACTION_POINTER_DOWN,
@@ -3598,6 +3626,7 @@ class CarPlayHostActivity : ComponentActivity() {
         const val DISPLAY_CHANGE_DEBOUNCE_MILLIS = 500L
         const val RECONNECT_DELAY_MILLIS = 2_000L
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
+        const val MAX_AUTO_RECONNECT_ATTEMPTS = 8
         const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
         const val AUDIO_CAPTURE_MARKER = "audio-capture.enabled"
         const val AUDIO_CAPTURE_DIRECTORY = "audio-captures"

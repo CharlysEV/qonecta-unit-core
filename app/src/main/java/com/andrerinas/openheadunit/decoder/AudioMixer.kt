@@ -406,7 +406,7 @@ class AudioMixer(
                 try {
                     written = track.write(outputBuffer, 0, FRAMES_PER_CYCLE)
                 } catch (e: Exception) {
-                    AppLog.e(TAG, "Error writing to AudioTrack", e)
+                    AppLog.e("$TAG: Error writing to AudioTrack", e)
                 }
             }
 

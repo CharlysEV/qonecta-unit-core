@@ -10,22 +10,40 @@ class AapMediaPlayback(
     private val onAaMediaMetadata: ((MediaPlayback.MediaMetaData) -> Unit)?,
     private val onAaPlaybackStatus: ((MediaPlayback.MediaPlaybackStatus) -> Unit)?
 ) {
-    private val messageBuffer = ByteBuffer.allocate(1024 * 1024) // 1MB to handle large album art
+    private var messageBuffer = ByteBuffer.allocate(INITIAL_BUFFER_BYTES)
     private var started = false
+
+    private fun ensureCapacity(additionalBytes: Int): Boolean {
+        if (additionalBytes <= 0) return true
+        if (messageBuffer.remaining() >= additionalBytes) return true
+        val needed = messageBuffer.position() + additionalBytes
+        if (needed > MAX_BUFFER_BYTES) {
+            AppLog.w("AapMediaPlayback: metadata exceeds max buffer ($needed > $MAX_BUFFER_BYTES), dropping")
+            return false
+        }
+        var nextCapacity = messageBuffer.capacity().coerceAtLeast(INITIAL_BUFFER_BYTES)
+        while (nextCapacity < needed) {
+            nextCapacity *= 2
+        }
+        val grown = ByteBuffer.allocate(nextCapacity.coerceAtMost(MAX_BUFFER_BYTES))
+        grown.put(messageBuffer.array(), 0, messageBuffer.position())
+        messageBuffer = grown
+        return true
+    }
 
     fun process(message: AapMessage) {
 
         val flags = message.flags.toInt()
+        if (started && (flags == FLAG_MIDDLE_FRAGMENT || flags == FLAG_LAST_FRAGMENT)) {
+            processMetadataPacket(message, flags)
+            return
+        }
 
         when (message.type) {
             MSG_MEDIA_PLAYBACK_METADATA -> processMetadataPacket(message, flags)
             MSG_MEDIA_PLAYBACK_STATUS -> processStatusPacket(message)
             MSG_MEDIA_PLAYBACK_INPUT -> Unit
             else -> {
-                if (started && (flags == FLAG_MIDDLE_FRAGMENT || flags == FLAG_LAST_FRAGMENT)) {
-                    processMetadataPacket(message, flags)
-                    return
-                }
                 AppLog.e("Unsupported %s", message.toString())
             }
         }
@@ -48,18 +66,36 @@ class AapMediaPlayback(
         when (flags) {
             FLAG_FIRST_FRAGMENT -> {
                 messageBuffer.clear()
-                messageBuffer.put(message.data, message.dataOffset, message.size - message.dataOffset)
+                val payloadLen = (message.size - message.dataOffset).coerceAtLeast(0)
+                if (!ensureCapacity(payloadLen)) {
+                    started = false
+                    messageBuffer.clear()
+                    return
+                }
+                messageBuffer.put(message.data, message.dataOffset, payloadLen)
                 started = true
             }
 
             FLAG_MIDDLE_FRAGMENT -> {
                 if (!started) return
-                messageBuffer.put(message.data, 0, message.size)
+                val payloadLen = message.size.coerceAtLeast(0)
+                if (!ensureCapacity(payloadLen)) {
+                    started = false
+                    messageBuffer.clear()
+                    return
+                }
+                messageBuffer.put(message.data, 0, payloadLen)
             }
 
             FLAG_LAST_FRAGMENT -> {
                 if (!started) return
-                messageBuffer.put(message.data, 0, message.size)
+                val payloadLen = message.size.coerceAtLeast(0)
+                if (!ensureCapacity(payloadLen)) {
+                    started = false
+                    messageBuffer.clear()
+                    return
+                }
+                messageBuffer.put(message.data, 0, payloadLen)
                 messageBuffer.flip()
                 try {
                     val request = MediaPlayback.MediaMetaData.newBuilder()
@@ -90,6 +126,9 @@ class AapMediaPlayback(
     }
 
     private companion object {
+        const val INITIAL_BUFFER_BYTES = 1024 * 1024 // 1MB initial
+        const val MAX_BUFFER_BYTES = 4 * 1024 * 1024 // 4MB cap for large cover art
+
         // Based on AA protocol enum MediaPlaybackStatusMessageId from protos.proto.
         const val MSG_MEDIA_PLAYBACK_STATUS = 32769
         const val MSG_MEDIA_PLAYBACK_INPUT = 32770

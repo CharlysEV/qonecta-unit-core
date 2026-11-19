@@ -500,10 +500,15 @@ class GlProjectionView(context: Context) : GLSurfaceView(context), IProjectionVi
             surface = null
             surfaceTexture = null
             if (doomedSurface == null && doomedTexture == null) return
-            Handler(Looper.getMainLooper()).post {
-                doomedSurface?.let { s -> callbacks.forEach { it.onSurfaceDestroyed(s) } }
-                doomedSurface?.release()
-                doomedTexture?.release()
+            val cleanup = Runnable {
+                doomedSurface?.let { s -> callbacks.toList().forEach { it.onSurfaceDestroyed(s) } }
+                runCatching { doomedSurface?.release() }
+                runCatching { doomedTexture?.release() }
+            }
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                cleanup.run()
+            } else {
+                Handler(Looper.getMainLooper()).post(cleanup)
             }
         }
 
@@ -586,23 +591,42 @@ class GlProjectionView(context: Context) : GLSurfaceView(context), IProjectionVi
             yuvTextureBuffer?.put(yuvTextureCoords)
             yuvTextureBuffer?.position(0)
 
+            // Release any previous Surface / SurfaceTexture if the EGL context is being recreated.
+            val prevSurface = surface
+            val prevTexture = surfaceTexture
+            if (prevSurface != null || prevTexture != null) {
+                surface = null
+                surfaceTexture = null
+                Handler(Looper.getMainLooper()).post {
+                    prevSurface?.let { s -> callbacks.toList().forEach { it.onSurfaceDestroyed(s) } }
+                    runCatching { prevSurface?.release() }
+                    runCatching { prevTexture?.release() }
+                }
+            }
+
             // Create Surface
-            surfaceTexture = SurfaceTexture(textureId)
-            surfaceTexture!!.setOnFrameAvailableListener(this)
-            surface = Surface(surfaceTexture)
-            
-            // Notify Activity on Main Thread
+            val createdTexture = SurfaceTexture(textureId).apply {
+                setOnFrameAvailableListener(this@VideoRenderer)
+            }
+            val createdSurface = Surface(createdTexture)
+            surfaceTexture = createdTexture
+            surface = createdSurface
+
+            // Notify Activity on Main Thread (guard against concurrent release())
             Handler(Looper.getMainLooper()).post {
+                if (surface !== createdSurface || !createdSurface.isValid) return@post
                 AppLog.i("GlProjectionView: Reporting Surface Created")
-                callbacks.forEach { it.onSurfaceCreated(surface!!) }
+                callbacks.toList().forEach { it.onSurfaceCreated(createdSurface) }
             }
         }
 
         override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
             AppLog.i("GlProjectionView: onSurfaceChanged: ${width}x$height")
             GLES20.glViewport(0, 0, width, height)
+            val currentSurface = surface ?: return
             Handler(Looper.getMainLooper()).post {
-                callbacks.forEach { it.onSurfaceChanged(surface!!, width, height) }
+                if (surface !== currentSurface || !currentSurface.isValid) return@post
+                callbacks.toList().forEach { it.onSurfaceChanged(currentSurface, width, height) }
             }
         }
 

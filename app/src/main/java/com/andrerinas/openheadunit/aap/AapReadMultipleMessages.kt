@@ -50,15 +50,19 @@ internal class AapReadMultipleMessages(
                 fifo.clear()
             }
             fifo.put(recvBuffer, 0, size)
-            processBulk()
+            if (!processBulk()) {
+                AppLog.e("AapRead: Framing corruption detected; aborting read loop so transport reconnects cleanly.")
+                return -1
+            }
         } catch (e: Exception) {
             AppLog.e("AapRead: Error in processBulk: ${e.message}")
             fifo.clear() // Hard reset on error
+            return -1
         }
         return 0
     }
 
-    private fun processBulk() {
+    private fun processBulk(): Boolean {
         fifo.flip()
 
         while (fifo.remaining() >= AapMessageIncoming.EncryptedHeader.SIZE) {
@@ -80,7 +84,7 @@ internal class AapReadMultipleMessages(
             if (recvHeader.enc_len > msgBuffer.size || recvHeader.enc_len < 0) {
                 AppLog.e("AapRead: Invalid message length (${recvHeader.enc_len}). Resetting FIFO.")
                 fifo.clear()
-                return 
+                return false
             }
 
             if (fifo.remaining() < recvHeader.enc_len) {
@@ -117,5 +121,6 @@ internal class AapReadMultipleMessages(
         }
 
         fifo.compact()
+        return true
     }
 }

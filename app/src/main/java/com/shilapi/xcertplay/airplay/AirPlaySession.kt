@@ -71,9 +71,9 @@ class AirPlaySession(
 
     private val closed = AtomicBoolean(false)
     private val notified = AtomicBoolean(false)
-    private var eventServer: ServerSocket? = null
-    private var eventSocket: Socket? = null
-    private var eventCipher: ControlCipher? = null
+    @Volatile private var eventServer: ServerSocket? = null
+    @Volatile private var eventSocket: Socket? = null
+    @Volatile private var eventCipher: ControlCipher? = null
     private var eventCseq = 0
     private var pendingNightMode: Boolean? = null
     private val firstTouchSendLogged = AtomicBoolean(false)
@@ -266,6 +266,10 @@ class AirPlaySession(
                 var plaintext = buffer.copyOf(count)
                 val activeCipher = cipher
                 if (activeCipher != null) {
+                    if (encBuf.size + plaintext.size > MAX_CONTROL_BUFFER_BYTES) {
+                        closeReason = "control encrypted buffer exceeded limit"
+                        break
+                    }
                     encBuf += plaintext
                     val decrypted = try {
                         activeCipher.decrypt(encBuf)
@@ -276,6 +280,10 @@ class AirPlaySession(
                     }
                     encBuf = decrypted.rest
                     plaintext = decrypted.data
+                }
+                if (accumulated.size + plaintext.size > MAX_CONTROL_BUFFER_BYTES) {
+                    closeReason = "control plaintext buffer exceeded limit"
+                    break
                 }
                 accumulated += plaintext
                 val parsed = RtspMessage.parseMessages(accumulated)
@@ -333,6 +341,9 @@ class AirPlaySession(
         when (request.method) {
             "SETUP" -> return handleSetup(request)
             "RECORD" -> {
+                // Once projection is active, the iPhone sends periodic /feedback heartbeats (~1-2s).
+                // A bounded SO_TIMEOUT detects silent Wi-Fi drops instead of hanging for Linux's 2h keepalive.
+                runCatching { socket.soTimeout = CONTROL_SOCKET_TIMEOUT_MILLIS }
                 listener.onSessionActive(this)
                 return RtspMessage.Response(status = 200)
             }
@@ -558,6 +569,8 @@ class AirPlaySession(
     }
 
     private fun openKeepAlive(): Int {
+        safeClose(keepAliveSocket)
+        keepAliveThread?.interrupt()
         val socket = DatagramSocket(null)
         socket.reuseAddress = true
         socket.bind(InetSocketAddress(InetAddress.getByName("::"), 0))
@@ -575,12 +588,13 @@ class AirPlaySession(
             try {
                 socket.receive(DatagramPacket(buffer, buffer.size))
             } catch (_: Exception) {
-                if (closed.get()) return
+                if (closed.get() || socket.isClosed) return
             }
         }
     }
 
     private fun openEvent(): Int {
+        safeClose(eventServer)
         val server = ServerSocket(0, 50, InetAddress.getByName("::"))
         eventServer = server
         spawnEvent("airplay-event-accept") { acceptEvent(server) }
@@ -595,9 +609,11 @@ class AirPlaySession(
         keepAliveThread = null
         safeClose(eventServer)
         eventServer = null
-        safeClose(eventSocket)
-        eventSocket = null
-        eventCipher = null
+        synchronized(eventWriteLock) {
+            safeClose(eventSocket)
+            eventSocket = null
+            eventCipher = null
+        }
         eventThreads.forEach { it.interrupt() }
         eventThreads.clear()
     }
@@ -605,9 +621,12 @@ class AirPlaySession(
     private fun acceptEvent(server: ServerSocket) {
         try {
             val socket = server.accept()
+            // Single-connection event listener: release listening port immediately once accepted.
+            safeClose(server)
+            if (eventServer === server) eventServer = null
+            socket.tcpNoDelay = true
             socket.setSoLinger(true, 0)
             debugLog("airplay event connection accepted from ${socket.remoteSocketAddress}")
-            eventSocket = socket
             val shared = pairVerify.shared
             if (shared == null) {
                 Log.e(TAG, "airplay event rejected: pair-verify shared secret unavailable")
@@ -627,11 +646,13 @@ class AirPlaySession(
                 "Events-Read-Encryption-Key".asciiBytes(),
                 32,
             )
-            eventCipher = ControlCipher(readKey, writeKey)
+            val cipherInstance = ControlCipher(readKey, writeKey)
             synchronized(eventWriteLock) {
+                eventSocket = socket
+                eventCipher = cipherInstance
                 sendPendingNightModeLocked()
             }
-            runEventRead(socket)
+            runEventRead(socket, cipherInstance)
         } catch (error: Exception) {
             if (!closed.get()) {
                 Log.e(TAG, "airplay event accept failed", error)
@@ -640,7 +661,7 @@ class AirPlaySession(
         }
     }
 
-    private fun runEventRead(socket: Socket) {
+    private fun runEventRead(socket: Socket, cipher: ControlCipher) {
         try {
             val input = BufferedInputStream(socket.getInputStream())
             val output = BufferedOutputStream(socket.getOutputStream())
@@ -650,7 +671,10 @@ class AirPlaySession(
             while (!closed.get()) {
                 val count = input.read(buffer)
                 if (count < 0) break
-                val cipher = eventCipher ?: break
+                if (encrypted.size + count > MAX_CONTROL_BUFFER_BYTES) {
+                    Log.e(TAG, "airplay event encrypted buffer exceeded limit")
+                    break
+                }
                 encrypted += buffer.copyOf(count)
                 val decrypted = try {
                     cipher.decrypt(encrypted)
@@ -659,6 +683,10 @@ class AirPlaySession(
                     break
                 }
                 encrypted = decrypted.rest
+                if (plaintext.size + decrypted.data.size > MAX_CONTROL_BUFFER_BYTES) {
+                    Log.e(TAG, "airplay event plaintext buffer exceeded limit")
+                    break
+                }
                 plaintext += decrypted.data
                 val parsed = RtspMessage.parseMessages(plaintext)
                 plaintext = parsed.rest
@@ -683,8 +711,12 @@ class AirPlaySession(
             if (!closed.get()) Log.e(TAG, "airplay event read failed", error)
         } finally {
             debugLog("airplay event connection closed")
-            if (eventSocket === socket) eventSocket = null
-            eventCipher = null
+            synchronized(eventWriteLock) {
+                if (eventSocket === socket) {
+                    eventSocket = null
+                    eventCipher = null
+                }
+            }
             safeClose(socket)
             if (!closed.get()) close()
         }
@@ -710,6 +742,8 @@ class AirPlaySession(
         const val STREAM_TYPE_DATA = 130
 
         const val READ_CHUNK_BYTES = 16 * 1024
+        const val MAX_CONTROL_BUFFER_BYTES = 4 * 1024 * 1024
+        const val CONTROL_SOCKET_TIMEOUT_MILLIS = 30_000
         const val EVENT_READY_POLL_MILLIS = 25L
         const val NANOS_PER_MILLISECOND = 1_000_000L
     }

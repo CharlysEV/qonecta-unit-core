@@ -31,6 +31,15 @@ internal class MicrophoneUplink(private val config: MicrophoneConfig) : Closeabl
     private var thread: Thread? = null
 
     fun start(): Boolean {
+        // Qonecta Unit Core safety invariant (Leapmotor C10):
+        // Never open AudioRecord or VOICE_COMMUNICATION from the head unit, which collides with
+        // com.aispeech.lyra.daemon / Audio HAL. Siri & calls use the iPhone's / car BT mic path.
+        Log.i(TAG, "microphone uplink disabled in Qonecta Unit Core (C10 Audio HAL safety)")
+        return false
+    }
+
+    @Suppress("unused")
+    private fun startLegacyDisabled(): Boolean {
         if (!running.compareAndSet(false, true)) return true
 
         val channelMask = if (config.channels >= 2) {

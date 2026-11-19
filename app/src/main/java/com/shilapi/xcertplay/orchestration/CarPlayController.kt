@@ -13,6 +13,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -114,7 +115,11 @@ sealed class CarPlayStatus {
     data object AttachingNetwork : CarPlayStatus()
     data object RunningControl : CarPlayStatus()
     data object ControlEnded : CarPlayStatus()
-    data class Failed(val message: String, val wifiResetRequired: Boolean = false) : CarPlayStatus()
+    data class Failed(
+        val message: String,
+        val wifiResetRequired: Boolean = false,
+        val retryable: Boolean = true,
+    ) : CarPlayStatus()
 }
 
 internal fun isWirelessHandoffInProgress(
@@ -206,8 +211,12 @@ class CarPlayController(
 
     private var permissionCloseable: Closeable? = null
     private var attachCloseable: Closeable? = null
+    private var detachCloseable: Closeable? = null
     private var ch341PermissionCloseable: Closeable? = null
-    private var vpnLatch = CountDownLatch(1)
+    private var wifiLock: WifiManager.WifiLock? = null
+    private val pendingMoveTouch = AtomicReference<List<AirPlayContact>?>(null)
+    private val moveTouchScheduled = AtomicBoolean(false)
+    @Volatile private var vpnLatch = CountDownLatch(1)
     private val teardownComplete = CountDownLatch(1)
 
     private val serviceConnection = object : ServiceConnection {
@@ -318,6 +327,7 @@ class CarPlayController(
         if (config.transport == CarPlayTransport.WIRED) {
             permissionCloseable = iphoneHost.registerPermissionReceiver(::onIphonePermission)
             attachCloseable = iphoneHost.registerAttachReceiver(::onIphoneAttached)
+            detachCloseable = iphoneHost.registerDetachReceiver(::onIphoneDetached)
         }
         startMfi()
     }
@@ -341,11 +351,32 @@ class CarPlayController(
         }
     }
 
-    fun sendTouch(contacts: List<AirPlayContact>): Boolean {
+    fun sendTouch(contacts: List<AirPlayContact>, coalesce: Boolean = false): Boolean {
         if (closed) return false
         val session = activeSession ?: return false
+        if (coalesce) {
+            pendingMoveTouch.set(contacts)
+            if (!moveTouchScheduled.compareAndSet(false, true)) return true
+            return try {
+                touchExecutor.execute {
+                    moveTouchScheduled.set(false)
+                    val latest = pendingMoveTouch.getAndSet(null)
+                    if (latest != null && !closed) {
+                        session.sendTouch(latest)
+                    }
+                }
+                true
+            } catch (_: Exception) {
+                moveTouchScheduled.set(false)
+                false
+            }
+        }
+        // Discrete DOWN/UP/POINTER events always supersede any stale queued MOVE and never drop.
+        pendingMoveTouch.set(null)
         return try {
-            touchExecutor.execute { session.sendTouch(contacts) }
+            touchExecutor.execute {
+                if (!closed) session.sendTouch(contacts)
+            }
             true
         } catch (_: Exception) {
             false
@@ -359,13 +390,14 @@ class CarPlayController(
         }
         BydNavigationOutputs.endNow()
         closeReceivers()
+        mainHandler.removeCallbacksAndMessages(null)
         availabilityPollGeneration.incrementAndGet()
         wirelessGeneration.incrementAndGet()
         permissionPollGeneration += 1
+        pendingMoveTouch.set(null)
         touchExecutor.shutdownNow()
         tunnelExecutor.shutdownNow()
         val service = vpnService
-        unbindVpn()
         Thread(
             {
                 try {
@@ -380,6 +412,9 @@ class CarPlayController(
                     if (config.transport == CarPlayTransport.WIRED) {
                         closeBestEffort("VPN/NCM") { service?.detach() }
                     }
+                    // Unbind VPN only after detach() has closed the server socket & TUN interface.
+                    closeBestEffort("VPN unbind") { unbindVpn() }
+                    closeBestEffort("WiFi lock") { releaseWifiLock() }
                     closeBestEffort("MFi") { mfiSession?.close() }
                     mfiSession = null
                     wirelessIdentification = null
@@ -796,6 +831,7 @@ class CarPlayController(
                 closeWirelessStack()
                 return
             }
+            acquireWifiLock()
             val startedHotspot = hotspot
             wirelessConnectionProof.begin(generation) {
                 if (!isStaleWirelessRun(generation)) startedHotspot?.onCarPlayConfirmed()
@@ -1259,7 +1295,7 @@ class CarPlayController(
             }
             is IphoneUsbHost.PermissionResult.Denied -> {
                 permissionGrant.set(true)
-                onStatus(CarPlayStatus.Failed("iPhone USB permission was denied"))
+                onStatus(CarPlayStatus.Failed("iPhone USB permission was denied", retryable = false))
             }
         }
     }
@@ -1301,6 +1337,19 @@ class CarPlayController(
                     onStatus(CarPlayStatus.WaitingForReenumeration)
                 is IphoneUsbHost.TransitionResult.Failed -> fail(transition.error)
             }
+        }
+    }
+
+    private fun onIphoneDetached(device: UsbDevice) {
+        if (closed || config.transport != CarPlayTransport.WIRED) return
+        debugLog(
+            "wired iPhone detached vid=0x${device.vendorId.toString(16)} " +
+                "pid=0x${device.productId.toString(16)} phase=$phase",
+        )
+        if (phase == Phase.DATAPATHS || phase == Phase.CONTROL) {
+            closeBestEffort("detached CSM") { csm?.close() }
+            closeBestEffort("detached USBMUX") { mux?.close() }
+            closeBestEffort("detached VPN/NCM") { vpnService?.detach() }
         }
     }
 
@@ -1390,38 +1439,6 @@ class CarPlayController(
             )
             onStatus(CarPlayStatus.ConnectingControl)
             val carKitClient = LockdownCarKitClient(mux)
-            // Temporary lab capture, limited to accessory/authentication messages and two minutes.
-            try {
-                val relay = carKitClient.openService(pairRecord, config.label, "com.apple.syslog_relay")
-                Thread({
-                    try {
-                        relay.use {
-                            val deadline = System.nanoTime() + 120_000_000_000L
-                            val pending = StringBuilder()
-                            val relevant = Regex(" (accessoryd|ACCCarPlayService|iap2d|CarPlay)([\\[(])", RegexOption.IGNORE_CASE)
-                            while (!closed && System.nanoTime() < deadline) {
-                                val bytes = relay.recv(8192, 1000) ?: continue
-                                if (bytes.isEmpty()) break
-                                pending.append(bytes.toString(Charsets.UTF_8).replace('\u0000', '\n'))
-                                while (true) {
-                                    val end = pending.indexOf("\n")
-                                    if (end < 0) break
-                                    val line = pending.substring(0, end)
-                                    pending.delete(0, end + 1)
-                                    if (relevant.containsMatchIn(line)) debugLog("PHONE ${line.take(2000)}")
-                                }
-                                if (pending.length > 65536) pending.clear()
-                            }
-                        }
-                        debugLog("phone authentication diagnostic capture ended")
-                    } catch (error: Exception) {
-                        debugLog("phone authentication diagnostic capture ended: ${error.javaClass.simpleName}")
-                    }
-                }, "carplay-lab-phone-diagnostics").apply { isDaemon = true; start() }
-                debugLog("phone authentication diagnostic capture started")
-            } catch (error: Exception) {
-                debugLog("phone authentication diagnostics unavailable: ${error.message}")
-            }
             val carkit = try {
                 carKitClient.open(pairRecord, config.label)
             } catch (error: Throwable) {
@@ -1432,31 +1449,8 @@ class CarPlayController(
                 carKitClient.open(pairRecord, config.label)
             }
             debugLog("wired com.apple.carkit.service stream opened")
-            // Lab transport diagnostics: packet headers only, never certificate or challenge data.
-            fun wireSummary(bytes: ByteArray): String {
-                if (bytes.size < 9 || bytes[0].toInt() and 0xff != 0xff ||
-                    bytes[1].toInt() and 0xff != 0x5a) return "bytes=${bytes.size}"
-                fun value(index: Int) = bytes[index].toInt() and 0xff
-                return "bytes=${bytes.size} length=${(value(2) shl 8) or value(3)} " +
-                    "flags=${value(4)} seq=${value(5)} ack=${value(6)} session=${value(7)}"
-            }
-            val tracedCarkit = object : com.shilapi.xcertplay.transport.BlockingDuplexByteStream {
-                override fun send(data: ByteArray) {
-                    debugLog("wired link TX begin ${wireSummary(data)}")
-                    // Bound each TLS write while diagnosing the stalled certificate transfer.
-                    for (offset in data.indices step 256) {
-                        carkit.send(data.copyOfRange(offset, minOf(offset + 256, data.size)))
-                    }
-                    debugLog("wired link TX completed bytes=${data.size}")
-                }
-                override fun recv(maxBytes: Int, timeoutMillis: Long): ByteArray? =
-                    carkit.recv(maxBytes, timeoutMillis)?.also {
-                        debugLog("wired link RX ${wireSummary(it)}")
-                    }
-                override fun close() = carkit.close()
-            }
             val csm = Iap2Session.open(
-                tracedCarkit,
+                carkit,
                 traceContext = "wired",
                 onTrace = ::debugLog,
             )
@@ -1691,6 +1685,37 @@ class CarPlayController(
         wirelessActiveReported.set(false)
 
         if (service != null) closeBestEffort("AirPlay service") { service.detach() }
+        releaseWifiLock()
+    }
+
+    private fun acquireWifiLock() {
+        runCatching {
+            val mgr = appContext.getSystemService(WifiManager::class.java) ?: return
+            if (wifiLock == null) {
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
+                wifiLock = mgr.createWifiLock(mode, "QonectaUnit:CarPlay").apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (wifiLock?.isHeld == false) {
+                wifiLock?.acquire()
+                debugLog("wireless Wi-Fi low-latency lock acquired")
+            }
+        }
+    }
+
+    private fun releaseWifiLock() {
+        runCatching {
+            if (wifiLock?.isHeld == true) {
+                wifiLock?.release()
+                debugLog("wireless Wi-Fi low-latency lock released")
+            }
+        }
     }
 
     private fun isBluetoothDeviceConnected(device: BluetoothDevice): Boolean = try {
@@ -1832,30 +1857,35 @@ class CarPlayController(
 
     private fun awaitVpnService(): CarPlayVpnService? {
         vpnService?.let { return it }
-        bindVpn()
+        val latch = bindVpn()
         return try {
-            if (vpnLatch.await(VPN_CONNECT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) vpnService else null
+            if (latch.await(VPN_CONNECT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) vpnService else null
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             null
         }
     }
 
-    private fun bindVpn() {
-        if (vpnBound) return
+    @Synchronized
+    private fun bindVpn(): CountDownLatch {
+        if (vpnBound) return vpnLatch
+        val freshLatch = CountDownLatch(1)
+        vpnLatch = freshLatch
         vpnBound = true
         try {
             val intent = Intent(appContext, CarPlayVpnService::class.java)
             if (!appContext.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)) {
                 vpnBound = false
-                vpnLatch.countDown()
+                freshLatch.countDown()
             }
         } catch (_: Throwable) {
             vpnBound = false
-            vpnLatch.countDown()
+            freshLatch.countDown()
         }
+        return freshLatch
     }
 
+    @Synchronized
     private fun unbindVpn() {
         if (!vpnBound) return
         vpnBound = false
@@ -1868,7 +1898,7 @@ class CarPlayController(
     }
 
     private fun closeReceivers() {
-        listOfNotNull(permissionCloseable, attachCloseable, ch341PermissionCloseable).forEach {
+        listOfNotNull(permissionCloseable, attachCloseable, detachCloseable, ch341PermissionCloseable).forEach {
             try {
                 it.close()
             } catch (_: Exception) {
@@ -1877,6 +1907,7 @@ class CarPlayController(
         }
         permissionCloseable = null
         attachCloseable = null
+        detachCloseable = null
         ch341PermissionCloseable = null
     }
 
@@ -1896,8 +1927,38 @@ class CarPlayController(
 
     private fun fail(error: Throwable) {
         if (closed) return
-        onStatus(CarPlayStatus.Failed(error.message ?: error.javaClass.simpleName,
-            generateSequence(error) { it.cause }.any { it is com.shilapi.xcertplay.network.P2pResetRequiredException }))
+        val message = error.message ?: error.javaClass.simpleName
+        val wifiResetRequired = generateSequence(error) { it.cause }
+            .any { it is com.shilapi.xcertplay.network.P2pResetRequiredException }
+        val retryable = !wifiResetRequired && isRetryableFailure(error, message)
+        onStatus(CarPlayStatus.Failed(message, wifiResetRequired = wifiResetRequired, retryable = retryable))
+    }
+
+    private fun isRetryableFailure(error: Throwable, message: String): Boolean {
+        if (error is IphoneUsbException.PermissionDenied || error is I2cTransportException.PermissionDenied) {
+            return false
+        }
+        val lower = message.lowercase(Locale.US)
+        val nonRetryableMarkers = listOf(
+            "bluetooth is not enabled",
+            "bluetooth adapter is unavailable",
+            "no longer paired",
+            "no unambiguous bonded iphone",
+            "multiple bonded iphones",
+            "car hotspot is off",
+            "manual hotspot ssid is not configured",
+            "permission was denied",
+            "permission was not granted",
+            "wi-fi is off",
+            "wifi is off",
+            "wi-fi is disabled",
+            "userdeniedpairing",
+            "passwordprotected",
+            "pairingdialogresponsepending",
+            "authenticationfailed",
+            "does not support wi-fi direct",
+        )
+        return nonRetryableMarkers.none { lower.contains(it) }
     }
 
     private fun debugLog(message: String) {

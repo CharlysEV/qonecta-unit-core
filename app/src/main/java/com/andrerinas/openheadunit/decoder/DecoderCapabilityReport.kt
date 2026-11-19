@@ -125,11 +125,27 @@ object DecoderCapabilityReport {
      * back to the first of any kind so a software-only device still gets a line. The software test
      * is the same name heuristic `VideoDecoder.isHevcDecoderAvailable` uses - one heuristic, not two.
      */
+    fun isSecureDecoder(info: MediaCodecInfo, mimeType: String): Boolean {
+        if (info.name.endsWith(".secure", ignoreCase = true) ||
+            info.name.contains(".secure.", ignoreCase = true)
+        ) {
+            return true
+        }
+        return runCatching {
+            info.getCapabilitiesForType(mimeType)
+                .isFeatureRequired(MediaCodecInfo.CodecCapabilities.FEATURE_SecurePlayback)
+        }.getOrDefault(false)
+    }
+
     fun query(mimeType: String, width: Int, height: Int, fps: Int): Capability? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return null
         val names = try {
             MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
-                .filter { !it.isEncoder && it.supportedTypes.any { t -> t.equals(mimeType, true) } }
+                .filter { info ->
+                    !info.isEncoder &&
+                        info.supportedTypes.any { t -> t.equals(mimeType, true) } &&
+                        !isSecureDecoder(info, mimeType)
+                }
                 .map { it.name }
         } catch (e: Exception) {
             return null

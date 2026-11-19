@@ -119,9 +119,9 @@ class AapService : Service(), UsbReceiver.Listener {
     @Volatile private var wirelessServer: WirelessServer? = null
     // Rebuild bookkeeping for WirelessServerRestartPolicy. The handshake asks about every 4s while a
     // phone keeps arriving, so without a bound a port that cannot bind becomes a rebuild loop.
-    private var lastWirelessRebuildAtMs = 0L
-    private var wirelessRebuildsInWindow = 0
-    private var wirelessRebuildWindowStartedAtMs = 0L
+    @Volatile private var lastWirelessRebuildAtMs = 0L
+    @Volatile private var wirelessRebuildsInWindow = 0
+    @Volatile private var wirelessRebuildWindowStartedAtMs = 0L
     private var networkDiscovery: NetworkDiscovery? = null
     private var mediaSession: MediaSessionCompat? = null
 
@@ -162,8 +162,6 @@ class AapService : Service(), UsbReceiver.Listener {
             null
         }
     }
-    private var permanentFocusRequest: android.media.AudioFocusRequest? = null
-
     private var lastAaMediaMetadata: MediaPlayback.MediaMetaData? = null
     private var lastAaPlaybackPositionMs: Long = 0L
     private var lastAaPlaybackIsPlaying: Boolean? = null
@@ -921,140 +919,22 @@ class AapService : Service(), UsbReceiver.Listener {
     }
 
     /**
-     * Performs the permanent audio focus request used for AA audio sink.
-     *
-     * This logic was previously executed in onCreate(); it has been moved here so
-     * the caller can decide when to acquire focus (for example, immediately before
-     * starting the AA handshake) to avoid stealing audio during autostart.
-     *
-     * The permanent AUDIOFOCUS_GAIN is only appropriate for Static Audio Focus mode,
-     * where the phone must believe focus is always held. In the default (dynamic) mode
-     * focus is instead acquired on demand via the AA protocol
-     * (AapControl.audioFocusRequest -> AapAudio.requestFocusChange), so grabbing a
-     * permanent gain here would needlessly evict other media (e.g. the car radio) the
-     * moment the phone connects, before AA plays anything.
-     *
-     * Whether to take it at all is PlaybackFocusPolicy's call, the same as for the dynamic path:
-     * on a head unit that is also the phone's Bluetooth A2DP sink, evicting the sink makes it
-     * AVRCP-pause that same phone, so the session starts with the projected audio stopped.
-     */
-    private fun requestPermanentAudioFocus() {
-        if (!settings.enableAudioSink) {
-            AppLog.d("Audio Sink disabled - skipping permanent audio focus request.")
-            return
-        }
-        if (!settings.staticAudioFocus) {
-            AppLog.d("Static Audio Focus disabled - skipping permanent audio focus request; focus will be acquired on demand.")
-            return
-        }
-
-        // One probe at connect is enough: the sink only pauses on a focus-loss *event*, so a
-        // Bluetooth link that comes up later in the session never sees one.
-        val mode = settings.effectivePlaybackFocusMode
-        val btMediaLinkActive = BluetoothHelper.isA2dpMediaLinkActive(this)
-        if (!PlaybackFocusPolicy.shouldAcquirePermanent(
-                mode = mode,
-                staticAudioFocus = true,
-                audioSinkEnabled = true,
-                btMediaLinkActive = btMediaLinkActive)) {
-            AppLog.i("AapService: Static Audio Focus - leaving system audio focus alone " +
-                    "(mode=$mode, bluetoothMedia=$btMediaLinkActive)")
-            return
-        }
-        AppLog.i("AapService: Static Audio Focus - acquiring permanent system audio focus " +
-                "(mode=$mode, bluetoothMedia=$btMediaLinkActive)")
-
-        try {
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (permanentFocusRequest == null) {
-                    val attrs = AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                    permanentFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                        .setAudioAttributes(attrs)
-                        .setWillPauseWhenDucked(false)
-                        .setOnAudioFocusChangeListener { focusChange ->
-                            AppLog.d("AapService: Permanent audio focus changed: $focusChange")
-                            if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
-                                focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-                                commManager.yieldAudioFocusToExternalPlayer("permanentFocus($focusChange)")
-                                releasePermanentAudioFocus()
-                            }
-                        }
-                        .build()
-                }
-                val res = audioManager.requestAudioFocus(permanentFocusRequest!!)
-                AppLog.d("AapService: requestPermanentAudioFocus: result=$res")
-            } else {
-                @Suppress("DEPRECATION")
-                val res = audioManager.requestAudioFocus(
-                    { focusChange -> AppLog.d("AapService: Permanent audio focus changed: $focusChange") },
-                    AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN
-                )
-                AppLog.d("AapService: requestPermanentAudioFocus (legacy): result=$res")
-            }
-        } catch (e: Exception) {
-            AppLog.e("AapService: requestPermanentAudioFocus failed", e)
-        }
-    }
-
-    /**
-     * Releases any permanent audio focus previously requested by [requestPermanentAudioFocus].
-     *
-     * This is invoked on disconnect to return audio focus to the phone or other media
-     * apps so that playback can resume normally. Supports both the modern
-     * AudioFocusRequest API (API >= O) and the legacy abandonAudioFocus path.
-     */
-    private fun releasePermanentAudioFocus() {
-        try {
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                permanentFocusRequest?.let {
-                    audioManager.abandonAudioFocusRequest(it)
-                    AppLog.d("AapService: abandoned permanent audio focus request")
-                    permanentFocusRequest = null
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                try {
-                    audioManager.abandonAudioFocus(null)
-                    AppLog.d("AapService: abandoned legacy audio focus (null listener)")
-                } catch (e: Exception) {
-                    // Some devices may not accept a null listener; ignore failures
-                    AppLog.e("AapService: releasePermanentAudioFocus failed", e)
-                }
-            }
-        } catch (e: Exception) {
-            AppLog.e("AapService: Failed to abandon audio focus", e)
-        }
-    }
-
-    /**
      * Called by [CommManager.ConnectionState.Connected] observer:
-     * 1. Refreshes the foreground notification.
-     * 2. Activates a [MediaSessionCompat] so media keys are routed to Android Auto.
+     * 1. Marks [hasEverConnected] so even a failed handshake triggers [onDisconnected] cleanup.
+     * 2. Refreshes the foreground notification and acquires low-latency Wi-Fi lock.
      * 3. Starts the SSL handshake ([CommManager.startHandshake]) **in parallel** with
      *    launching [AapProjectionActivity], hiding multi-second handshake latency behind
      *    activity-inflation time.
      *
-     * The inbound message loop ([CommManager.startReading]) is intentionally NOT started
-     * here. It is deferred until [AapProjectionActivity] confirms its render surface is
-     * ready (via [CommManager.ConnectionState.HandshakeComplete] observer), guaranteeing
-     * that [VideoDecoder.setSurface] is always called before the first video frame arrives.
+     * System audio focus is managed through a single unified slot inside [AapAudio] so
+     * static/protocol/dynamic focus requests never compete with or evict each other.
      */
     private fun onConnected() {
+        hasEverConnected = true
         isSwitchingToAccessory.set(false)
         updateNotification()
         acquireWifiLock()
         nativeAaHandshakeManager?.pauseForActiveSession()
-
-        // Silent audio hack removed to prevent mixing/resampling stuttering issues
-
-        // Do NOT register global high-priority CarKeysManager broadcasts on OEM head units
-        // (Leapmotor C10 / LeapOS), as they intercept steering wheel keys before native Radio.
 
         // Keep MediaSession deactivated until audio focus or playback starts from the phone
         // so that simply connecting Android Auto does not mute the car's FM/DAB radio.
@@ -1067,11 +947,6 @@ class AapService : Service(), UsbReceiver.Listener {
             safeMediaSessionCall { it.isActive = isPlaying }
             updateMediaSessionState(isPlaying)
         }
-
-        // Acquire permanent audio focus just before starting the AA handshake so we
-        // don't steal audio during service autostart but still obtain focus when a
-        // real connection is beginning.
-        requestPermanentAudioFocus()
 
         // Start GpsLocationService and NightModeManager sensor tracking
         AppLog.i("AapService: Starting GpsLocationService and NightModeManager since connection is established")
@@ -1233,8 +1108,7 @@ class AapService : Service(), UsbReceiver.Listener {
         stopService(GpsLocationService.intent(this))
         nightModeManager?.stop()
 
-        // Release any permanent audio focus we may have requested when connected
-        releasePermanentAudioFocus()
+        // Audio focus is owned and released by AapAudio.releaseAllFocus() on transport quit.
         App.provide(this).carKeysManager.unregisterReceivers()
 
         if (!isDestroying) updateNotification()
@@ -1793,11 +1667,17 @@ class AapService : Service(), UsbReceiver.Listener {
     private fun acquireWifiLock() {
         if (wifiLock == null) {
             val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "HeadunitRevived:Connection")
+            val lockMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            } else {
+                @Suppress("DEPRECATION")
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            }
+            wifiLock = wifiManager.createWifiLock(lockMode, "HeadunitRevived:Connection")
         }
         if (wifiLock?.isHeld == false) {
             wifiLock?.acquire()
-            AppLog.i("WifiLock acquired (HIGH_PERF)")
+            AppLog.i("WifiLock acquired (LOW_LATENCY/HIGH_PERF)")
         }
     }
 
@@ -1840,13 +1720,8 @@ class AapService : Service(), UsbReceiver.Listener {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        AppLog.i("AapService: onTaskRemoved — attempting restart")
-        try {
-            val restartIntent = Intent(this, AapService::class.java)
-            ContextCompat.startForegroundService(this, restartIntent)
-        } catch (e: Exception) {
-            AppLog.e("AapService: failed to restart after task removal: ${e.message}")
-        }
+        // Core mode: never auto-revive the foreground service after the user swipes the task away.
+        AppLog.i("AapService: onTaskRemoved")
         super.onTaskRemoved(rootIntent)
     }
 
@@ -1859,6 +1734,8 @@ class AapService : Service(), UsbReceiver.Listener {
         commManager.onAaMediaMetadata = null
         commManager.onAaPlaybackStatus = null
         commManager.onUsbHandshakeTimeout = null
+        commManager.onAudioFocusStateChanged = null
+        commManager.onUpdateUiConfigReplyReceived = null
         settingsPrefs?.unregisterOnSharedPreferenceChangeListener(settingsPreferenceListener)
         settingsPrefs = null
         nativeAaHandshakeManager?.stop()
@@ -1866,17 +1743,18 @@ class AapService : Service(), UsbReceiver.Listener {
 
         // Before the hotspot goes, not after: SoftApCredentialsProvider watches
         // WIFI_AP_STATE_CHANGED and switches an access point it started back on when it sees one
-        // drop. Left registered here it would treat this very teardown as the hotspot failing and
-        // bring it back up as the service dies — leaving the access point running with nothing
-        // left to serve it.
+        // drop.
         softApCredentialsProvider?.stop()
 
         localHotspotCredentialsProvider?.stop()
 
         if (App.provide(this).settings.autoEnableHotspot &&
             UserExitHotspotPolicy.usesHeadUnitHotspot(settings.wifiConnectionMode, settings.helperConnectionStrategy, nativeTransport())) {
-            AppLog.i("AapService: Auto-disabling hotspot...")
-            HotspotManager.setHotspotEnabled(this, false)
+            AppLog.i("AapService: Auto-disabling hotspot off Main thread...")
+            val appCtx = applicationContext
+            Thread {
+                runCatching { HotspotManager.setHotspotEnabled(appCtx, false) }
+            }.apply { isDaemon = true; name = "AapService-HotspotOff"; start() }
         }
 
         wifiReadyTimeoutJob?.cancel()
@@ -1893,7 +1771,7 @@ class AapService : Service(), UsbReceiver.Listener {
         unregisterNetworkMonitor()
         stopForeground(true)
         stopWirelessServer()
-        wifiDirectManager?.stop()
+        wifiDirectManager?.close()
         nearbyManager?.stop()
         try {
             mediaSession?.let {
@@ -1904,7 +1782,7 @@ class AapService : Service(), UsbReceiver.Listener {
             AppLog.e("Error releasing MediaSession: ${e.message}")
         }
         mediaSession = null
-        commManager.destroy()
+        commManager.shutdownSession()
         nightModeManager?.stop()
         stopService(GpsLocationService.intent(this))
         try {
@@ -1923,6 +1801,25 @@ class AapService : Service(), UsbReceiver.Listener {
         if (killProcessOnDestroy) {
             AppLog.i("AapService: killProcessOnDestroy is true. Triggering System.exit(0).")
             System.exit(0)
+        }
+    }
+
+    /**
+     * Releases every Android Auto wireless transport (TCP server, NSD, Wi-Fi Direct group,
+     * LocalOnlyHotspot, SoftAP watcher, Nearby, BT RFCOMM handshake) and yields any active AA
+     * session so Apple CarPlay can claim Wi-Fi/P2P/BT cleanly without radio collisions.
+     */
+    private fun stopAllWirelessForHandoff() {
+        AppLog.i("AapService: ACTION_STOP_WIRELESS — stopping all AA wireless transports for clean handoff")
+        stopWirelessServer()
+        nearbyManager?.stop()
+        nativeAaHandshakeManager?.stop()
+        softApCredentialsProvider?.stop()
+        localHotspotCredentialsProvider?.stop()
+        wifiDirectManager?.stop()
+        releaseWifiLock()
+        if (commManager.isBusy) {
+            commManager.disconnect(sendByeBye = true, isUserExit = false)
         }
     }
 
@@ -1950,12 +1847,15 @@ class AapService : Service(), UsbReceiver.Listener {
 
         // Handle stop before re-posting the notification to avoid a flash
         if (intent?.action == ACTION_STOP_SERVICE) {
-            AppLog.i("Stop action received. Broadcasting finish request to activities.")
+            AppLog.i("Stop action received. Stopping AA + CarPlay and finishing activities.")
+            runCatching { com.shilapi.xcertplay.CarPlayBackgroundSession.stop() }
+            runCatching { stopService(Intent(this, com.shilapi.xcertplay.LeapCarPlaySessionService::class.java)) }
+            runCatching { stopService(Intent(this, com.shilapi.xcertplay.network.CarPlayVpnService::class.java)) }
             sendBroadcast(Intent("com.andrerinas.openheadunit.ACTION_FINISH_ACTIVITIES").apply {
                 setPackage(packageName)
             })
             isDestroying = true
-            if (commManager.isConnected) commManager.disconnect(sendByeBye = true)
+            if (commManager.isBusy) commManager.disconnect(sendByeBye = true, isUserExit = true)
             stopForeground(true)
             stopSelf()
             return START_NOT_STICKY
@@ -2038,7 +1938,7 @@ class AapService : Service(), UsbReceiver.Listener {
                     startDiscovery(oneShot = (mode != 2))
                 }
             }
-            ACTION_STOP_WIRELESS         -> stopWirelessServer()
+            ACTION_STOP_WIRELESS         -> stopAllWirelessForHandoff()
             ACTION_NATIVE_AA_POKE        -> {
                 val mac = intent?.getStringExtra(EXTRA_MAC)
                 if (mac != null) {
@@ -3432,8 +3332,8 @@ class AapService : Service(), UsbReceiver.Listener {
                         val clientSocket = serverSocket?.accept() ?: break
                         AppLog.i("WirelessServer: Incoming connection detected from ${clientSocket.inetAddress}")
                         serviceScope.launch {
-                            if (commManager.isConnected) {
-                                AppLog.w("WirelessServer: Already connected, dropping client from ${clientSocket.inetAddress}")
+                            if (commManager.isBusy) {
+                                AppLog.w("WirelessServer: Already connected/connecting, dropping client from ${clientSocket.inetAddress}")
                                 withContext(Dispatchers.IO) {
                                     try { clientSocket.close() } catch (e: Exception) {}
                                 }
@@ -3457,8 +3357,8 @@ class AapService : Service(), UsbReceiver.Listener {
                     else AppLog.i("WirelessServer: port 5288 released (${e.javaClass.simpleName}).")
                 } finally {
                     isListening = false
-                    unregisterNsd()
-                    try { serverSocket?.close() } catch (e: Exception) {}
+                    runCatching { unregisterNsd() }
+                    runCatching { serverSocket?.close() }
                 }
             }
         }

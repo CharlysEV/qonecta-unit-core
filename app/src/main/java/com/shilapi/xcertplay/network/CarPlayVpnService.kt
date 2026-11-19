@@ -154,6 +154,17 @@ class CarPlayVpnService : VpnService() {
 
     fun isAttached(): Boolean = active.get() && attachment != null
 
+    override fun onRevoke() {
+        val currentAttachment = synchronized(this) { attachment }
+        val gen = synchronized(this) { attachGeneration }
+        if (currentAttachment != null) {
+            onTransportError(gen, currentAttachment.listener, IOException("CarPlay VPN permission revoked"))
+        } else {
+            detach()
+        }
+        super.onRevoke()
+    }
+
     override fun onDestroy() {
         detach()
         super.onDestroy()
@@ -164,6 +175,7 @@ class CarPlayVpnService : VpnService() {
         replacement: AirPlayAttachment,
     ) {
         val server = ServerSocket()
+        server.reuseAddress = true
         server.bind(InetSocketAddress(replacement.address, replacement.config.port))
         attachment = replacement
         serverSocket = server
@@ -271,12 +283,12 @@ class CarPlayVpnService : VpnService() {
         attachGeneration += 1
         active.set(false)
         attachment = null
-        serverSocket?.close()
+        runCatching { serverSocket?.close() }
         serverSocket = null
-        closeSessionsLocked()
-        bridge?.close()
+        runCatching { closeSessionsLocked() }
+        runCatching { bridge?.close() }
         bridge = null
-        tun?.close()
+        runCatching { tun?.close() }
         tun = null
     }
 

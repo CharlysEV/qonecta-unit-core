@@ -33,6 +33,7 @@
 
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission
@@ -89,9 +90,9 @@
                 android:resource="@xml/usb_device_filter" />
         </activity>
 
-        <!-- Direct USB CarPlay NCM network bridge -->
+        <!-- Apple CarPlay AirPlay listener (wireless) + direct USB NCM IPv6 VPN bridge (wired) -->
         <service
-            android:name="com.headqlink.unit.carplay.CarPlayVpnService"
+            android:name="com.shilapi.xcertplay.network.CarPlayVpnService"
             android:exported="false"
             android:permission="android.permission.BIND_VPN_SERVICE">
             <intent-filter>
@@ -158,7 +159,8 @@
         <service
             android:name="com.shilapi.xcertplay.LeapCarPlaySessionService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|mediaPlayback"
+            android:stopWithTask="true" />
 
         <service
             android:name=".aap.AapService"

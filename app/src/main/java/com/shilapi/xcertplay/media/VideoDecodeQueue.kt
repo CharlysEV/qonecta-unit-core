@@ -3,6 +3,7 @@ package com.shilapi.xcertplay.media
 import android.view.Surface
 import com.shilapi.xcertplay.airplay.VideoCodec
 import java.util.ArrayDeque
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.withLock
@@ -10,7 +11,7 @@ import kotlin.concurrent.withLock
 internal sealed interface VideoJob {
     data class Config(val codec: VideoCodec, val codecData: ByteArray) : VideoJob
     data class Frame(val nalus: ByteArray, val receivedNs: Long = System.nanoTime()) : VideoJob
-    data class SurfaceChanged(val surface: Surface?) : VideoJob
+    data class SurfaceChanged(val surface: Surface?, val done: CountDownLatch? = null) : VideoJob
     data object Resync : VideoJob
 }
 
@@ -52,6 +53,14 @@ internal class VideoDecodeQueue(
                 queuedFrameBytes += job.nalus.size
             }
             jobs.addLast(job)
+            available.signal()
+        }
+    }
+
+    fun offerPriority(job: VideoJob) {
+        lock.withLock {
+            discardFramesLocked()
+            jobs.addFirst(job)
             available.signal()
         }
     }

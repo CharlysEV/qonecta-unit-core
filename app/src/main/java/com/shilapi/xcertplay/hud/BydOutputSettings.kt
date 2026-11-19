@@ -10,13 +10,12 @@ object BydOutputSettings {
     private const val PREFS = "leapcarplay_byd_outputs"
     private const val KEY_ENABLED = "navigation_enabled"
 
-    fun enabled(context: Context): Boolean = prefs(context).getBoolean(KEY_ENABLED, true)
+    fun enabled(@Suppress("UNUSED_PARAMETER") context: Context): Boolean = false
 
-    fun setEnabled(context: Context, enabled: Boolean) = prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
+    fun setEnabled(@Suppress("UNUSED_PARAMETER") context: Context, @Suppress("UNUSED_PARAMETER") enabled: Boolean) = Unit
 
-    /** Whether the head unit has a BYD navigation receiver, so settings can hide a switch that cannot work. */
-    fun available(context: Context): Boolean =
-        BydStandaloneHudOutput.available(context) || installed(context, "com.byd.amapservice") || installed(context, "com.ts.car.someip.service")
+    /** Disabled in Qonecta Unit Core (non-BYD head units such as Leapmotor C10). */
+    fun available(@Suppress("UNUSED_PARAMETER") context: Context): Boolean = false
 
     private fun installed(context: Context, pkg: String): Boolean =
         runCatching { context.packageManager.getPackageInfo(pkg, 0) }.isSuccess

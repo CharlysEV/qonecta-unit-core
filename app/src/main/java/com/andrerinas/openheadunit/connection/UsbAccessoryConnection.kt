@@ -158,34 +158,34 @@ class UsbAccessoryConnection(private val usbMgr: UsbManager, private val device:
     }
 
     override fun disconnect() {
-        // close() is thread-safe and immediately aborts any in-flight bulkTransfer(),
-        // so both sendBlocking and recvBlocking unblock within milliseconds.
-        usbDeviceConnection?.close()
-
+        val connToClose: UsbDeviceConnection?
+        val ifaceToRelease: UsbInterface?
         synchronized(sStateLock) {
             if (usbDeviceConnected != null) {
                 AppLog.i(usbDeviceConnected!!.toString())
             }
+            connToClose = usbDeviceConnection
+            ifaceToRelease = usbInterface
             endpointIn = null
             endpointOut = null
-
-            if (usbDeviceConnection != null) {
-                var bret = false
-                if (usbInterface != null) {
-                    // releaseInterface() may fail since close() was already called; log and continue.
-                    bret = try { usbDeviceConnection!!.releaseInterface(usbInterface) } catch (_: Exception) { false }
-                }
-                if (bret) {
-                    AppLog.i("OK releaseInterface()")
-                } else {
-                    AppLog.e("Error releaseInterface()")
-                }
-            }
             usbDeviceConnection = null
             usbInterface = null
             usbDeviceConnected = null
             internalBufferPos = 0
             internalBufferAvailable = 0
+        }
+
+        if (connToClose != null) {
+            if (ifaceToRelease != null) {
+                val released = runCatching { connToClose.releaseInterface(ifaceToRelease) }.getOrDefault(false)
+                if (released) {
+                    AppLog.i("OK releaseInterface()")
+                } else {
+                    AppLog.w("releaseInterface() returned false during disconnect")
+                }
+            }
+            // close() is thread-safe and aborts any in-flight bulkTransfer().
+            runCatching { connToClose.close() }
         }
     }
 
@@ -209,7 +209,8 @@ class UsbAccessoryConnection(private val usbMgr: UsbManager, private val device:
     // On Leapmotor C10 (QTI msmnile dwc3 controller), bulkTransfer writes larger than
     // endpointOut.maxPacketSize (512 bytes) with short timeouts (250ms) fail with -1 on
     // ServiceDiscoveryResponse (~1200 bytes). Matching LeapLink's LL3/m.write implementation,
-    // we slice outgoing transfers into maxPacketSize (512B) chunks with >=1000ms per-chunk timeout.
+    // we slice outgoing transfers into maxPacketSize (512B) chunks with >=1000ms per-chunk timeout,
+    // using the zero-copy offset overload (API 18+) to avoid per-packet heap churn.
     override fun sendBlocking(buf: ByteArray, length: Int, timeout: Int): Int {
         val connection = usbDeviceConnection ?: return -1
         val ep = endpointOut ?: return -1
@@ -217,19 +218,24 @@ class UsbAccessoryConnection(private val usbMgr: UsbManager, private val device:
             val maxPacket = ep.maxPacketSize.let { if (it > 0) it else 512 }
             val chunkTimeout = maxOf(timeout, 1000)
             var totalSent = 0
+            var zeroByteRetries = 0
             while (totalSent < length) {
                 val chunkLen = minOf(length - totalSent, maxPacket)
-                val chunk = if (totalSent == 0 && chunkLen == buf.size) {
-                    buf
-                } else {
-                    buf.copyOfRange(totalSent, totalSent + chunkLen)
-                }
-                val ret = connection.bulkTransfer(ep, chunk, chunkLen, chunkTimeout)
+                val ret = connection.bulkTransfer(ep, buf, totalSent, chunkLen, chunkTimeout)
                 if (ret < 0) {
                     AppLog.e("USB Write Error: bulkTransfer returned $ret after $totalSent/$length bytes (chunk=$chunkLen, maxPacket=$maxPacket, timeout=$chunkTimeout)")
                     return -1
                 }
-                totalSent += if (ret > 0) ret else chunkLen
+                if (ret == 0) {
+                    zeroByteRetries++
+                    if (zeroByteRetries >= 3) {
+                        AppLog.e("USB Write Error: bulkTransfer returned 0 three times after $totalSent/$length bytes")
+                        return -1
+                    }
+                    continue
+                }
+                zeroByteRetries = 0
+                totalSent += ret
             }
             totalSent
         } catch (e: Exception) {
