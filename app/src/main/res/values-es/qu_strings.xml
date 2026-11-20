@@ -61,4 +61,9 @@
     <string name="qu_cluster_hint_on">Activada · Muestra el mapa y avisos discretos de canción/giro en la 2.ª pantalla. Se aplica al reconectar.</string>
     <string name="qu_cluster_toast_on">Segunda pantalla activada (se aplica en la próxima conexión).</string>
     <string name="qu_cluster_toast_off">Segunda pantalla desactivada.</string>
+
+    <!-- Apoyo al proyecto / donaciones (Ko-fi + PayPal con códigos QR) -->
+    <string name="qu_support_donate_button">☕ Apoyar</string>
+    <string name="qu_support_donate_title">☕ Apoyar el proyecto</string>
+    <string name="qu_support_donate_desc">Invitar a un café en Ko-fi o donar por PayPal (códigos QR)</string>
 </resources>

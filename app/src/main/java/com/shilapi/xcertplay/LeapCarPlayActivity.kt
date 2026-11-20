@@ -292,6 +292,10 @@ class LeapCarPlayActivity : ComponentActivity() {
             pillLabel("Apple CarPlay · v${version()}", ACCENT, 0x40000000).apply {
                 textSize = 14.5f
                 letterSpacing = 0.03f
+                isClickable = true
+                setOnClickListener {
+                    com.andrerinas.openheadunit.main.SupportDonationsDialog.show(this@LeapCarPlayActivity)
+                }
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 marginStart = dp(12)
@@ -314,6 +318,26 @@ class LeapCarPlayActivity : ComponentActivity() {
         header.addView(titleCol)
 
         if (page == "home") {
+            val supportBtn = Button(this).apply {
+                text = getString(R.string.qu_support_donate_button)
+                isAllCaps = false
+                textSize = 16f
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setTextColor(WARNING)
+                background = rippleRounded(SURFACE_TOP, WARNING, radiusDp = 18, strokeDp = 2)
+                setPadding(dp(16), 0, dp(16), 0)
+                stateListAnimator = null
+                setOnClickListener {
+                    com.andrerinas.openheadunit.main.SupportDonationsDialog.show(this@LeapCarPlayActivity)
+                }
+            }
+            header.addView(
+                supportBtn,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(52)).apply {
+                    marginEnd = dp(10)
+                }
+            )
+
             val coreSettings = com.andrerinas.openheadunit.utils.Settings(this)
             clusterToggleButton = headerPillButton(
                 title = getString(if (coreSettings.clusterMapEnabled) R.string.qu_cluster_short_on else R.string.qu_cluster_short_off),
@@ -936,13 +960,19 @@ class LeapCarPlayActivity : ComponentActivity() {
 
         section(content, "Diagnóstico, pruebas y acerca de") { card ->
             card.addView(
+                settingsButton("☕ Apoyar el proyecto (Ko-fi / PayPal)") {
+                    com.andrerinas.openheadunit.main.SupportDonationsDialog.show(this)
+                },
+                matchButton(0, 58)
+            )
+            card.addView(
                 settingsButton("Simular iPhone (Demo de vídeo)") {
                     startActivity(
                         Intent(this, CarPlayHostActivity::class.java)
                             .putExtra(CarPlayLoopbackSimulator.EXTRA_SIMULATE_IPHONE, true)
                     )
                 },
-                matchButton(0, 58)
+                matchButton(10, 58)
             )
             exportButton = settingsButton(
                 if (exportInProgress) "Guardando informe…" else "Guardar informe de diagnóstico"

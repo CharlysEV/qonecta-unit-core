@@ -77,7 +77,7 @@ class SettingsFragment : Fragment() {
         "quExtendedMode", "quCarCloud", "quPanelDemo",
         "staticBSSID", "appLanguage", "autoStartSettings", "autoConnectSettings", "resolution",
         "dpiPixelDensity", "viewMode", "fpsLimit", "musicViaBluetooth", "enableAudioSink", "micSettings", "audioVolumeOffsets",
-        "keymap", "version", "about"
+        "keymap", "version", "donations", "about"
     )
 
     // Local state to hold changes before saving
@@ -2219,6 +2219,15 @@ class SettingsFragment : Fragment() {
                 } catch (e: Exception) {
                     // Failover
                 }
+            }
+        ))
+
+        items.add(SettingItem.SettingEntry(
+            stableId = "donations",
+            nameResId = R.string.qu_support_donate_title,
+            value = getString(R.string.qu_support_donate_desc),
+            onClick = {
+                SupportDonationsDialog.show(requireContext())
             }
         ))
 

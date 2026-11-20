@@ -66,4 +66,9 @@
     <string name="qu_cluster_hint_on">Enabled · Shows the live map and discrete track/turn cards on Display 2. Reconnect to apply changes.</string>
     <string name="qu_cluster_toast_on">Second screen enabled (applies on next connection).</string>
     <string name="qu_cluster_toast_off">Second screen disabled.</string>
+
+    <!-- Project support / donations (Ko-fi + PayPal QR codes) -->
+    <string name="qu_support_donate_button">☕ Support</string>
+    <string name="qu_support_donate_title">☕ Support the project</string>
+    <string name="qu_support_donate_desc">Buy a coffee on Ko-fi or donate via PayPal (QR codes)</string>
 </resources>

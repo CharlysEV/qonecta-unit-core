@@ -145,8 +145,18 @@ class HomeFragment : Fragment() {
         inflater.inflate(R.layout.fragment_home, container, false)
 
     override fun onViewCreated(view: View, state: Bundle?) {
-        view.findViewById<TextView>(R.id.home_version_badge)?.text =
-            "v${BuildConfig.VERSION_NAME} · AA + CarPlay"
+        view.findViewById<TextView>(R.id.home_version_badge)?.apply {
+            text = "v${BuildConfig.VERSION_NAME} · AA + CarPlay"
+            setOnClickListener {
+                activeDialog?.dismiss()
+                activeDialog = SupportDonationsDialog.show(requireContext())
+            }
+        }
+
+        view.findViewById<View>(R.id.home_support_button)?.setOnClickListener {
+            activeDialog?.dismiss()
+            activeDialog = SupportDonationsDialog.show(requireContext())
+        }
 
         view.findViewById<View>(R.id.wifi_button)?.setOnClickListener {
             if (app.commManager.isConnected) {

@@ -81,6 +81,25 @@
             </LinearLayout>
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/home_support_button"
+                android:layout_width="wrap_content"
+                android:layout_height="54dp"
+                android:layout_marginEnd="10dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="@string/qu_support_donate_button"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:textColor="#FFB547"
+                app:backgroundTint="@color/hql_surface_top"
+                app:strokeColor="#FFB547"
+                app:strokeWidth="2dp"
+                app:cornerRadius="18dp" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/cluster_toggle_button"
                 android:layout_width="wrap_content"
                 android:layout_height="54dp"

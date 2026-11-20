@@ -44,4 +44,10 @@ class UsbAttachPolicyTest {
             UsbAttachPolicy.isUsbPortResetSuccessful(-13, true),
         )
     }
+
+    @Test
+    fun donationLinksPointToKofiAndPaypal() {
+        org.junit.Assert.assertEquals("https://ko-fi.com/charlysev", com.andrerinas.openheadunit.main.SupportDonationsDialog.KOFI_URL)
+        org.junit.Assert.assertEquals("https://www.paypal.me/CharlysEV", com.andrerinas.openheadunit.main.SupportDonationsDialog.PAYPAL_URL)
+    }
 }
