@@ -855,6 +855,24 @@ class MainActivity : BaseActivity() {
         }
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == permissionRequestCode &&
+            grantResults.any { it == PackageManager.PERMISSION_GRANTED }
+        ) {
+            AppLog.i("MainActivity: Runtime permissions granted — notifying AapService to arm wireless transport.")
+            runCatching {
+                ContextCompat.startForegroundService(this, Intent(this, AapService::class.java).apply {
+                    action = AapService.ACTION_START_WIRELESS
+                })
+            }
+        }
+    }
+
     private fun setFullscreen() {
         val root = findViewById<View>(R.id.root)
         val appSettings = Settings(this)

@@ -250,6 +250,8 @@ class NativeAaHandshakeManager(
     // "believed to be running."
     fun isActive(): Boolean = isRunning && !aaListenersClosedForSession
 
+    fun hasCredentials(): Boolean = credentials != null
+
     fun isHandshakeInFlight(): Boolean =
         NativeHandoffPolicy.isHandshaking(handshakeStartedAt, SystemClock.elapsedRealtime())
 
@@ -571,6 +573,15 @@ class NativeAaHandshakeManager(
         val handsFreeLink = BluetoothWakePolicy.HandsFreeLink.of(BluetoothHelper.handsFreeLinkState(context))
         if (!BluetoothWakePolicy.shouldPoke(handsFreeLink)) {
             noteHandsFreePokeSkip(device)
+            // Safe, read-only SDP refresh over the existing ACL link: never touches HFP/HSP
+            // call audio, while prompting Android's Bluetooth stack to refresh cached service records
+            // when the app opened after the car's hands-free link was already established.
+            if (BluetoothWakePolicy.mayPoke(bondReadingFor(device))) {
+                runCatching {
+                    val requested = device.fetchUuidsWithSdp()
+                    AppLog.d("NativeAA: Requested non-disruptive SDP refresh (fetchUuidsWithSdp=$requested) for ${device.name ?: device.address}")
+                }
+            }
             return false
         }
         handsFreeSkipLogged = false
@@ -783,7 +794,7 @@ class NativeAaHandshakeManager(
                     AppLog.i("NativeAA: WiFi credentials not ready before manual poke. Requesting WiFi refresh...")
                     (context as? AapService)?.triggerWifiDirectRefresh()
                     var waitedMs = 0
-                    while (credentials == null && waitedMs < 4000 && isRunning && isActive) {
+                    while (credentials == null && waitedMs < 8000 && isRunning && isActive) {
                         delay(200)
                         waitedMs += 200
                     }
@@ -899,6 +910,7 @@ class NativeAaHandshakeManager(
         try {
             val device = socket.remoteDevice
             AppLog.i("NativeAA: Handling handshake for ${device.name} (${device.address}) on local radio [${localRadio ?: "?"}]")
+            AapService.wirelessStatusText.value = "Móvil conectado por BT · Negociando Wi-Fi…"
 
             if (commManager.isConnected ||
                 commManager.connectionState.value is CommManager.ConnectionState.Connecting) {
@@ -980,6 +992,7 @@ class NativeAaHandshakeManager(
                             AppLog.i("NativeAA: The phone opened its session before the credentials went out; not sending them.")
                         } else {
                             sendWifiSecurityResponse(output, credSsid, credPsk, credBssid, transport)
+                            AapService.wirelessStatusText.value = "Credenciales enviadas · Móvil uniéndose a Wi-Fi…"
                         }
                         AppLog.i("NativeAA: Handshake completed successfully on Bluetooth side.")
                         ifOwner(socket) {
@@ -1395,9 +1408,7 @@ class NativeAaHandshakeManager(
         val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
         cos.writeString(1, ssid)
         cos.writeString(2, key)
-        if (!bssid.isNullOrBlank()) {
-            cos.writeString(3, bssid)
-        }
+        cos.writeString(3, bssid.orEmpty())
         cos.writeEnum(4, securityMode)
         cos.writeEnum(5, apType)
         for (ch in channels) {
@@ -1463,9 +1474,7 @@ class NativeAaHandshakeManager(
         val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
         cos.writeString(1, ssid)
         cos.writeString(2, key)
-        if (!bssid.isNullOrBlank()) {
-            cos.writeString(3, bssid)
-        }
+        cos.writeString(3, bssid.orEmpty())
         cos.writeEnum(4, Wireless.SecurityMode.WPA2_PERSONAL_VALUE)
         cos.writeEnum(5, Wireless.AccessPointType.DYNAMIC_VALUE)
         for (ch in DEFAULT_5GHZ_CHANNELS_MHZ) {

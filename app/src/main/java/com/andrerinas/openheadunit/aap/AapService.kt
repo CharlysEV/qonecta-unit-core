@@ -932,6 +932,7 @@ class AapService : Service(), UsbReceiver.Listener {
     private fun onConnected() {
         hasEverConnected = true
         isSwitchingToAccessory.set(false)
+        wirelessStatusText.value = null
         updateNotification()
         acquireWifiLock()
         nativeAaHandshakeManager?.pauseForActiveSession()
@@ -1640,6 +1641,10 @@ class AapService : Service(), UsbReceiver.Listener {
                 val blockedByExternalBt =
                     externalBt != null && !NativeAaHandshakeManager.externalBtOverridden(this)
                 if (!blockedByExternalBt) {
+                    // Start the official Bluetooth handshake servers FIRST so isRunning is true
+                    // before WifiDirectManager / LocalHotspot / SoftAP delivers credentials.
+                    nativeAaHandshakeManager?.start()
+
                     if (nativeTransport() == NativeTransport.LOCAL_HOTSPOT) {
                         localHotspotCredentialsProvider?.start()
                     } else if (nativeTransport() == NativeTransport.HOTSPOT) {
@@ -1652,9 +1657,6 @@ class AapService : Service(), UsbReceiver.Listener {
                         // We let WifiDirectManager handle the WiFi state (enabling if needed)
                         wifiDirectManager?.startNativeAaQuietHost()
                     }
-
-                    // Start the official Bluetooth handshake servers
-                    nativeAaHandshakeManager?.start()
                 }
             }
         }
@@ -1728,6 +1730,7 @@ class AapService : Service(), UsbReceiver.Listener {
     override fun onDestroy() {
         AppLog.i("AapService destroying... (wakeLock held=${bootWakeLock?.isHeld == true})")
         isDestroying = true
+        wirelessStatusText.value = null
         mediaMetadataDecodeJob?.cancel()
         cachedAaAlbumArtBitmap = null
         mediaNotification.cancel()
@@ -1811,6 +1814,7 @@ class AapService : Service(), UsbReceiver.Listener {
      */
     private fun stopAllWirelessForHandoff() {
         AppLog.i("AapService: ACTION_STOP_WIRELESS — stopping all AA wireless transports for clean handoff")
+        wirelessStatusText.value = null
         stopWirelessServer()
         nearbyManager?.stop()
         nativeAaHandshakeManager?.stop()
@@ -1952,6 +1956,9 @@ class AapService : Service(), UsbReceiver.Listener {
                     if (settings.wifiConnectionMode == 0 || settings.wifiConnectionMode == 4) {
                         settings.wifiConnectionMode = 3
                     }
+                    if (settings.wifi5gEnabled && settings.nativeApTransport != 0) {
+                        settings.nativeApTransport = 0
+                    }
                     if (!WirelessScopePolicy.allowsWireless(settings.connectionModes)) {
                         settings.connectionModes = settings.connectionModes + Settings.ConnectionMode.WIFI
                     }
@@ -1959,19 +1966,15 @@ class AapService : Service(), UsbReceiver.Listener {
                         AppLog.i("AapService: Initializing Native AA mode before poke...")
                         initWifiMode(force = true)
                     } else if (nativeAaHandshakeManager?.isActive() != true) {
-                        // A completed handoff closes the AA listeners while leaving the manager
-                        // running, and start() returns immediately on isRunning - so calling it here
-                        // reopened nothing. The poke then woke the phone, the phone opened RFCOMM,
-                        // and nothing was listening: the button appeared to do nothing however many
-                        // times it was pressed. A full re-init is what reopens them, which is what
-                        // the Bluetooth auto-start path below already does for the same reason.
                         AppLog.i("AapService: Native AA listeners are closed — re-arming before the poke.")
                         initWifiMode(force = true)
                     } else {
-                        AppLog.d("AapService: Already in Native AA mode, skipping re-init.")
-                        // Just ensure servers are running if they were stopped for some reason
+                        AppLog.d("AapService: Already in Native AA mode, ensuring servers and credentials are ready.")
                         startWirelessServer()
                         nativeAaHandshakeManager?.start()
+                        if (nativeAaHandshakeManager?.hasCredentials() != true) {
+                            triggerWifiDirectRefresh()
+                        }
                     }
 
                     nativeAaHandshakeManager?.manualPoke(mac)
@@ -3432,6 +3435,9 @@ class AapService : Service(), UsbReceiver.Listener {
         var selfMode = false
 
         val wifiDirectName = MutableStateFlow<String?>(null)
+
+        /** Live human-readable wireless AA handshake / Wi-Fi Direct status for HomeFragment UI. */
+        val wirelessStatusText = MutableStateFlow<String?>(null)
 
         data class UsbSwitchPrompt(
             val deviceName: String,

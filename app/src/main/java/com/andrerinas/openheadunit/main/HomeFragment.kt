@@ -64,15 +64,57 @@ class HomeFragment : Fragment() {
     private var connectingTickJob: Job? = null
     private var carPlayLaunchJob: Job? = null
 
-    private val bluetoothPermission = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
+    private val wirelessPermissions = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val btOk = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        val p2pOk = hasWirelessP2pPermission()
+        if (btOk && p2pOk) {
             view?.let { rebuildRecentDevicesRow(it) }
+            ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
+                action = AapService.ACTION_START_WIRELESS
+            })
             startPrimaryConnection()
-        } else {
+        } else if (!btOk) {
             showBluetoothHelp(R.string.bt_permission_denied)
+        } else {
+            Toast.makeText(
+                requireContext(),
+                "Concede el permiso de Ubicación para activar Wi-Fi Direct.",
+                Toast.LENGTH_LONG,
+            ).show()
         }
+    }
+
+    private fun hasWirelessP2pPermission(): Boolean {
+        val ctx = requireContext()
+        val hasFine = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val hasNearby = ContextCompat.checkSelfPermission(ctx, Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED
+            return hasNearby || hasFine
+        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) hasFine else true
+    }
+
+    private fun missingWirelessPermissions(): Array<String> {
+        val ctx = requireContext()
+        val needed = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed += Manifest.permission.BLUETOOTH_CONNECT
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) {
+                needed += Manifest.permission.NEARBY_WIFI_DEVICES
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed += Manifest.permission.ACCESS_FINE_LOCATION
+        }
+        return needed.toTypedArray()
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, state: Bundle?): View =
@@ -85,12 +127,15 @@ class HomeFragment : Fragment() {
         view.findViewById<View>(R.id.wifi_button)?.setOnClickListener {
             if (app.commManager.isConnected) {
                 openProjection()
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
-            ) {
-                bluetoothPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
             } else {
-                startPrimaryConnection()
+                val missing = if (app.settings.wifi5gEnabled || app.settings.hotspotModeEnabled) {
+                    missingWirelessPermissions()
+                } else emptyArray()
+                if (missing.isNotEmpty()) {
+                    wirelessPermissions.launch(missing)
+                } else {
+                    startPrimaryConnection()
+                }
             }
         }
 
@@ -98,7 +143,14 @@ class HomeFragment : Fragment() {
             if (app.commManager.isConnected) {
                 openProjection()
             } else if (!manualConnectingActive) {
-                startPrimaryConnection()
+                val missing = if (app.settings.wifi5gEnabled || app.settings.hotspotModeEnabled) {
+                    missingWirelessPermissions()
+                } else emptyArray()
+                if (missing.isNotEmpty()) {
+                    wirelessPermissions.launch(missing)
+                } else {
+                    startPrimaryConnection()
+                }
             }
         }
 
@@ -242,6 +294,11 @@ class HomeFragment : Fragment() {
                         if (prompt != null) {
                             showUsbSwitchDialog(prompt.deviceName)
                         }
+                    }
+                }
+                launch {
+                    AapService.wirelessStatusText.collect {
+                        refreshHeroState(view)
                     }
                 }
                 launch {
@@ -424,9 +481,10 @@ class HomeFragment : Fragment() {
                     return
                 }
                 pill?.text = "●  CONECTANDO"
+                val liveStatus = AapService.wirelessStatusText.value
                 badge?.text = connectingTransportLabel
                 title?.text = "Conectando a $connectingTargetName"
-                sub?.text = "Mantén el móvil desbloqueado. Suele tardar unos segundos."
+                sub?.text = liveStatus ?: "Mantén el móvil desbloqueado. Suele tardar unos segundos."
                 wifiBtn?.visibility = View.GONE
                 cpBtn?.visibility = View.GONE
                 usbBtn?.visibility = View.GONE
@@ -441,6 +499,9 @@ class HomeFragment : Fragment() {
                     else -> 3
                 }
                 ring?.subtitleText = when {
+                    liveStatus != null && liveStatus.contains("Credenciales") -> "Abriendo sesión"
+                    liveStatus != null && liveStatus.contains("BT") -> "Negociando Wi-Fi"
+                    liveStatus != null && liveStatus.contains("lista") -> "Esperando al móvil"
                     elapsedSec < 3 -> "Negociando enlace"
                     elapsedSec < 8 -> "Esperando al móvil"
                     else -> "Abriendo sesión"
@@ -448,6 +509,7 @@ class HomeFragment : Fragment() {
             }
             else -> {
                 pill?.text = "●  LISTO"
+                val liveStatus = AapService.wirelessStatusText.value
                 badge?.text = when {
                     s.wifi5gEnabled -> "📡 Wi-Fi 5 GHz activo"
                     s.hotspotModeEnabled -> "📲 Hotspot Móvil activo"
@@ -455,7 +517,11 @@ class HomeFragment : Fragment() {
                     else -> "⏸ Selecciona un modo abajo"
                 }
                 title?.text = "Conecta tu móvil"
-                sub?.text = "Elige Android Auto, Apple CarPlay o toca tu móvil vinculado."
+                sub?.text = if (s.wifi5gEnabled && !liveStatus.isNullOrBlank()) {
+                    liveStatus
+                } else {
+                    "Elige Android Auto, Apple CarPlay o toca tu móvil vinculado."
+                }
                 wifiBtn?.visibility = View.VISIBLE
                 wifiBtn?.text = if (wirelessAaEnabled) "Conectar Android Auto" else "Conectar por USB"
                 cpBtn?.visibility = View.VISIBLE
@@ -667,6 +733,12 @@ class HomeFragment : Fragment() {
             return
         }
 
+        val missing = missingWirelessPermissions()
+        if (missing.isNotEmpty()) {
+            wirelessPermissions.launch(missing)
+            return
+        }
+
         stopCarPlayForAndroidAuto()
         val s = app.settings
         if (!s.wifi5gEnabled && !s.hotspotModeEnabled) {
@@ -687,6 +759,9 @@ class HomeFragment : Fragment() {
         val s = app.settings
         s.autoStartBluetoothDeviceName = devName
         if (!s.wifi5gEnabled && !s.hotspotModeEnabled) return
+        if (s.wifi5gEnabled && s.nativeApTransport != 0) {
+            s.nativeApTransport = 0
+        }
         ensureCarWifiEnabled()
         if (s.hotspotModeEnabled || device == null) {
             ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {

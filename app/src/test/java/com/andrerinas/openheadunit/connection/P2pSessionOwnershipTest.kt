@@ -56,4 +56,16 @@ class P2pSessionOwnershipTest {
         state.observeCreatedGroup(true, "DIRECT-system")
         assertTrue(state.owns(true, "DIRECT-system"))
     }
+
+    @Test fun `repeated start while already active does not invalidate in-flight generation`() {
+        val state = P2pSessionOwnership()
+        state.start()
+        val inFlightGen = state.generation
+        // Re-entrant start (e.g. UI tap, permission callback, or initWifiMode force) must not
+        // bump generation and orphan the in-flight createGroup/requestGroupInfo callback.
+        state.start()
+        assertEquals(inFlightGen, state.generation)
+        assertTrue(state.current(inFlightGen))
+        assertTrue(state.created(inFlightGen))
+    }
 }

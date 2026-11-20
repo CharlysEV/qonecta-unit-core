@@ -262,5 +262,14 @@ class CoreSafetyInvariantsTest {
         assertTrue("start() must bump generation to invalidate stale in-flight callbacks", gen1 > gen0)
         assertFalse("Old generation must no longer be current", ownership.current(gen0))
         assertTrue("New generation must be current", ownership.current(gen1))
+        // Calling start() again while already active must NOT bump generation and kill an in-flight createGroup.
+        ownership.start()
+        assertEquals("Re-entrant start() while active must preserve current generation", gen1, ownership.generation)
+        assertTrue("Current generation must remain valid after re-entrant start()", ownership.current(gen1))
+        // Stop + start must bump generation again.
+        ownership.stop()
+        ownership.start()
+        assertTrue("start() after stop() must bump generation", ownership.generation > gen1)
+        assertFalse("Pre-stop generation must stay fenced", ownership.current(gen1))
     }
 }
