@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icono adaptativo de Qonecta Unit (familia Qonecta+): Q cian→verde con rayo y pulso interior Unit. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M52.78,67.53 A19.1,19.1 0 1 1 67.48,52.83"
+        android:strokeWidth="8.02"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="29.71"
+                android:startY="29.76"
+                android:endX="67.9"
+                android:endY="67.95">
+                <item android:color="#FF00E5C7" android:offset="0" />
+                <item android:color="#FF4CFF9F" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Arco interior distintivo de Qonecta Unit -->
+    <path
+        android:pathData="M41.5,52.5 A9.5,9.5 0 0 1 52.5,41.5"
+        android:strokeWidth="3.4"
+        android:strokeColor="#D980FFEA"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M50.5,50.5m-3.0,0a3.0,3.0 0,1 1,6.0 0a3.0,3.0 0,1 1,-6.0 0" />
+    <path
+        android:pathData="M75.69,52.39 L58.83,68.83 L66.64,70.49 L61.65,83.52 L78.8,65.65 L70.99,64 Z"
+        android:strokeWidth="0.92"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="58.83"
+                android:startY="52.38"
+                android:endX="78.8"
+                android:endY="83.53">
+                <item android:color="#FFFFFFFF" android:offset="0" />
+                <item android:color="#FFB8FFDF" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="58.83"
+                android:startY="52.38"
+                android:endX="78.8"
+                android:endY="83.53">
+                <item android:color="#FFFFFFFF" android:offset="0" />
+                <item android:color="#FFB8FFDF" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

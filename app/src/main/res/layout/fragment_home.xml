@@ -1,0 +1,536 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="@color/hql_bg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="30dp"
+        android:paddingEnd="30dp"
+        android:paddingTop="18dp"
+        android:paddingBottom="18dp">
+
+        <!-- Cabecera limpia: Qonecta Unit Core (AA + CarPlay) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:src="@drawable/hql_logo"
+                android:importantForAccessibility="no" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="14dp"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/core_app_name"
+                        android:textSize="34sp"
+                        android:textColor="@color/hql_text"
+                        android:fontFamily="sans-serif-medium"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/home_version_badge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="5dp"
+                        android:background="@drawable/bg_pill_translucent"
+                        android:text="v1.0.0-core · AA + CarPlay"
+                        android:singleLine="true"
+                        android:textSize="14.5sp"
+                        android:textColor="@color/hql_accent"
+                        android:fontFamily="sans-serif-medium"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.04" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/home_subtitle_banner"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:text="@string/core_home_subtitle"
+                    android:textSize="15sp"
+                    android:textColor="@color/hql_text_dim"
+                    android:fontFamily="sans-serif-medium" />
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/home_support_button"
+                android:layout_width="wrap_content"
+                android:layout_height="54dp"
+                android:layout_marginEnd="10dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="@string/qu_support_donate_button"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:textColor="#FFB547"
+                app:backgroundTint="@color/hql_surface_top"
+                app:strokeColor="#FFB547"
+                app:strokeWidth="2dp"
+                app:cornerRadius="18dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/cluster_toggle_button"
+                android:layout_width="wrap_content"
+                android:layout_height="54dp"
+                android:layout_marginEnd="10dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="@string/qu_cluster_short_off"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:textColor="@color/hql_text"
+                app:backgroundTint="@color/hql_surface_top"
+                app:strokeColor="@color/hql_outline"
+                app:strokeWidth="2dp"
+                app:cornerRadius="18dp"
+                app:icon="@drawable/ic_da_display"
+                app:iconSize="20dp"
+                app:iconTint="@color/hql_accent"
+                app:iconGravity="textStart"
+                app:iconPadding="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/files_button"
+                android:layout_width="wrap_content"
+                android:layout_height="54dp"
+                android:layout_marginEnd="10dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="@string/qu_files_short"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:textColor="@color/hql_text"
+                app:backgroundTint="@color/hql_surface_top"
+                app:strokeColor="@color/hql_outline"
+                app:strokeWidth="2dp"
+                app:cornerRadius="18dp"
+                app:icon="@drawable/ic_folder_white"
+                app:iconSize="20dp"
+                app:iconTint="@color/hql_accent"
+                app:iconGravity="textStart"
+                app:iconPadding="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/settings_button"
+                android:layout_width="wrap_content"
+                android:layout_height="54dp"
+                android:layout_marginEnd="10dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="@string/core_btn_settings"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:textColor="@color/hql_text"
+                app:backgroundTint="@color/hql_surface_top"
+                app:strokeColor="@color/hql_outline"
+                app:strokeWidth="2dp"
+                app:cornerRadius="18dp"
+                app:icon="@drawable/ic_settings_white"
+                app:iconSize="20dp"
+                app:iconTint="@color/hql_accent"
+                app:iconGravity="textStart"
+                app:iconPadding="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/exit_button"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="54dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:text="@string/da_close"
+                android:textColor="@color/hql_text"
+                app:strokeColor="@color/hql_outline"
+                app:strokeWidth="2dp"
+                app:cornerRadius="18dp" />
+        </LinearLayout>
+
+        <!-- Aviso si se elige un modo Wi-Fi y el Wi-Fi del coche está apagado -->
+        <LinearLayout
+            android:id="@+id/wifi_conflict_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="12dp"
+            android:background="@drawable/da_card"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/wifi_conflict_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="14dp"
+                android:text="@string/core_wifi_off_banner"
+                android:textSize="14sp"
+                android:textColor="#FFB547"
+                android:fontFamily="sans-serif-medium" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/wifi_conflict_action"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="@string/core_wifi_turn_on"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:textColor="@color/hql_bg"
+                app:backgroundTint="#FFB547"
+                app:cornerRadius="12dp" />
+        </LinearLayout>
+
+        <!-- Tarjeta principal de conexión -->
+        <LinearLayout
+            android:id="@+id/hero_connection_card"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="14dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="28dp"
+            android:paddingEnd="24dp"
+            android:paddingTop="20dp"
+            android:paddingBottom="20dp"
+            android:background="@drawable/da_card">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_weight="1.45"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/hero_status_pill"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="6dp"
+                        android:background="@drawable/bg_pill_translucent"
+                        android:text="@string/core_status_ready"
+                        android:textSize="17sp"
+                        android:textColor="@color/hql_accent"
+                        android:fontFamily="sans-serif-medium"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06" />
+
+                    <TextView
+                        android:id="@+id/hero_transport_badge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:paddingHorizontal="16dp"
+                        android:paddingVertical="6dp"
+                        android:background="@drawable/bg_pill_translucent"
+                        android:text="@string/core_badge_wifi5g_ready"
+                        android:textSize="17sp"
+                        android:textColor="@color/hql_text"
+                        android:fontFamily="sans-serif-medium"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/connection_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/core_hero_title_idle"
+                    android:textSize="44sp"
+                    android:textColor="@color/hql_text"
+                    android:fontFamily="sans-serif-medium"
+                    android:textStyle="bold"
+                    android:accessibilityLiveRegion="polite" />
+
+                <TextView
+                    android:id="@+id/hero_subtitle_text"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/core_hero_sub_idle"
+                    android:textSize="19sp"
+                    android:textColor="@color/hql_text_dim" />
+
+                <!-- Botones principales -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/wifi_button"
+                        android:layout_width="wrap_content"
+                        android:layout_height="68dp"
+                        android:layout_marginEnd="12dp"
+                        android:paddingStart="26dp"
+                        android:paddingEnd="26dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="@string/core_btn_connect_aa"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hql_bg"
+                        app:backgroundTint="@color/hql_accent"
+                        app:cornerRadius="34dp"
+                        app:icon="@drawable/ic_android_auto"
+                        app:iconSize="26dp"
+                        app:iconTint="@color/hql_bg"
+                        app:iconGravity="textStart"
+                        app:iconPadding="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/carplay_button"
+                        android:layout_width="wrap_content"
+                        android:layout_height="68dp"
+                        android:layout_marginEnd="12dp"
+                        android:paddingStart="22dp"
+                        android:paddingEnd="22dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="@string/core_btn_carplay"
+                        android:textSize="19.5sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hql_text"
+                        app:backgroundTint="@color/hql_surface_top"
+                        app:strokeColor="@color/hql_edge"
+                        app:strokeWidth="2dp"
+                        app:cornerRadius="34dp"
+                        app:icon="@drawable/ic_carplay"
+                        app:iconSize="26dp"
+                        app:iconTint="@null"
+                        app:iconGravity="textStart"
+                        app:iconPadding="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/usb_button"
+                        android:layout_width="wrap_content"
+                        android:layout_height="68dp"
+                        android:paddingStart="22dp"
+                        android:paddingEnd="22dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="@string/core_btn_usb_cable"
+                        android:textSize="19.5sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hql_text"
+                        app:backgroundTint="@color/hql_surface_top"
+                        app:strokeColor="@color/hql_edge"
+                        app:strokeWidth="2dp"
+                        app:cornerRadius="34dp"
+                        app:icon="@drawable/ic_usb_white"
+                        app:iconSize="24dp"
+                        app:iconTint="@color/hql_accent"
+                        app:iconGravity="textStart"
+                        app:iconPadding="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/hero_cancel_button"
+                        android:layout_width="wrap_content"
+                        android:layout_height="68dp"
+                        android:paddingStart="28dp"
+                        android:paddingEnd="28dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="@string/core_btn_cancel_conn"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hql_text"
+                        app:backgroundTint="@color/hql_surface_top"
+                        app:strokeColor="@color/hql_outline"
+                        app:strokeWidth="2dp"
+                        app:cornerRadius="34dp"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <!-- 3 modos limpios de transporte para Android Auto -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:text="@string/core_modes_header"
+                    android:textSize="15sp"
+                    android:textColor="@color/hql_accent"
+                    android:fontFamily="sans-serif-medium"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.04" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/mode_btn_wifi_direct"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="74dp"
+                        android:layout_marginEnd="10dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="12dp"
+                        android:text="@string/core_mode_wifi_on"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hql_bg"
+                        app:backgroundTint="@color/hql_accent"
+                        app:strokeColor="@color/hql_accent"
+                        app:strokeWidth="2dp"
+                        app:cornerRadius="18dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/mode_btn_hotspot"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="74dp"
+                        android:layout_marginEnd="10dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="12dp"
+                        android:text="@string/core_mode_hotspot_off"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hql_text"
+                        app:backgroundTint="@color/hql_surface_top"
+                        app:strokeColor="@color/hql_outline"
+                        app:strokeWidth="2dp"
+                        app:cornerRadius="18dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/mode_btn_usb"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="74dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="12dp"
+                        android:text="@string/core_mode_usb_on"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hql_text"
+                        app:backgroundTint="@color/hql_surface_top"
+                        app:strokeColor="@color/hql_outline"
+                        app:strokeWidth="2dp"
+                        app:cornerRadius="18dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/mode_active_explanation"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/core_hero_sub_idle"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/hql_text" />
+            </LinearLayout>
+
+            <!-- Anillo visual de estado / contador (solo anima cuando está conectando) -->
+            <FrameLayout
+                android:layout_width="0dp"
+                android:layout_weight="0.62"
+                android:layout_height="match_parent"
+                android:gravity="center">
+
+                <com.headqlink.unit.extended.ConnectionRingView
+                    android:id="@+id/connection_ring_view"
+                    android:layout_width="275dp"
+                    android:layout_height="275dp"
+                    android:layout_gravity="center"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </FrameLayout>
+        </LinearLayout>
+
+        <!-- Móviles vinculados por Bluetooth -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/core_paired_header"
+                android:textSize="16sp"
+                android:textColor="@color/hql_accent"
+                android:fontFamily="sans-serif-medium"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <LinearLayout
+                android:id="@+id/recent_devices_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

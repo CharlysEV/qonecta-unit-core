@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Qonecta Unit: textos propios (prefijo qu_). Modo de pantalla (bloque A) y panel del Extendido: batería,
+     autonomía, antigüedad del dato, estados de la cuenta y ajustes (bloque B). -->
+<resources>
+    <!-- Modo de pantalla: AA a la izquierda con nuestro panel a la derecha, o AA a pantalla completa -->
+    <string name="qu_extended">Extended</string>
+    <string name="qu_fullscreen">Full screen</string>
+    <!-- Ficha del panel con datos inventados (capturas): igual en todos los idiomas -->
+    <string name="qu_demo" translatable="false">DEMO</string>
+
+    <!-- Tarjeta Batería -->
+    <string name="qu_battery">Battery</string>
+    <string name="qu_range">Range</string>
+
+    <!-- Antigüedad del dato del coche -->
+    <string name="qu_ago_now">just now</string>
+    <string name="qu_ago_s">%1$d s ago</string>
+    <string name="qu_ago_min">%1$d min ago</string>
+    <string name="qu_ago_h">%1$d h ago</string>
+    <string name="qu_ago_d">%1$d d ago</string>
+
+    <!-- Estados de la cuenta de Leapmotor: título (también el aviso corto cuando hay dato) y explicación -->
+    <string name="qu_state_no_account_title">No Leapmotor account</string>
+    <string name="qu_state_no_account_text">It is optional. With it, this panel shows the real battery and range of the car.</string>
+    <string name="qu_state_off_title">Car data is turned off</string>
+    <string name="qu_state_off_text">Reading the Leapmotor account is off.</string>
+    <string name="qu_state_expired_title">The Leapmotor session has expired</string>
+    <string name="qu_state_expired_text">Sign in again in Car data.</string>
+    <string name="qu_state_server_key_title">The Leapmotor server changed its key</string>
+    <string name="qu_state_server_key_text">For safety, nothing is read until you review it in Car data.</string>
+    <string name="qu_state_unsupported_title">Needs Android 6 or later</string>
+    <string name="qu_state_unsupported_text">The certificate and the session are stored encrypted with the Android Keystore, which this unit lacks.</string>
+    <string name="qu_state_error_title">No car data yet</string>
+    <string name="qu_state_error_text">The cloud could not be read (no connection or it is not answering). Retrying in %1$d min.</string>
+    <string name="qu_state_waiting">Reading the car status…</string>
+    <string name="qu_retry_in">No connection to the cloud: retrying in %1$d min.</string>
+    <string name="qu_open_car_data">Tap to open Car data</string>
+
+    <!-- Ajustes de la app: categoría Qonecta Unit -->
+    <string name="qu_settings_category" translatable="false">Qonecta Unit</string>
+    <string name="qu_settings_mode">Screen mode</string>
+    <string name="qu_settings_car_data">Car data (Leapmotor account)</string>
+    <string name="qu_settings_car_data_pending">Coming with the cloud</string>
+    <string name="qu_settings_demo">Panel with made-up data (DEMO)</string>
+    <string name="qu_settings_demo_desc">For screenshots: the panel shows invented battery data with the DEMO tag and never uses the network.</string>
+
+    <!-- Car probe (Diagnostics) -->
+    <string name="qu_probe">Car probe (read-only)</string>
+    <string name="qu_probe_hint">Checks which Leapmotor services the head unit has and whether Qonecta Unit can connect to them to read the battery. It also looks at the screens (for the map on the instrument cluster) and where Vivaldi came from. It sends no command to the car. When it finishes, save the result to the USB drive.</string>
+    <string name="qu_probe_running">Looking at the car…</string>
+    <string name="qu_probe_saved">Probe saved</string>
+
+    <!-- Car files (Diagnostics / Home / Settings) -->
+    <string name="qu_files">Car files</string>
+    <string name="qu_files_short">Files</string>
+    <string name="qu_files_update_title">Car files (Update)</string>
+    <string name="qu_files_hint">Opens the head unit\'s file browser, with no need for Vivaldi. Tapping an APK on the USB drive installs or updates it. If the file picker opens instead, use the ⤢ icon on the APK.</string>
+    <string name="qu_files_picker_tip">To install or update from the file picker, tap the ⤢ icon in the corner of the .apk file (not the center).</string>
+    <string name="qu_files_none">This car does not let us open the file browser</string>
+
+    <!-- Second screen / Instrument cluster (Display 2, opt-in) -->
+    <string name="qu_cluster_short_off">Cluster: OFF</string>
+    <string name="qu_cluster_short_on">Cluster: ON</string>
+    <string name="qu_cluster_title">Second screen (Instrument cluster)</string>
+    <string name="qu_cluster_hint_off">Disabled (default safe mode). Tap to show the live map and discrete track/turn cards on Display 2 (Android Auto &amp; CarPlay).</string>
+    <string name="qu_cluster_hint_on">Enabled · Shows the live map and discrete track/turn cards on Display 2. Reconnect to apply changes.</string>
+    <string name="qu_cluster_toast_on">Second screen enabled (applies on next connection).</string>
+    <string name="qu_cluster_toast_off">Second screen disabled.</string>
+
+    <!-- Project support / donations (Ko-fi + PayPal QR codes) -->
+    <string name="qu_support_donate_button">☕ Support</string>
+    <string name="qu_support_donate_title">☕ Support the project</string>
+    <string name="qu_support_donate_desc">Buy a coffee on Ko-fi or donate via PayPal (QR codes)</string>
+</resources>

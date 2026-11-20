@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="qu_extended">Estendido</string>
+    <string name="qu_fullscreen">Ecrã inteiro</string>
+
+    <string name="qu_battery">Bateria</string>
+    <string name="qu_range">Autonomia</string>
+
+    <string name="qu_ago_now">agora</string>
+    <string name="qu_ago_s">há %1$d s</string>
+    <string name="qu_ago_min">há %1$d min</string>
+    <string name="qu_ago_h">há %1$d h</string>
+    <string name="qu_ago_d">há %1$d d</string>
+
+    <string name="qu_state_no_account_title">Sem conta Leapmotor</string>
+    <string name="qu_state_no_account_text">É opcional. Com ela, este painel mostra a bateria e autonomia reais do carro.</string>
+    <string name="qu_state_off_title">Dados do carro desativados</string>
+    <string name="qu_state_off_text">A leitura da conta Leapmotor está desligada.</string>
+    <string name="qu_state_expired_title">A sessão Leapmotor expirou</string>
+    <string name="qu_state_expired_text">Inicie sessão novamente em Dados do carro.</string>
+    <string name="qu_state_server_key_title">O servidor Leapmotor alterou a chave</string>
+    <string name="qu_state_server_key_text">Por segurança, nada é lido até rever em Dados do carro.</string>
+    <string name="qu_state_unsupported_title">Requer Android 6 ou superior</string>
+    <string name="qu_state_unsupported_text">O certificado e a sessão são guardados encriptados com o Android Keystore.</string>
+    <string name="qu_state_error_title">Ainda sem dados do carro</string>
+    <string name="qu_state_error_text">Não foi possível ler a nuvem. Nova tentativa em %1$d min.</string>
+    <string name="qu_state_waiting">A ler estado do carro…</string>
+    <string name="qu_retry_in">Sem ligação à nuvem: nova tentativa em %1$d min.</string>
+    <string name="qu_open_car_data">Toque para abrir Dados do carro</string>
+
+    <string name="qu_settings_mode">Modo de ecrã</string>
+    <string name="qu_settings_car_data">Dados do carro (conta Leapmotor)</string>
+    <string name="qu_settings_car_data_pending">Disponível em breve</string>
+    <string name="qu_settings_demo">Painel com dados simulados (DEMO)</string>
+    <string name="qu_settings_demo_desc">Para capturas: mostra dados simulados com a etiqueta DEMO sem usar rede.</string>
+
+    <string name="qu_probe">Diagnóstico do carro (só leitura)</string>
+    <string name="qu_probe_hint">Verifica os serviços e ecrãs disponíveis na unidade sem enviar qualquer comando ao carro.</string>
+    <string name="qu_probe_running">A analisar o carro…</string>
+    <string name="qu_probe_saved">Diagnóstico guardado</string>
+
+    <string name="qu_files">Ficheiros do carro</string>
+    <string name="qu_files_short">Ficheiros</string>
+    <string name="qu_files_update_title">Ficheiros do carro (Atualizar)</string>
+    <string name="qu_files_hint">Abre o gestor de ficheiros da unidade para instalar ou atualizar um APK na pen USB.</string>
+    <string name="qu_files_picker_tip">Para instalar a partir do seletor, toque no ícone ⤢ no canto do ficheiro .apk (não no centro).</string>
+    <string name="qu_files_none">Este carro não permite abrir o gestor de ficheiros</string>
+
+    <string name="qu_cluster_short_off">Painel: OFF</string>
+    <string name="qu_cluster_short_on">Painel: ON</string>
+    <string name="qu_cluster_title">Segundo ecrã (Painel de instrumentos)</string>
+    <string name="qu_cluster_hint_off">Desativado (modo seguro por defeito). Toque para mostrar o mapa e cartões discretos no 2.º ecrã (AA e CarPlay).</string>
+    <string name="qu_cluster_hint_on">Ativado · Mostra o mapa e avisos discretos no 2.º ecrã. Reconecte para aplicar.</string>
+    <string name="qu_cluster_toast_on">Segundo ecrã ativado (aplica-se na próxima ligação).</string>
+    <string name="qu_cluster_toast_off">Segundo ecrã desativado.</string>
+
+    <string name="qu_support_donate_button">☕ Apoiar</string>
+    <string name="qu_support_donate_title">☕ Apoiar o projeto</string>
+    <string name="qu_support_donate_desc">Oferecer um café no Ko-fi ou doar por PayPal (códigos QR)</string>
+</resources>

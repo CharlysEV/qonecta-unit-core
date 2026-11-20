@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="qu_extended">Esteso</string>
+    <string name="qu_fullscreen">Schermo intero</string>
+
+    <string name="qu_battery">Batteria</string>
+    <string name="qu_range">Autonomia</string>
+
+    <string name="qu_ago_now">ora</string>
+    <string name="qu_ago_s">%1$d s fa</string>
+    <string name="qu_ago_min">%1$d min fa</string>
+    <string name="qu_ago_h">%1$d h fa</string>
+    <string name="qu_ago_d">%1$d g fa</string>
+
+    <string name="qu_state_no_account_title">Nessun account Leapmotor</string>
+    <string name="qu_state_no_account_text">È facoltativo. Consente di mostrare batteria e autonomia reali dell\'auto.</string>
+    <string name="qu_state_off_title">Dati auto disattivati</string>
+    <string name="qu_state_off_text">La lettura dell\'account Leapmotor è spenta.</string>
+    <string name="qu_state_expired_title">Sessione Leapmotor scaduta</string>
+    <string name="qu_state_expired_text">Accedi nuovamente in Dati auto.</string>
+    <string name="qu_state_server_key_title">Il server Leapmotor ha cambiato chiave</string>
+    <string name="qu_state_server_key_text">Per sicurezza non viene letto nulla finché non controlli in Dati auto.</string>
+    <string name="qu_state_unsupported_title">Richiede Android 6 o successivo</string>
+    <string name="qu_state_unsupported_text">Certificato e sessione vengono cifrati con Android Keystore.</string>
+    <string name="qu_state_error_title">Nessun dato auto ancora</string>
+    <string name="qu_state_error_text">Impossibile leggere il cloud. Nuovo tentativo tra %1$d min.</string>
+    <string name="qu_state_waiting">Lettura stato auto…</string>
+    <string name="qu_retry_in">Nessuna connessione cloud: riprovo tra %1$d min.</string>
+    <string name="qu_open_car_data">Tocca per aprire Dati auto</string>
+
+    <string name="qu_settings_mode">Modalità schermo</string>
+    <string name="qu_settings_car_data">Dati auto (account Leapmotor)</string>
+    <string name="qu_settings_car_data_pending">In arrivo con il cloud</string>
+    <string name="qu_settings_demo">Pannello con dati simulati (DEMO)</string>
+    <string name="qu_settings_demo_desc">Per schermate dimostrative con etichetta DEMO e senza rete.</string>
+
+    <string name="qu_probe">Diagnostica auto (sola lettura)</string>
+    <string name="qu_probe_hint">Controlla i servizi e i display disponibili senza inviare comandi all\'auto.</string>
+    <string name="qu_probe_running">Analisi dell\'auto…</string>
+    <string name="qu_probe_saved">Diagnostica salvata</string>
+
+    <string name="qu_files">File dell\'auto</string>
+    <string name="qu_files_short">File</string>
+    <string name="qu_files_update_title">File dell\'auto (Aggiorna)</string>
+    <string name="qu_files_hint">Apre il file manager dell\'unità per installare o aggiornare un APK dalla chiavetta USB.</string>
+    <string name="qu_files_picker_tip">Per installare dal selettore, tocca l\'icona ⤢ nell\'angolo del file .apk (non al centro).</string>
+    <string name="qu_files_none">Questa auto non consente di aprire il file manager</string>
+
+    <string name="qu_cluster_short_off">Quadro: OFF</string>
+    <string name="qu_cluster_short_on">Quadro: ON</string>
+    <string name="qu_cluster_title">Secondo schermo (Quadro strumenti)</string>
+    <string name="qu_cluster_hint_off">Disattivato (modalità sicura predefinita). Tocca per mostrare mappa e avvisi discreti sul 2° schermo (AA e CarPlay).</string>
+    <string name="qu_cluster_hint_on">Attivato · Mostra mappa e avvisi discreti sul 2° schermo. Riconnetti per applicare.</string>
+    <string name="qu_cluster_toast_on">Secondo schermo attivato (si applica alla prossima connessione).</string>
+    <string name="qu_cluster_toast_off">Secondo schermo disattivato.</string>
+
+    <string name="qu_support_donate_button">☕ Supporta</string>
+    <string name="qu_support_donate_title">☕ Supporta il progetto</string>
+    <string name="qu_support_donate_desc">Offri un caffè su Ko-fi o dona con PayPal (codici QR)</string>
+</resources>

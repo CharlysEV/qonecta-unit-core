@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="qu_extended">Erweitert</string>
+    <string name="qu_fullscreen">Vollbild</string>
+
+    <string name="qu_battery">Batterie</string>
+    <string name="qu_range">Reichweite</string>
+
+    <string name="qu_ago_now">gerade eben</string>
+    <string name="qu_ago_s">vor %1$d s</string>
+    <string name="qu_ago_min">vor %1$d Min.</string>
+    <string name="qu_ago_h">vor %1$d Std.</string>
+    <string name="qu_ago_d">vor %1$d T.</string>
+
+    <string name="qu_state_no_account_title">Kein Leapmotor-Konto</string>
+    <string name="qu_state_no_account_text">Optional. Zeigt echten Akkustand und Reichweite des Fahrzeugs an.</string>
+    <string name="qu_state_off_title">Fahrzeugdaten deaktiviert</string>
+    <string name="qu_state_off_text">Das Lesen des Leapmotor-Kontos ist ausgeschaltet.</string>
+    <string name="qu_state_expired_title">Leapmotor-Sitzung abgelaufen</string>
+    <string name="qu_state_expired_text">Bitte unter Fahrzeugdaten erneut anmelden.</string>
+    <string name="qu_state_server_key_title">Leapmotor-Serverschlüssel geändert</string>
+    <string name="qu_state_server_key_text">Aus Sicherheitsgründen erst nach Prüfung unter Fahrzeugdaten aktiv.</string>
+    <string name="qu_state_unsupported_title">Erfordert Android 6 oder neuer</string>
+    <string name="qu_state_unsupported_text">Zertifikat und Sitzung werden im Android Keystore verschlüsselt gespeichert.</string>
+    <string name="qu_state_error_title">Noch keine Fahrzeugdaten</string>
+    <string name="qu_state_error_text">Cloud nicht erreichbar. Neuer Versuch in %1$d Min.</string>
+    <string name="qu_state_waiting">Fahrzeugstatus wird gelesen…</string>
+    <string name="qu_retry_in">Keine Cloud-Verbindung: neuer Versuch in %1$d Min.</string>
+    <string name="qu_open_car_data">Tippen zum Öffnen der Fahrzeugdaten</string>
+
+    <string name="qu_settings_mode">Bildschirmmodus</string>
+    <string name="qu_settings_car_data">Fahrzeugdaten (Leapmotor-Konto)</string>
+    <string name="qu_settings_car_data_pending">Folgt mit der Cloud</string>
+    <string name="qu_settings_demo">Panel mit Demodaten (DEMO)</string>
+    <string name="qu_settings_demo_desc">Für Screenshots mit DEMO-Hinweis ohne Netzwerkzugriff.</string>
+
+    <string name="qu_probe">Fahrzeugdiagnose (nur Lesen)</string>
+    <string name="qu_probe_hint">Prüft Dienste und Displays der Headunit, ohne Befehle an das Auto zu senden.</string>
+    <string name="qu_probe_running">Fahrzeug wird geprüft…</string>
+    <string name="qu_probe_saved">Diagnose gespeichert</string>
+
+    <string name="qu_files">Fahrzeugdateien</string>
+    <string name="qu_files_short">Dateien</string>
+    <string name="qu_files_update_title">Fahrzeugdateien (Update)</string>
+    <string name="qu_files_hint">Öffnet den Dateimanager der Headunit zum Installieren oder Aktualisieren einer APK vom USB-Stick.</string>
+    <string name="qu_files_picker_tip">Zum Installieren im Dateiauswahldialog das Symbol ⤢ in der Ecke der .apk-Datei tippen (nicht die Mitte).</string>
+    <string name="qu_files_none">Dieses Fahrzeug erlaubt keinen Zugriff auf den Dateimanager</string>
+
+    <string name="qu_cluster_short_off">Tacho: AUS</string>
+    <string name="qu_cluster_short_on">Tacho: AN</string>
+    <string name="qu_cluster_title">Zweitbildschirm (Kombiinstrument)</string>
+    <string name="qu_cluster_hint_off">Deaktiviert (sicherer Standardmodus). Tippen für Live-Karte und dezente Hinweise auf Display 2 (AA &amp; CarPlay).</string>
+    <string name="qu_cluster_hint_on">Aktiviert · Zeigt Karte und dezente Hinweise auf Display 2. Zum Übernehmen neu verbinden.</string>
+    <string name="qu_cluster_toast_on">Zweitbildschirm aktiviert (gilt ab der nächsten Verbindung).</string>
+    <string name="qu_cluster_toast_off">Zweitbildschirm deaktiviert.</string>
+
+    <string name="qu_support_donate_button">☕ Unterstützen</string>
+    <string name="qu_support_donate_title">☕ Projekt unterstützen</string>
+    <string name="qu_support_donate_desc">Kaffee über Ko-fi ausgeben oder per PayPal spenden (QR-Codes)</string>
+</resources>

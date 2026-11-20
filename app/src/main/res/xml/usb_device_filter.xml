@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<resources>
+
+    <!-- Do NOT use a bare <usb-device /> wildcard on Leapmotor C10: the car's internal
+         DAB digital radio ("DR Receiver") enumerates as a USB audio peripheral on every boot,
+         causing Android to prompt "¿Quieres abrir Qonecta Unit para gestionar DR Receiver?". -->
+
+    <!-- Google / AOA Accessory Mode -->
+    <usb-device vendor-id="6353" product-id="11520" />
+    <usb-device vendor-id="6353" product-id="11521" />
+    <usb-device vendor-id="6353" />
+
+    <!-- Known Android Phone OEMs (grant implicit USB permission on C10) -->
+    <usb-device vendor-id="1256" />  <!-- Samsung (0x04E8) -->
+    <usb-device vendor-id="10007" /> <!-- Xiaomi (0x2717) -->
+    <usb-device vendor-id="8888" />  <!-- Motorola (0x22B8) -->
+    <usb-device vendor-id="4817" />  <!-- Huawei (0x12D1) -->
+    <usb-device vendor-id="13211" /> <!-- Honor (0x339B) -->
+    <usb-device vendor-id="8921" />  <!-- OPPO / Realme (0x22D9) -->
+    <usb-device vendor-id="10864" /> <!-- OnePlus (0x2A70) -->
+    <usb-device vendor-id="11669" /> <!-- vivo (0x2D95) -->
+    <usb-device vendor-id="4100" />  <!-- LG (0x1004) -->
+    <usb-device vendor-id="4046" />  <!-- Sony (0x0FCE) -->
+    <usb-device vendor-id="2996" />  <!-- HTC (0x0BB4) -->
+    <usb-device vendor-id="2821" />  <!-- ASUS (0x0B05) -->
+    <usb-device vendor-id="11780" /> <!-- Nothing (0x2E04) -->
+    <usb-device vendor-id="6610" />  <!-- ZTE (0x19D2) -->
+    <usb-device vendor-id="6127" />  <!-- Lenovo (0x17EF) -->
+    <usb-device vendor-id="7379" />  <!-- Fairphone / OEM (0x1CD3) -->
+    <usb-device vendor-id="7099" />  <!-- TCL / Alcatel (0x1BBB) -->
+    <usb-device vendor-id="10821" /> <!-- Meizu (0x2A45) -->
+    <usb-device vendor-id="10665" /> <!-- Smartisan (0x29A9) -->
+    <usb-device vendor-id="3725" />  <!-- MediaTek (0x0E8D) -->
+    <usb-device vendor-id="1478" />  <!-- Qualcomm (0x05C6) -->
+
+    <!-- Apple iPhone (CarPlay USB) -->
+    <usb-device vendor-id="1452" />  <!-- Apple (0x05AC) -->
+    <usb-device vendor-id="2276" product-id="260" />
+
+</resources>
