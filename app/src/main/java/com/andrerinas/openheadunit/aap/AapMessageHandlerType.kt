@@ -39,9 +39,7 @@ internal class AapMessageHandlerType(
         // msgType >= 32768 (e.g. VIDEO_FOCUS_INDICATION 32776). Passing them into the fragment
         // assembler while a multi-fragment video frame (flags = 9, 8, ..., 10) is mid-assembly
         // would falsely trigger TRUNCATED_PREVIOUS and discard the in-flight video frame!
-        if (message.channel == Channel.ID_VID &&
-            (!isFirstOrSingle || flags.toInt() != VideoFragmentAssembler.FLAG_SINGLE || msgType in 0..1)
-        ) {
+        if (shouldOfferToVideoStream(message.channel, Channel.ID_VID, isFirstOrSingle, flags, msgType)) {
             if (aapVideo.process(message)) {
                 if (isFirstOrSingle && (msgType == 0 || msgType == 1)) {
                     transport.onMainVideoData()
@@ -51,10 +49,23 @@ internal class AapMessageHandlerType(
             }
         }
 
-        // 1b. Core mode: drop any stray secondary/cluster video traffic without ever initializing
-        // the secondary MediaCodec pipeline (protects C10 SA8155P video decoder pool).
-        if (message.channel == Channel.ID_CLUSTER_VID) {
-            return
+        // 1b. Secondary instrument-cluster video stream (Channel.ID_CLUSTER_VID = 14).
+        // Single-fragment control messages (ChannelOpenRequest, MediaSetupRequest, MediaStart,
+        // VideoFocusRequest) MUST fall through to aapControl.execute() so Android Auto's
+        // CAR.SERVICE completes channel open/setup instead of hanging in CONNECTING.
+        // When clusterMapEnabled is false, drop any stray video payload without touching the
+        // lazy clusterVideo / clusterVideoDecoder pipeline.
+        if (shouldOfferToVideoStream(message.channel, Channel.ID_CLUSTER_VID, isFirstOrSingle, flags, msgType)) {
+            if (transport.settings.clusterMapEnabled) {
+                if (transport.clusterVideo.process(message)) {
+                    if (isFirstOrSingle && (msgType == 0 || msgType == 1)) {
+                        transport.sendMediaAck(message.channel)
+                    }
+                    return
+                }
+            } else {
+                return
+            }
         }
 
         // 2. Try processing as Audio stream (Speech, System, Media)
@@ -96,5 +107,23 @@ internal class AapMessageHandlerType(
         } else {
             AppLog.e("Unknown msg_type: %d, flags: %d, channel: %d", msgType, flags, message.channel)
         }
+    }
+
+    companion object {
+        /**
+         * Returns `true` when an inbound frame on [channel] carries video data (first/single
+         * media packet `msgType in 0..1`, multi-fragment header, or continuation fragment)
+         * for [targetChannel], and `false` for single-fragment control messages
+         * (`ChannelOpenRequest`, `MediaSetupRequest`, `MediaStart`, `VideoFocusRequest`, etc.)
+         * that must fall through to [AapControl].
+         */
+        internal fun shouldOfferToVideoStream(
+            channel: Int,
+            targetChannel: Int,
+            isFirstOrSingle: Boolean,
+            flags: Byte,
+            msgType: Int,
+        ): Boolean = channel == targetChannel &&
+            (!isFirstOrSingle || flags.toInt() != VideoFragmentAssembler.FLAG_SINGLE || msgType in 0..1)
     }
 }

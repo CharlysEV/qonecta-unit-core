@@ -145,11 +145,16 @@ class CoreSafetyInvariantsTest {
     fun clusterDisplayIsStrictlyEventDrivenWithNoPollingOrOemTelemetry() {
         val activitySource = locateAppFile("src/main/java/com/andrerinas/openheadunit/cluster/ClusterMapActivity.kt").readText()
         val controllerSource = locateAppFile("src/main/java/com/andrerinas/openheadunit/cluster/ClusterMapController.kt").readText()
+        val handlerSource = locateAppFile("src/main/java/com/andrerinas/openheadunit/aap/AapMessageHandlerType.kt").readText()
         assertFalse("ClusterMapActivity must never run a 1 Hz tickRunnable", activitySource.contains("tickRunnable"))
         assertFalse("ClusterMapActivity must never call removeAllViews()", activitySource.contains("removeAllViews"))
         assertFalse("ClusterMapActivity must never start LeapVehicleDataSource", activitySource.contains("LeapVehicleDataSource"))
         assertFalse("ClusterMapController must never send SMARTDOCKER broadcasts", controllerSource.contains("SMARTDOCKER"))
         assertFalse("ClusterMapController must never touch QonectaMediaSessionManager", controllerSource.contains("QonectaMediaSessionManager"))
+        assertTrue(
+            "AapMessageHandlerType must gate clusterVideo behind clusterMapEnabled so lazy decoder stays untouched when OFF",
+            handlerSource.contains("transport.settings.clusterMapEnabled") && handlerSource.contains("transport.clusterVideo.process(message)"),
+        )
     }
 
     @Test

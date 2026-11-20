@@ -803,6 +803,15 @@ class HomeFragment : Fragment() {
     private fun startWirelessScanOrDevice(device: BluetoothDevice?, devName: String) {
         val s = app.settings
         s.autoStartBluetoothDeviceName = devName
+        if (device != null && !device.address.isNullOrBlank()) {
+            val mac = device.address
+            if (mac !in s.autoStartBluetoothDeviceMacs) {
+                s.autoStartBluetoothDeviceMacs = s.autoStartBluetoothDeviceMacs + mac
+            }
+            if (mac in s.autoStartBluetoothDeviceMacsRemoved) {
+                s.autoStartBluetoothDeviceMacsRemoved = s.autoStartBluetoothDeviceMacsRemoved - mac
+            }
+        }
         if (!s.wifi5gEnabled && !s.hotspotModeEnabled) return
         if (s.wifi5gEnabled && s.nativeApTransport != 0) {
             s.nativeApTransport = 0

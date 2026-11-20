@@ -79,6 +79,45 @@ object BluetoothWakePolicy {
      */
     fun shouldPoke(handsFreeLink: HandsFreeLink): Boolean = handsFreeLink != HandsFreeLink.CONNECTED
 
+    /**
+     * How to wake a bonded phone for Wireless Android Auto when the car's native hands-free (HFP)
+     * link may already have connected before this app registered `AA_UUID`.
+     */
+    enum class ConnectedWakeAction {
+        /** No live HFP link (or state unreadable): safe to run the standard RFCOMM wake poke. */
+        RFCOMM_POKE,
+
+        /** Voice call or ringtone active: never disturb HFP under any circumstance. */
+        SKIP_CALL_ACTIVE,
+
+        /**
+         * HFP is already connected on an automatic background pass: try at most one clean OEM
+         * `HEADSET_CLIENT` disconnect→reconnect cycle so the phone re-reads `AA_UUID` without
+         * stealing the HFP slot; never run a raw RFCOMM poke in the background retry loop.
+         */
+        CYCLE_HEADSET_CLIENT_ONLY,
+
+        /**
+         * User explicitly tapped to connect while HFP is already connected: first try a clean OEM
+         * `HEADSET_CLIENT` disconnect→reconnect cycle; if the OS refuses `HEADSET_CLIENT` control
+         * (e.g. `SecurityException`), run ONE targeted RFCOMM wake poke so `GH.WifiBluetoothRcvr`
+         * fires on the phone and reconnects to `AA_UUID`.
+         */
+        CYCLE_HEADSET_CLIENT_OR_MANUAL_RFCOMM_POKE,
+    }
+
+    /** Pure decision rule for waking a bonded phone without disturbing active calls or background HFP. */
+    fun connectedWakeAction(
+        handsFreeLink: HandsFreeLink,
+        isManualUserRequest: Boolean,
+        isVoiceCallActive: Boolean,
+    ): ConnectedWakeAction = when {
+        isVoiceCallActive -> ConnectedWakeAction.SKIP_CALL_ACTIVE
+        shouldPoke(handsFreeLink) -> ConnectedWakeAction.RFCOMM_POKE
+        isManualUserRequest -> ConnectedWakeAction.CYCLE_HEADSET_CLIENT_OR_MANUAL_RFCOMM_POKE
+        else -> ConnectedWakeAction.CYCLE_HEADSET_CLIENT_ONLY
+    }
+
     /** What a stored Auto Start MAC's pairing state read as, when the poke went looking for it. */
     enum class BondReading {
         /** Paired. Safe to poke. */

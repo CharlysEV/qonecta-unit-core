@@ -134,4 +134,52 @@ class BluetoothWakePolicyTest {
             )
         }
     }
+
+    // --- connected-HFP wake escalation (auto vs manual vs active voice call) ---
+
+    @Test
+    fun `active voice call always skips Bluetooth wake regardless of manual tap or link state`() {
+        for (link in BluetoothWakePolicy.HandsFreeLink.values()) {
+            for (manual in listOf(false, true)) {
+                assertEquals(
+                    BluetoothWakePolicy.ConnectedWakeAction.SKIP_CALL_ACTIVE,
+                    BluetoothWakePolicy.connectedWakeAction(link, isManualUserRequest = manual, isVoiceCallActive = true),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `absent or unreadable hands-free link runs direct RFCOMM poke`() {
+        for (link in listOf(BluetoothWakePolicy.HandsFreeLink.ABSENT, BluetoothWakePolicy.HandsFreeLink.UNREADABLE)) {
+            assertEquals(
+                BluetoothWakePolicy.ConnectedWakeAction.RFCOMM_POKE,
+                BluetoothWakePolicy.connectedWakeAction(link, isManualUserRequest = false, isVoiceCallActive = false),
+            )
+            assertEquals(
+                BluetoothWakePolicy.ConnectedWakeAction.RFCOMM_POKE,
+                BluetoothWakePolicy.connectedWakeAction(link, isManualUserRequest = true, isVoiceCallActive = false),
+            )
+        }
+    }
+
+    @Test
+    fun `connected hands-free link uses non-hijacking HEADSET_CLIENT cycle automatically and allows manual fallback`() {
+        assertEquals(
+            BluetoothWakePolicy.ConnectedWakeAction.CYCLE_HEADSET_CLIENT_ONLY,
+            BluetoothWakePolicy.connectedWakeAction(
+                BluetoothWakePolicy.HandsFreeLink.CONNECTED,
+                isManualUserRequest = false,
+                isVoiceCallActive = false,
+            ),
+        )
+        assertEquals(
+            BluetoothWakePolicy.ConnectedWakeAction.CYCLE_HEADSET_CLIENT_OR_MANUAL_RFCOMM_POKE,
+            BluetoothWakePolicy.connectedWakeAction(
+                BluetoothWakePolicy.HandsFreeLink.CONNECTED,
+                isManualUserRequest = true,
+                isVoiceCallActive = false,
+            ),
+        )
+    }
 }

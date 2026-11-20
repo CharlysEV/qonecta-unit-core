@@ -3,9 +3,11 @@ package com.andrerinas.openheadunit.connection
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
 import android.content.Context
+import android.media.AudioManager
 import com.andrerinas.openheadunit.aap.AapService
 import com.andrerinas.openheadunit.aap.BluetoothWakePolicy
 import com.andrerinas.openheadunit.aap.NativeCredentialsPolicy
@@ -53,6 +55,12 @@ class NativeAaHandshakeManager(
 
         /** How long to wait for the AAP TCP port to be bound before giving up on a handshake. */
         private const val PORT_WAIT_MS = 3_000L
+
+        /** Hidden `BluetoothProfile.HEADSET_CLIENT` constant used by Android Automotive / OEM head units. */
+        private const val PROFILE_HEADSET_CLIENT = 16
+        private const val HEADSET_CLIENT_PROXY_TIMEOUT_MS = 2_000L
+        private const val HEADSET_CLIENT_RECONNECT_GAP_MS = 1_500L
+        private const val HEADSET_CLIENT_WAIT_AFTER_RECONNECT_MS = 8_000L
 
         /**
          * How long to wait for the port after asking for the server to be (re)started.
@@ -145,6 +153,7 @@ class NativeAaHandshakeManager(
     // the current run of skips. Cleared as soon as a poke does go ahead, so a later skip says so
     // again rather than hiding behind a line from minutes earlier.
     @Volatile private var handsFreeSkipLogged = false
+    @Volatile private var autoHeadsetClientCycleAttempted = false
 
     /**
      * The credentials to hand the phone, as one value.
@@ -308,6 +317,7 @@ class NativeAaHandshakeManager(
 
         isRunning = true
         aaListenersClosedForSession = false
+        autoHeadsetClientCycleAttempted = false
         // Local Bluetooth radio name; logged on every accept so a dual-radio head unit's logs
         // show which radio the phone actually reached (compare with the HU name in the phone's
         // log). Uses adapter.name, not adapter.address: getAddress() returns the fixed masked
@@ -561,31 +571,133 @@ class NativeAaHandshakeManager(
         }
     }
 
-    /**
-     * Tries each of [BluetoothWakePolicy.POKE_TARGETS] in turn, holding whichever connects for
-     * [holdMs]. Returns true if any of them did, false without opening anything if either guard
-     * below stands the poke down. Both poke entry points come through here, so one check covers
-     * the retry loop and the manual poke alike.
-     */
-    private suspend fun pokeDevice(device: BluetoothDevice, holdMs: Long): Boolean {
-        // A poke that connects takes the phone's single hands-free slot, and this unit's own client
-        // is dropped to make room. See BluetoothWakePolicy for the measurement.
-        val handsFreeLink = BluetoothWakePolicy.HandsFreeLink.of(BluetoothHelper.handsFreeLinkState(context))
-        if (!BluetoothWakePolicy.shouldPoke(handsFreeLink)) {
-            noteHandsFreePokeSkip(device)
-            // Safe, read-only SDP refresh over the existing ACL link: never touches HFP/HSP
-            // call audio, while prompting Android's Bluetooth stack to refresh cached service records
-            // when the app opened after the car's hands-free link was already established.
-            if (BluetoothWakePolicy.mayPoke(bondReadingFor(device))) {
-                runCatching {
-                    val requested = device.fetchUuidsWithSdp()
-                    AppLog.d("NativeAA: Requested non-disruptive SDP refresh (fetchUuidsWithSdp=$requested) for ${device.name ?: device.address}")
+    private fun isVoiceCallActive(): Boolean = runCatching {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return@runCatching false
+        am.mode == AudioManager.MODE_IN_CALL ||
+            am.mode == AudioManager.MODE_IN_COMMUNICATION ||
+            am.mode == AudioManager.MODE_RINGTONE
+    }.getOrDefault(false)
+
+    @SuppressLint("MissingPermission")
+    private suspend fun withHeadsetClientProxy(block: suspend (BluetoothProfile) -> Boolean): Boolean {
+        val adapter = BluetoothHelper.getBluetoothAdapter(context) ?: return false
+        val deferred = CompletableDeferred<BluetoothProfile?>()
+        val timedOut = java.util.concurrent.atomic.AtomicBoolean(false)
+        val listener = object : BluetoothProfile.ServiceListener {
+            override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                if (timedOut.get() || !deferred.complete(proxy)) {
+                    runCatching { adapter.closeProfileProxy(PROFILE_HEADSET_CLIENT, proxy) }
                 }
             }
+
+            override fun onServiceDisconnected(profile: Int) {
+                deferred.complete(null)
+            }
+        }
+        val requested = try {
+            adapter.getProfileProxy(context.applicationContext, listener, PROFILE_HEADSET_CLIENT)
+        } catch (e: Exception) {
+            AppLog.d("NativeAA: getProfileProxy(HEADSET_CLIENT) unavailable: ${e.message}")
             return false
         }
-        handsFreeSkipLogged = false
+        if (!requested) {
+            AppLog.d("NativeAA: getProfileProxy(HEADSET_CLIENT) returned false")
+            return false
+        }
+        val proxy = withTimeoutOrNull(HEADSET_CLIENT_PROXY_TIMEOUT_MS) { deferred.await() }
+        if (proxy == null) {
+            timedOut.set(true)
+            deferred.cancel()
+            AppLog.d("NativeAA: HEADSET_CLIENT profile proxy timed out")
+            return false
+        }
+        return try {
+            block(proxy)
+        } finally {
+            runCatching { adapter.closeProfileProxy(PROFILE_HEADSET_CLIENT, proxy) }
+        }
+    }
 
+    /**
+     * Cleanly disconnects and reconnects the car's OWN native `HEADSET_CLIENT` (HFP) profile for
+     * [device] so the phone receives `CONNECTION_STATE_CHANGED -> STATE_CONNECTED`, re-queries the
+     * car's SDP records (now containing `AA_UUID`), and launches Wireless Android Auto without
+     * hijacking the hands-free call slot.
+     */
+    @SuppressLint("MissingPermission")
+    private suspend fun cycleHeadsetClientLink(device: BluetoothDevice): Boolean {
+        val label = "${device.name ?: "unnamed"} (${device.address})"
+        return withHeadsetClientProxy { proxy ->
+            val disconnected = try {
+                val disconnectMethod = proxy.javaClass.getMethod("disconnect", BluetoothDevice::class.java)
+                disconnectMethod.invoke(proxy, device) as? Boolean ?: false
+            } catch (e: Exception) {
+                val cause = (e as? java.lang.reflect.InvocationTargetException)?.targetException ?: e
+                AppLog.i("NativeAA: OEM HEADSET_CLIENT disconnect($label) refused/unavailable: ${cause.javaClass.simpleName}: ${cause.message}")
+                false
+            }
+            if (!disconnected) return@withHeadsetClientProxy false
+
+            AppLog.i("NativeAA: Cleanly cycling OEM HEADSET_CLIENT link for $label so phone re-reads AA_UUID SDP...")
+            AapService.wirelessStatusText.value = "Reactivando enlace Bluetooth con ${device.name ?: "tu móvil"}…"
+            delay(HEADSET_CLIENT_RECONNECT_GAP_MS)
+
+            val reconnected = try {
+                val connectMethod = proxy.javaClass.getMethod("connect", BluetoothDevice::class.java)
+                connectMethod.invoke(proxy, device) as? Boolean ?: false
+            } catch (e: Exception) {
+                val cause = (e as? java.lang.reflect.InvocationTargetException)?.targetException ?: e
+                AppLog.w("NativeAA: OEM HEADSET_CLIENT connect($label) failed: ${cause.javaClass.simpleName}: ${cause.message}")
+                false
+            }
+            AppLog.i("NativeAA: OEM HEADSET_CLIENT reconnect accepted=$reconnected for $label")
+            reconnected
+        }
+    }
+
+    /** Best-effort request for the car's native `HEADSET_CLIENT` to reattach after a manual RFCOMM poke. */
+    private fun scheduleHeadsetClientRestore(device: BluetoothDevice) {
+        scope.launch(Dispatchers.IO + CoroutineName("NativeAa-HfpRestore")) {
+            // Never run Bluetooth profile work while Wi-Fi association/DHCP is settling.
+            var waited = 0L
+            while (isHandoffSettling() && waited < 10_000L) {
+                delay(500L)
+                waited += 500L
+            }
+            if (isVoiceCallActive()) return@launch
+            withHeadsetClientProxy { proxy ->
+                try {
+                    val connectMethod = proxy.javaClass.getMethod("connect", BluetoothDevice::class.java)
+                    val ok = connectMethod.invoke(proxy, device) as? Boolean ?: false
+                    AppLog.i("NativeAA: Post-poke OEM HEADSET_CLIENT connect(${device.name ?: device.address}) accepted=$ok")
+                    ok
+                } catch (e: Exception) {
+                    val cause = (e as? java.lang.reflect.InvocationTargetException)?.targetException ?: e
+                    AppLog.d("NativeAA: Post-poke OEM HEADSET_CLIENT connect unavailable: ${cause.javaClass.simpleName}")
+                    false
+                }
+            }
+        }
+    }
+
+    /**
+     * Wakes [device] so Google's `GH.WifiBluetoothRcvr` sees `AA_UUID` on this head unit and dials
+     * back for the WPP Wi-Fi credential exchange.
+     *
+     * Rules live in [BluetoothWakePolicy.connectedWakeAction]:
+     * - Never touches HFP during an active voice call.
+     * - When HFP is already connected on an automatic background pass, attempts at most ONE clean
+     *   OEM `HEADSET_CLIENT` disconnect→reconnect cycle and never steals HFP with raw RFCOMM.
+     * - When the user explicitly taps to connect ([isManualUserRequest] = true) while HFP is
+     *   already connected, tries clean OEM `HEADSET_CLIENT` cycle first; if the OS refuses it,
+     *   performs ONE targeted RFCOMM wake poke (and schedules best-effort `HEADSET_CLIENT`
+     *   reattach on cleanup) so `GH.WifiBluetoothRcvr` fires on the phone.
+     */
+    private suspend fun pokeDevice(
+        device: BluetoothDevice,
+        holdMs: Long,
+        isManualUserRequest: Boolean = false,
+    ): Boolean {
         // connect() against an unpaired device makes the OS solicit pairing as a side effect, and
         // the user meant "wake my phone", not "ask to pair with it again".
         if (!BluetoothWakePolicy.mayPoke(bondReadingFor(device))) {
@@ -595,7 +707,60 @@ class NativeAaHandshakeManager(
             return false
         }
 
+        val handsFreeLink = BluetoothWakePolicy.HandsFreeLink.of(BluetoothHelper.handsFreeLinkState(context))
+        val action = BluetoothWakePolicy.connectedWakeAction(
+            handsFreeLink = handsFreeLink,
+            isManualUserRequest = isManualUserRequest,
+            isVoiceCallActive = isVoiceCallActive(),
+        )
+        var restoreHeadsetClientOnCleanup = false
+
+        when (action) {
+            BluetoothWakePolicy.ConnectedWakeAction.SKIP_CALL_ACTIVE -> {
+                AppLog.i("NativeAA: Active voice call in progress — skipping Bluetooth wake for ${device.name ?: device.address}.")
+                return false
+            }
+            BluetoothWakePolicy.ConnectedWakeAction.CYCLE_HEADSET_CLIENT_ONLY -> {
+                if (!autoHeadsetClientCycleAttempted) {
+                    autoHeadsetClientCycleAttempted = true
+                    if (cycleHeadsetClientLink(device)) {
+                        handsFreeSkipLogged = false
+                        return true
+                    }
+                    if (!isHandshakeInFlight() && !isHandoffSettling() && !commManager.isConnected) {
+                        AapService.wirelessStatusText.value =
+                            "Red 5 GHz lista · Toca tu móvil abajo para despertar Android Auto"
+                    }
+                }
+                noteHandsFreePokeSkip(device)
+                return false
+            }
+            BluetoothWakePolicy.ConnectedWakeAction.CYCLE_HEADSET_CLIENT_OR_MANUAL_RFCOMM_POKE -> {
+                if (cycleHeadsetClientLink(device)) {
+                    handsFreeSkipLogged = false
+                    var waitedMs = 0L
+                    while (waitedMs < HEADSET_CLIENT_WAIT_AFTER_RECONNECT_MS &&
+                        isRunning && !isHandshakeInFlight() && !isHandoffSettling() && !commManager.isConnected
+                    ) {
+                        delay(250L)
+                        waitedMs += 250L
+                    }
+                    return true
+                }
+                AppLog.i(
+                    "NativeAA: OEM HEADSET_CLIENT cycle unavailable on manual tap for ${device.name ?: device.address} — " +
+                        "running ONE targeted RFCOMM wake poke so GH.WifiBluetoothRcvr re-reads AA_UUID."
+                )
+                AapService.wirelessStatusText.value =
+                    "Despertando Android Auto en ${device.name ?: "tu móvil"} por Bluetooth…"
+                restoreHeadsetClientOnCleanup = true
+            }
+            BluetoothWakePolicy.ConnectedWakeAction.RFCOMM_POKE -> Unit
+        }
+        handsFreeSkipLogged = false
+
         pokeAttemptInFlight = true
+        var rfcommConnected = false
         try {
             for (uuid in BluetoothWakePolicy.POKE_TARGETS) {
                 val profile = BluetoothWakePolicy.profileName(uuid)
@@ -604,6 +769,7 @@ class NativeAaHandshakeManager(
                     socket = device.createRfcommSocketToServiceRecord(uuid)
                     AppLog.i("NativeAA: Calling socket.connect() for ${device.name} via $profile ($uuid)...")
                     socket.connect()
+                    rfcommConnected = true
                     // Named, not just the UUID: which record we ended up on is the first thing to
                     // check when a reporter's calls come out of the phone instead of the car.
                     AppLog.i("NativeAA: Successfully poked ${device.name} via $profile. Holding ${holdMs}ms...")
@@ -629,6 +795,9 @@ class NativeAaHandshakeManager(
             return false
         } finally {
             pokeAttemptInFlight = false
+            if (restoreHeadsetClientOnCleanup && rfcommConnected) {
+                scheduleHeadsetClientRestore(device)
+            }
         }
     }
 
@@ -802,8 +971,13 @@ class NativeAaHandshakeManager(
                 }
 
                 AppLog.i("NativeAA: Attempting manual poke to ${device.name}...")
-                pokeDevice(device, holdMs = 20000)
-                AppLog.i("NativeAA: Manual poke to ${device.name} finished.")
+                val woke = pokeDevice(device, holdMs = 20000, isManualUserRequest = true)
+                AppLog.i("NativeAA: Manual poke to ${device.name} finished (woke=$woke).")
+                if (isRunning && !isHandshakeInFlight() && !isHandoffSettling() && !commManager.isConnected) {
+                    val radioHint = localRadioName.takeIf { it.isNotBlank() && it != "?" } ?: "Bluetooth del coche"
+                    AapService.wirelessStatusText.value =
+                        "Sin respuesta del móvil · Desconecta y reconecta «$radioHint» en tu móvil"
+                }
             }
         } catch (e: Exception) {
             AppLog.e("NativeAA: Manual poke error", e)
@@ -1537,6 +1711,7 @@ class NativeAaHandshakeManager(
         try { activeHandshakeSocket?.close() } catch (_: Exception) {}
         activeHandshakeSocket = null
         pokesSinceLastAccept = 0
+        autoHeadsetClientCycleAttempted = false
         resetHandshakeBackoff()
     }
 }
