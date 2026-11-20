@@ -50,8 +50,11 @@
     <string name="qu_probe_running">Looking at the car…</string>
     <string name="qu_probe_saved">Probe saved</string>
 
-    <!-- Car files (Diagnostics) -->
+    <!-- Car files (Diagnostics / Home / Settings) -->
     <string name="qu_files">Car files</string>
+    <string name="qu_files_short">Files</string>
+    <string name="qu_files_update_title">Car files (Update)</string>
     <string name="qu_files_hint">Opens the head unit\'s file browser, with no need for Vivaldi. Tapping an APK on the USB drive installs or updates it. If the file picker opens instead, use the ⤢ icon on the APK.</string>
+    <string name="qu_files_picker_tip">To install or update from the file picker, tap the ⤢ icon in the corner of the .apk file (not the center).</string>
     <string name="qu_files_none">This car does not let us open the file browser</string>
 </resources>

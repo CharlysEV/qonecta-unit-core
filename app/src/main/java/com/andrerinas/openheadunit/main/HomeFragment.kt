@@ -39,6 +39,7 @@ import com.andrerinas.openheadunit.utils.BluetoothHelper
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.headqlink.unit.extended.ConnectionRingView
+import com.headqlink.unit.files.CarFiles
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -63,6 +64,14 @@ class HomeFragment : Fragment() {
     private var connectingTransportLabel = "📡 Conectando sin cables (5 GHz)"
     private var connectingTickJob: Job? = null
     private var carPlayLaunchJob: Job? = null
+
+    private val carFilesPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data?.data != null) {
+            Toast.makeText(requireContext(), getString(R.string.qu_files_picker_tip), Toast.LENGTH_LONG).show()
+        }
+    }
 
     private val wirelessPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -264,6 +273,15 @@ class HomeFragment : Fragment() {
                     .onFailure { runCatching { startActivity(Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)) } }
             }
             updateConnectionModeButtons(view)
+        }
+
+        view.findViewById<View>(R.id.files_button)?.setOnClickListener {
+            val result = CarFiles.open(requireActivity()) { pickerIntent ->
+                runCatching { carFilesPickerLauncher.launch(pickerIntent) }.isSuccess
+            }
+            if (result == CarFiles.OpenResult.UNAVAILABLE) {
+                Toast.makeText(requireContext(), getString(R.string.qu_files_none), Toast.LENGTH_LONG).show()
+            }
         }
 
         view.findViewById<View>(R.id.settings_button)?.setOnClickListener {

@@ -16,6 +16,7 @@ import com.andrerinas.openheadunit.utils.DiagnosticReport
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.headqlink.unit.files.CarFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -28,6 +29,13 @@ class DiagnosticsFragment : Fragment(R.layout.fragment_diagnostics) {
     private val destination = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         if (uri != null) export(uri)
     }
+    private val carFilesPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data?.data != null) {
+            Toast.makeText(requireContext(), getString(R.string.qu_files_picker_tip), Toast.LENGTH_LONG).show()
+        }
+    }
 
     override fun onViewCreated(view: View, state: Bundle?) {
         view.findViewById<MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { findNavController().popBackStack() }
@@ -35,6 +43,14 @@ class DiagnosticsFragment : Fragment(R.layout.fragment_diagnostics) {
             if (Build.VERSION.SDK_INT >= 29) export() else chooseLocation()
         }
         view.findViewById<View>(R.id.choose_diagnostic_location).setOnClickListener { chooseLocation() }
+        view.findViewById<View>(R.id.car_files)?.setOnClickListener {
+            val result = CarFiles.open(requireActivity()) { pickerIntent ->
+                runCatching { carFilesPickerLauncher.launch(pickerIntent) }.isSuccess
+            }
+            if (result == CarFiles.OpenResult.UNAVAILABLE) {
+                Toast.makeText(requireContext(), getString(R.string.qu_files_none), Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun fileName() = "QonectaUnit-core-report-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())}.txt"

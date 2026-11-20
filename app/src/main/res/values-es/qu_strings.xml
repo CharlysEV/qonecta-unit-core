@@ -45,8 +45,11 @@
     <string name="qu_probe_running">Mirando el coche…</string>
     <string name="qu_probe_saved">Sonda guardada</string>
 
-    <!-- Archivos del coche (Diagnóstico) -->
+    <!-- Archivos del coche (Diagnóstico / Portada / Ajustes) -->
     <string name="qu_files">Archivos del coche</string>
+    <string name="qu_files_short">Archivos</string>
+    <string name="qu_files_update_title">Archivos del coche (Actualizar)</string>
     <string name="qu_files_hint">Abre el explorador de archivos de la unidad, sin necesidad de Vivaldi. Al tocar un APK del pen, se instala o se actualiza. Si en vez del explorador se abre el selector de archivos, usa el icono ⤢ del APK.</string>
+    <string name="qu_files_picker_tip">Para instalar o actualizar desde el selector, toca el icono ⤢ en la esquina del archivo .apk (no el centro).</string>
     <string name="qu_files_none">Este coche no deja abrir el explorador de archivos</string>
 </resources>
