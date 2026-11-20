@@ -51,7 +51,33 @@ class ConnectionRingView @JvmOverloads constructor(
             invalidate()
         }
 
-    var subtitleText: String = "Esperando al móvil"
+    var subtitleText: String = runCatching {
+        context.getString(com.andrerinas.openheadunit.R.string.core_ring_waiting_phone)
+    }.getOrDefault("Waiting for phone")
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var readyLabel: String = runCatching {
+        context.getString(com.andrerinas.openheadunit.R.string.core_ring_ready)
+    }.getOrDefault("READY")
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var activeLabel: String = runCatching {
+        context.getString(com.andrerinas.openheadunit.R.string.core_ring_active)
+    }.getOrDefault("ACTIVE")
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var tapToOpenLabel: String = runCatching {
+        context.getString(com.andrerinas.openheadunit.R.string.core_ring_tap_open)
+    }.getOrDefault("Tap to open")
         set(value) {
             field = value
             invalidate()
@@ -255,7 +281,7 @@ class ConnectionRingView @JvmOverloads constructor(
             State.CONNECTED -> {
                 mainTextPaint.textSize = dp(30f)
                 mainTextPaint.color = accent
-                canvas.drawText("ACTIVO", cx, cy - dp(4f), mainTextPaint)
+                canvas.drawText(activeLabel, cx, cy - dp(4f), mainTextPaint)
 
                 protoTextPaint.textSize = dp(16f)
                 protoTextPaint.color = Color.WHITE
@@ -263,12 +289,12 @@ class ConnectionRingView @JvmOverloads constructor(
 
                 subTextPaint.textSize = dp(13.5f)
                 subTextPaint.color = Color.argb(195, 210, 228, 238)
-                canvas.drawText("Toca para abrir", cx, cy + dp(39f), subTextPaint)
+                canvas.drawText(tapToOpenLabel, cx, cy + dp(39f), subTextPaint)
             }
             State.IDLE -> {
                 mainTextPaint.textSize = dp(28f)
                 mainTextPaint.color = Color.WHITE
-                canvas.drawText("LISTO", cx, cy - dp(4f), mainTextPaint)
+                canvas.drawText(readyLabel, cx, cy - dp(4f), mainTextPaint)
 
                 protoTextPaint.textSize = dp(15.5f)
                 protoTextPaint.color = accent

@@ -77,7 +77,7 @@ class SettingsFragment : Fragment() {
         "quExtendedMode", "quCarCloud", "quPanelDemo",
         "staticBSSID", "appLanguage", "autoStartSettings", "autoConnectSettings", "resolution",
         "dpiPixelDensity", "viewMode", "fpsLimit", "musicViaBluetooth", "enableAudioSink", "micSettings", "audioVolumeOffsets",
-        "keymap", "version", "donations", "about"
+        "keymap", "version", "support", "donations", "about"
     )
 
     // Local state to hold changes before saving
@@ -2354,7 +2354,7 @@ class SettingsFragment : Fragment() {
     ): Boolean {
         // Development fault injection and cosmetic tablet features are not product settings.
         if (item.stableId.startsWith("debugVideoFault") || item.stableId in setOf(
-                "loadingScreen", "support", "autoOptimize", "hudMirroring", "fakeSpeed",
+                "loadingScreen", "autoOptimize", "hudMirroring", "fakeSpeed",
                 "debugForceMemoryProfile", "vehicleInfoSettings")) return false
         // The bottom Save action is always relevant when present.
         if (item is SettingItem.ActionButton && item.stableId == "bottomSaveButton") return true

@@ -388,6 +388,10 @@ class CarPlayHostActivity : ComponentActivity() {
         override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
     }
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.andrerinas.openheadunit.utils.LocaleHelper.wrapContext(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         simulateIphone = intent.getBooleanExtra(CarPlayLoopbackSimulator.EXTRA_SIMULATE_IPHONE, false)
@@ -733,24 +737,24 @@ class CarPlayHostActivity : ComponentActivity() {
             setImageResource(R.drawable.ic_carplay); contentDescription = "CarPlay"
         }, LinearLayout.LayoutParams(dp(92), dp(92)))
         panel.addView(TextView(this).apply {
-            text = "Qonecta Unit Core · CarPlay"; textSize = 34f; setTextColor(textColor)
+            text = getString(R.string.cp_host_title); textSize = 34f; setTextColor(textColor)
             gravity = Gravity.CENTER; setPadding(0, dp(18), 0, dp(12))
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         })
         val stage = TextView(this).apply {
-            text = "Preparando Apple CarPlay…"; textSize = 22f; gravity = Gravity.CENTER
+            text = getString(R.string.cp_host_preparing); textSize = 22f; gravity = Gravity.CENTER
             setTextColor(accentColor)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }
         panel.addView(stage)
         panel.addView(TextView(this).apply {
-            text = if (wirelessEnabled) "Mantén tu iPhone cerca con Bluetooth y Wi-Fi activos.\nPermite CarPlay si aparece el aviso en tu iPhone."
-                else "Usa un cable USB de datos y desbloquea tu iPhone.\nAcepta «Confiar» y «CarPlay» si tu iPhone lo solicita."
+            text = if (wirelessEnabled) getString(R.string.cp_host_hint_wireless)
+                else getString(R.string.cp_host_hint_usb)
             textSize = 17f; gravity = Gravity.CENTER; setTextColor(mutedColor)
             setPadding(0, dp(14), 0, dp(24))
         })
         panel.addView(Button(this).apply {
-            text = "Reiniciar Wi-Fi CarPlay"; isAllCaps = false; textSize = 18f
+            text = getString(R.string.cp_dlg_reset_wifi_btn); isAllCaps = false; textSize = 18f
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             setTextColor(textColor)
             background = GradientDrawable().apply {
@@ -763,7 +767,7 @@ class CarPlayHostActivity : ComponentActivity() {
             wifiRecoveryButton = this
         }, LinearLayout.LayoutParams(dp(320), dp(64)).apply { bottomMargin = dp(12) })
         panel.addView(Button(this).apply {
-            text = "Volver a CarPlay"; isAllCaps = false; textSize = 19f
+            text = getString(R.string.cp_host_back); isAllCaps = false; textSize = 19f
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             setTextColor(onAccentColor)
             background = GradientDrawable().apply {
@@ -773,7 +777,7 @@ class CarPlayHostActivity : ComponentActivity() {
             setOnClickListener { showLeapCarPlayHome() }
         }, LinearLayout.LayoutParams(dp(320), dp(64)))
         panel.addView(TextView(this).apply {
-            text = "Dentro de CarPlay, desliza hacia abajo con tres dedos para abrir ajustes."
+            text = getString(R.string.cp_host_gesture_tip)
             textSize = 14f; gravity = Gravity.CENTER; setTextColor(mutedColor); setPadding(0, dp(20), 0, 0)
         })
         root.addView(panel, FrameLayout.LayoutParams(-1, -1))
@@ -3565,21 +3569,21 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun friendlyStage(message: String): String = when {
-        message.contains("Turn on Wi-Fi", true) -> "Enciende el Wi-Fi en los ajustes del coche para conectar."
-        message.contains("Allow precise Location", true) -> "Concede permiso de Ubicación precisa en los ajustes de la app."
-        message.contains("Allow Nearby devices", true) -> "Concede permiso de Dispositivos cercanos en los ajustes de la app."
-        message.contains("createGroup failed", true) -> "No se pudo iniciar el Wi-Fi de CarPlay. Reintentando…"
-        message.contains("needs a reset", true) -> "Hay un enlace Wi-Fi Direct anterior activo. Reinícialo para conectar."
-        message.contains("socket", true) || message.contains("RFCOMM", true) -> "Tu iPhone no responde. Desbloquéalo y revisa el Bluetooth."
-        message.contains("unsupported", true) || message.contains("not supported", true) -> "Esta unidad no admite CarPlay inalámbrico aquí. Prueba con Cable USB."
-        message.contains("denied", true) || message.contains("permission", true) -> "Acepta el permiso de conexión para continuar."
-        message.contains("Failed", true) || message.contains("error", true) -> "Conexión interrumpida. Reintentando…"
-        message.contains("Waiting for iPhone", true) || message.contains("Discovering iPhone", true) -> "Conecta tu iPhone con un cable USB de datos"
-        message.contains("paired", true) -> "Buscando tu iPhone vinculado…"
-        message.contains("Bluetooth", true) -> "Conectando con tu iPhone…"
-        message.contains("reconnect", true) || message.contains("ended", true) -> "Reconectando con tu iPhone…"
-        message.contains("active", true) || message.contains("running", true) -> "Abriendo Apple CarPlay…"
-        else -> "Preparando Apple CarPlay…"
+        message.contains("Turn on Wi-Fi", true) -> getString(R.string.cp_stage_wifi_on)
+        message.contains("Allow precise Location", true) -> getString(R.string.cp_stage_loc)
+        message.contains("Allow Nearby devices", true) -> getString(R.string.cp_stage_nearby)
+        message.contains("createGroup failed", true) -> getString(R.string.cp_stage_p2p_retry)
+        message.contains("needs a reset", true) -> getString(R.string.cp_stage_p2p_reset)
+        message.contains("socket", true) || message.contains("RFCOMM", true) -> getString(R.string.cp_stage_iphone_unavail)
+        message.contains("unsupported", true) || message.contains("not supported", true) -> getString(R.string.cp_stage_unsupported)
+        message.contains("denied", true) || message.contains("permission", true) -> getString(R.string.cp_stage_perm)
+        message.contains("Failed", true) || message.contains("error", true) -> getString(R.string.cp_stage_interrupted)
+        message.contains("Waiting for iPhone", true) || message.contains("Discovering iPhone", true) -> getString(R.string.cp_stage_plug_usb)
+        message.contains("paired", true) -> getString(R.string.cp_stage_looking)
+        message.contains("Bluetooth", true) -> getString(R.string.cp_stage_connecting)
+        message.contains("reconnect", true) || message.contains("ended", true) -> getString(R.string.cp_stage_reconnecting)
+        message.contains("active", true) || message.contains("running", true) -> getString(R.string.cp_stage_opening)
+        else -> getString(R.string.cp_host_preparing)
     }
 
     private fun appendLog(message: String) {

@@ -710,7 +710,10 @@ class NativeAaHandshakeManager(
             if (!disconnected) return@withHeadsetClientProxy false
 
             AppLog.i("NativeAA: Cleanly cycling OEM HEADSET_CLIENT link for $label so phone re-reads AA_UUID SDP...")
-            AapService.wirelessStatusText.value = "Reactivando enlace Bluetooth con ${device.name ?: "tu móvil"}…"
+            AapService.wirelessStatusText.value = context.getString(
+                com.andrerinas.openheadunit.R.string.core_live_bt_reactivating,
+                device.name ?: context.getString(com.andrerinas.openheadunit.R.string.core_your_phone)
+            )
             delay(HEADSET_CLIENT_RECONNECT_GAP_MS)
 
             val reconnected = try {
@@ -800,7 +803,7 @@ class NativeAaHandshakeManager(
                     }
                     if (!isHandshakeInFlight() && !isHandoffSettling() && !commManager.isConnected) {
                         AapService.wirelessStatusText.value =
-                            "Red 5 GHz lista · Toca tu móvil abajo para despertar Android Auto"
+                            context.getString(com.andrerinas.openheadunit.R.string.core_live_5g_ready_tap)
                     }
                 }
                 noteHandsFreePokeSkip(device)
@@ -822,8 +825,10 @@ class NativeAaHandshakeManager(
                     "NativeAA: OEM HEADSET_CLIENT cycle unavailable on manual tap for ${device.name ?: device.address} — " +
                         "running ONE targeted RFCOMM wake poke so GH.WifiBluetoothRcvr re-reads AA_UUID."
                 )
-                AapService.wirelessStatusText.value =
-                    "Despertando Android Auto en ${device.name ?: "tu móvil"} por Bluetooth…"
+                AapService.wirelessStatusText.value = context.getString(
+                    com.andrerinas.openheadunit.R.string.core_live_bt_waking,
+                    device.name ?: context.getString(com.andrerinas.openheadunit.R.string.core_your_phone)
+                )
                 restoreHeadsetClientOnCleanup = true
             }
             BluetoothWakePolicy.ConnectedWakeAction.RFCOMM_POKE -> Unit
@@ -1046,8 +1051,10 @@ class NativeAaHandshakeManager(
                 AppLog.i("NativeAA: Manual poke to ${device.name} finished (woke=$woke).")
                 if (isRunning && !isHandshakeInFlight() && !isHandoffSettling() && !commManager.isConnected) {
                     val radioHint = localRadioName.takeIf { it.isNotBlank() && it != "?" } ?: "Bluetooth del coche"
-                    AapService.wirelessStatusText.value =
-                        "Si ya estabas conectado a «$radioHint», desconéctalo 1 s en tu móvil para entrar por Wi-Fi 5 GHz"
+                    AapService.wirelessStatusText.value = context.getString(
+                        com.andrerinas.openheadunit.R.string.core_live_bt_busy_hint,
+                        radioHint
+                    )
                     // Re-arm the background wake loop so if the user disconnects CharlysBT right
                     // after a manual tap, we immediately wake the phone instead of leaving pokeJob dead.
                     lastPokeTriggerCredentials = null
@@ -1159,7 +1166,7 @@ class NativeAaHandshakeManager(
         try {
             val device = socket.remoteDevice
             AppLog.i("NativeAA: Handling handshake for ${device.name} (${device.address}) on local radio [${localRadio ?: "?"}]")
-            AapService.wirelessStatusText.value = "Móvil conectado por BT · Negociando Wi-Fi…"
+            AapService.wirelessStatusText.value = context.getString(com.andrerinas.openheadunit.R.string.core_live_bt_negotiating)
 
             if (commManager.isConnected ||
                 commManager.connectionState.value is CommManager.ConnectionState.Connecting) {
@@ -1241,7 +1248,7 @@ class NativeAaHandshakeManager(
                             AppLog.i("NativeAA: The phone opened its session before the credentials went out; not sending them.")
                         } else {
                             sendWifiSecurityResponse(output, credSsid, credPsk, credBssid, transport)
-                            AapService.wirelessStatusText.value = "Credenciales enviadas · Móvil uniéndose a Wi-Fi…"
+                            AapService.wirelessStatusText.value = context.getString(com.andrerinas.openheadunit.R.string.core_live_creds_sent)
                         }
                         AppLog.i("NativeAA: Handshake completed successfully on Bluetooth side.")
                         ifOwner(socket) {

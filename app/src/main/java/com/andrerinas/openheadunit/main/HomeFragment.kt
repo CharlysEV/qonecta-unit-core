@@ -37,12 +37,12 @@ import com.andrerinas.openheadunit.BuildConfig
 import com.andrerinas.openheadunit.R
 import com.andrerinas.openheadunit.aap.AapProjectionActivity
 import com.andrerinas.openheadunit.aap.AapService
+import com.andrerinas.openheadunit.cluster.ClusterMapController
 import com.andrerinas.openheadunit.connection.CommManager
 import com.andrerinas.openheadunit.connection.UsbDeviceCompat
 import com.andrerinas.openheadunit.utils.BluetoothHelper
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.andrerinas.openheadunit.cluster.ClusterMapController
 import com.headqlink.unit.extended.ConnectionRingView
 import com.headqlink.unit.files.CarFiles
 import kotlinx.coroutines.Job
@@ -51,12 +51,9 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * Pantalla principal limpia de Qonecta Unit Core (Fase 0):
- * Exclusivamente motor de Android Auto y Apple CarPlay.
- *
- * Sin modo Extendido, sin Cuadro secundario, sin CompanionBridgeHost,
- * sin Binders OEM, sin escaneo USB/PackageManager, sin reflexión Bluetooth
- * y sin bucles periódicos 1 Hz en reposo.
+ * Pantalla principal limpia de Qonecta Unit CORE:
+ * Exclusivamente Android Auto y Apple CarPlay (sin sistema Extendido ni servicios en segundo plano).
+ * Totalmente localizada en los idiomas soportados (ES · EN · PT · IT · DE y resto de idiomas Android).
  */
 class HomeFragment : Fragment() {
     private val app get() = App.provide(requireContext())
@@ -66,7 +63,7 @@ class HomeFragment : Fragment() {
     private var connectingStartElapsedMs = 0L
     private var connectingTargetName = ""
     private var connectingProtocol = "Android Auto"
-    private var connectingTransportLabel = "📡 Conectando sin cables (5 GHz)"
+    private var connectingTransportLabel = ""
     private var connectingTickJob: Job? = null
     private var carPlayLaunchJob: Job? = null
     private var usbReceiverRegistered = false
@@ -90,7 +87,7 @@ class HomeFragment : Fragment() {
 
     private val wirelessPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
+    ) { _ ->
         val btOk = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
             ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
         val p2pOk = hasWirelessP2pPermission()
@@ -105,7 +102,7 @@ class HomeFragment : Fragment() {
         } else {
             Toast.makeText(
                 requireContext(),
-                "Concede el permiso de Ubicación para activar Wi-Fi Direct.",
+                getString(R.string.core_toast_location_p2p),
                 Toast.LENGTH_LONG,
             ).show()
         }
@@ -352,7 +349,7 @@ class HomeFragment : Fragment() {
                             else -> {
                                 if (!manualConnectingActive) {
                                     val fallbackName = app.settings.autoStartBluetoothDeviceName
-                                        .takeIf { it.isNotBlank() } ?: "tu móvil"
+                                        .takeIf { it.isNotBlank() } ?: getString(R.string.core_your_phone)
                                     beginConnectingUi(
                                         view = view,
                                         targetName = fallbackName,
@@ -428,7 +425,7 @@ class HomeFragment : Fragment() {
             device.manufacturerName?.trim()?.takeIf { it.isNotBlank() },
             device.productName?.trim()?.takeIf { it.isNotBlank() },
         ).joinToString(" ").trim()
-        return label.takeIf { it.isNotBlank() }?.take(22) ?: "Móvil Android"
+        return label.takeIf { it.isNotBlank() }?.take(22) ?: getString(R.string.core_usb_android_fallback)
     }
 
     private fun handleUsbConnectTap(view: View) {
@@ -437,7 +434,7 @@ class HomeFragment : Fragment() {
             return
         }
         if (app.commManager.isConnected && app.commManager.isWirelessSession) {
-            showUsbSwitchDialog("Cable USB")
+            showUsbSwitchDialog(getString(R.string.core_btn_usb_cable))
             return
         }
         app.settings.usbModeEnabled = true
@@ -447,7 +444,7 @@ class HomeFragment : Fragment() {
 
         val usbPhone = findConnectedUsbPhone()
         if (usbPhone != null && usbPhone.second) {
-            launchCarPlay(view, "iPhone por USB", usbDevice = usbPhone.first)
+            launchCarPlay(view, "iPhone (USB)", usbDevice = usbPhone.first)
             return
         }
 
@@ -458,7 +455,7 @@ class HomeFragment : Fragment() {
             })
             Toast.makeText(
                 requireContext(),
-                "Enchufa el móvil en el puerto USB de datos del coche.",
+                getString(R.string.core_toast_plug_usb),
                 Toast.LENGTH_LONG,
             ).show()
             refreshHeroState(view)
@@ -470,7 +467,7 @@ class HomeFragment : Fragment() {
             view = view,
             targetName = label,
             protocol = "Android Auto",
-            transportLabel = "🔌 Conectando por Cable USB",
+            transportLabel = getString(R.string.core_transport_connecting_usb),
         )
         ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
             action = AapService.ACTION_CHECK_USB
@@ -496,10 +493,9 @@ class HomeFragment : Fragment() {
     private fun launchCarPlay(
         view: View,
         targetName: String,
-        usbDevice: android.hardware.usb.UsbDevice? = null,
+        usbDevice: UsbDevice? = null,
     ) {
         stopConnectingUi()
-        // Yield AA wireless / BT / P2P / active session so CarPlay gets clean Wi-Fi & USB access.
         runCatching {
             ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
                 action = AapService.ACTION_STOP_WIRELESS
@@ -509,7 +505,9 @@ class HomeFragment : Fragment() {
             view = view,
             targetName = targetName,
             protocol = "CarPlay",
-            transportLabel = if (usbDevice != null) "🍎 Abriendo Apple CarPlay (USB)" else "🍎 Abriendo Apple CarPlay",
+            transportLabel = getString(
+                if (usbDevice != null) R.string.core_transport_opening_cp_usb else R.string.core_transport_opening_cp
+            ),
         )
         carPlayLaunchJob?.cancel()
         carPlayLaunchJob = viewLifecycleOwner.lifecycleScope.launch {
@@ -533,9 +531,9 @@ class HomeFragment : Fragment() {
     private fun currentTransportConnectingLabel(): String {
         val s = app.settings
         return when {
-            s.wifi5gEnabled -> "📡 Conectando por Wi-Fi 5 GHz"
-            s.hotspotModeEnabled -> "📲 Conectando por Hotspot Móvil"
-            else -> "🔌 Conectando por Cable USB"
+            s.wifi5gEnabled -> getString(R.string.core_transport_connecting_wifi)
+            s.hotspotModeEnabled -> getString(R.string.core_transport_connecting_hotspot)
+            else -> getString(R.string.core_transport_connecting_usb)
         }
     }
 
@@ -552,7 +550,6 @@ class HomeFragment : Fragment() {
         connectingTransportLabel = transportLabel
         refreshHeroState(view)
 
-        // Temporizador ligero que SOLO existe mientras dura el intento de conexión (nunca en reposo).
         connectingTickJob?.cancel()
         connectingTickJob = viewLifecycleOwner.lifecycleScope.launch {
             while (manualConnectingActive && isAdded) {
@@ -598,16 +595,17 @@ class HomeFragment : Fragment() {
 
         when {
             app.commManager.isConnected -> {
-                val devName = s.autoStartBluetoothDeviceName.takeIf { it.isNotBlank() } ?: "tu móvil"
+                val devName = s.autoStartBluetoothDeviceName.takeIf { it.isNotBlank() } ?: getString(R.string.core_your_phone)
                 pill?.setTextColor(OK_GREEN)
-                pill?.text = "●  CONECTADO"
+                pill?.text = getString(R.string.core_status_connected)
                 badge?.text = if (app.commManager.isWirelessSession) {
-                    if (s.hotspotModeEnabled) "📲 Hotspot Wi-Fi activo" else "📡 Wi-Fi 5 GHz activo"
+                    if (s.hotspotModeEnabled) getString(R.string.core_badge_hotspot_connected)
+                    else getString(R.string.core_badge_wifi5g_connected)
                 } else {
-                    "🔌 Cable USB activo"
+                    getString(R.string.core_badge_usb_connected)
                 }
-                title?.text = "Conectado a $devName"
-                sub?.text = "Sesión activa. Toca «Abrir proyección» para volver a pantalla completa."
+                title?.text = getString(R.string.core_hero_title_connected, devName)
+                sub?.text = getString(R.string.core_hero_sub_connected)
                 wifiBtn?.visibility = View.VISIBLE
                 wifiBtn?.text = getString(R.string.da_open)
                 cpBtn?.visibility = View.VISIBLE
@@ -616,7 +614,7 @@ class HomeFragment : Fragment() {
 
                 ring?.state = ConnectionRingView.State.CONNECTED
                 ring?.protocolTitle = "Android Auto"
-                ring?.subtitleText = "En proyección"
+                ring?.subtitleText = getString(R.string.core_ring_projecting)
             }
             manualConnectingActive -> {
                 val elapsedSec = ((SystemClock.elapsedRealtime() - connectingStartElapsedMs) / 1000L).toInt().coerceAtLeast(0)
@@ -625,11 +623,11 @@ class HomeFragment : Fragment() {
                     refreshHeroState(view)
                     return
                 }
-                pill?.text = "●  CONECTANDO"
+                pill?.text = getString(R.string.core_status_connecting)
                 val liveStatus = AapService.wirelessStatusText.value
                 badge?.text = connectingTransportLabel
-                title?.text = "Conectando a $connectingTargetName"
-                sub?.text = liveStatus ?: "Mantén el móvil desbloqueado. Suele tardar unos segundos."
+                title?.text = getString(R.string.core_hero_title_connecting, connectingTargetName)
+                sub?.text = liveStatus ?: getString(R.string.core_hero_sub_connecting)
                 wifiBtn?.visibility = View.GONE
                 cpBtn?.visibility = View.GONE
                 usbBtn?.visibility = View.GONE
@@ -643,48 +641,49 @@ class HomeFragment : Fragment() {
                     elapsedSec < 7 -> 2
                     else -> 3
                 }
+                val credsText = getString(R.string.core_live_creds_sent)
+                val btNegText = getString(R.string.core_live_bt_negotiating)
                 ring?.subtitleText = when {
-                    liveStatus != null && liveStatus.contains("Credenciales") -> "Abriendo sesión"
-                    liveStatus != null && liveStatus.contains("BT") -> "Negociando Wi-Fi"
-                    liveStatus != null && liveStatus.contains("lista") -> "Esperando al móvil"
-                    elapsedSec < 3 -> "Negociando enlace"
-                    elapsedSec < 8 -> "Esperando al móvil"
-                    else -> "Abriendo sesión"
+                    liveStatus != null && liveStatus == credsText -> getString(R.string.core_ring_opening_session)
+                    liveStatus != null && liveStatus == btNegText -> getString(R.string.core_ring_negotiating_wifi)
+                    elapsedSec < 3 -> getString(R.string.core_ring_negotiating)
+                    elapsedSec < 8 -> getString(R.string.core_ring_waiting_phone)
+                    else -> getString(R.string.core_ring_opening_session)
                 }
             }
             else -> {
                 val usbPhone = findConnectedUsbPhone()
-                pill?.text = "●  LISTO"
+                pill?.text = getString(R.string.core_status_ready)
                 val liveStatus = AapService.wirelessStatusText.value
                 badge?.setTextColor(if (usbPhone != null) ACCENT else 0xFFEAF2F7.toInt())
                 badge?.text = when {
-                    usbPhone != null -> "🔌 USB listo · ${shortUsbDeviceLabel(usbPhone.first, usbPhone.second)}"
-                    s.wifi5gEnabled -> "📡 Wi-Fi 5 GHz activo"
-                    s.hotspotModeEnabled -> "📲 Hotspot Móvil activo"
-                    s.usbModeEnabled -> "🔌 Cable USB listo"
-                    else -> "⏸ Selecciona un modo abajo"
+                    usbPhone != null -> getString(R.string.core_badge_usb_detected, shortUsbDeviceLabel(usbPhone.first, usbPhone.second))
+                    s.wifi5gEnabled -> getString(R.string.core_badge_wifi5g_ready)
+                    s.hotspotModeEnabled -> getString(R.string.core_badge_hotspot_ready)
+                    s.usbModeEnabled -> getString(R.string.core_badge_usb_ready)
+                    else -> getString(R.string.core_badge_select_mode)
                 }
-                title?.text = "Conecta tu móvil"
+                title?.text = getString(R.string.core_hero_title_idle)
                 sub?.text = when {
-                    usbPhone != null && usbPhone.second ->
-                        "iPhone detectado por USB. Toca «CarPlay USB» para abrir Apple CarPlay."
-                    usbPhone != null ->
-                        "${shortUsbDeviceLabel(usbPhone.first, false)} detectado en USB. Toca «Conectar USB» o espera la conexión."
+                    usbPhone != null && usbPhone.second -> getString(R.string.core_hero_sub_usb_iphone)
+                    usbPhone != null -> getString(R.string.core_hero_sub_usb_android, shortUsbDeviceLabel(usbPhone.first, false))
                     s.wifi5gEnabled && !liveStatus.isNullOrBlank() -> liveStatus
-                    else -> "Elige Android Auto, Apple CarPlay o toca tu móvil vinculado."
+                    else -> getString(R.string.core_hero_sub_idle)
                 }
                 wifiBtn?.visibility = View.VISIBLE
-                wifiBtn?.text = if (wirelessAaEnabled) "Conectar Android Auto" else "Conectar por USB"
+                wifiBtn?.text = getString(
+                    if (wirelessAaEnabled) R.string.core_btn_connect_aa else R.string.core_btn_connect_usb_primary
+                )
                 cpBtn?.visibility = View.VISIBLE
                 val showUsbBtn = (s.usbModeEnabled && wirelessAaEnabled) || usbPhone != null
                 usbBtn?.visibility = if (showUsbBtn) View.VISIBLE else View.GONE
                 if (usbPhone != null) {
-                    usbBtn?.text = if (usbPhone.second) "CarPlay USB" else "Conectar USB"
+                    usbBtn?.text = getString(if (usbPhone.second) R.string.core_btn_usb_carplay else R.string.core_btn_usb_connect)
                     usbBtn?.backgroundTintList = ColorStateList.valueOf(0xFF10282C.toInt())
                     usbBtn?.strokeColor = ColorStateList.valueOf(ACCENT)
                     usbBtn?.setTextColor(ACCENT)
                 } else {
-                    usbBtn?.text = "Cable USB"
+                    usbBtn?.text = getString(R.string.core_btn_usb_cable)
                     usbBtn?.backgroundTintList = ColorStateList.valueOf(0xFF1E2935.toInt())
                     usbBtn?.strokeColor = ColorStateList.valueOf(0xFF2E4256.toInt())
                     usbBtn?.setTextColor(0xFFEAF2F7.toInt())
@@ -693,13 +692,15 @@ class HomeFragment : Fragment() {
 
                 ring?.state = ConnectionRingView.State.IDLE
                 ring?.protocolTitle = when {
-                    usbPhone != null -> if (usbPhone.second) "CarPlay USB" else "Cable USB"
+                    usbPhone != null -> getString(if (usbPhone.second) R.string.core_btn_usb_carplay else R.string.core_btn_usb_cable)
                     s.wifi5gEnabled -> "Wi-Fi 5 GHz"
-                    s.hotspotModeEnabled -> "Hotspot Móvil"
-                    s.usbModeEnabled -> "Cable USB"
-                    else -> "En espera"
+                    s.hotspotModeEnabled -> getString(R.string.core_mode_chip_hotspot).removePrefix("📲 ")
+                    s.usbModeEnabled -> getString(R.string.core_btn_usb_cable)
+                    else -> getString(R.string.core_ring_standby)
                 }
-                ring?.subtitleText = if (usbPhone != null) "Móvil USB listo" else "Toca para conectar"
+                ring?.subtitleText = getString(
+                    if (usbPhone != null) R.string.core_ring_usb_ready else R.string.core_ring_tap_connect
+                )
             }
         }
     }
@@ -726,12 +727,13 @@ class HomeFragment : Fragment() {
                 val name = runCatching { dev.name }.getOrNull()?.takeIf { it.isNotBlank() } ?: dev.address
                 val isTarget = name == savedName || (savedName == null && index == 0)
                 val subtitle = if (name.contains("iPhone", ignoreCase = true)) {
-                    "🍎 Apple CarPlay · Toca para abrir"
+                    getString(R.string.core_paired_sub_cp)
                 } else {
-                    "🤖 Android Auto · Toca para conectar"
+                    getString(R.string.core_paired_sub_aa)
                 }
                 container.addView(
                     createRecentDeviceCard(
+                        icon = if (name.contains("iPhone", ignoreCase = true)) "🍎" else "📱",
                         title = name,
                         subtitle = subtitle,
                         highlighted = isTarget,
@@ -742,16 +744,18 @@ class HomeFragment : Fragment() {
         } else {
             container.addView(
                 createRecentDeviceCard(
-                    title = savedName ?: "Móvil Android",
-                    subtitle = "🤖 Android Auto · Wi-Fi / USB",
+                    icon = "📱",
+                    title = savedName ?: getString(R.string.core_paired_fallback_android),
+                    subtitle = getString(R.string.core_paired_fallback_aa_sub),
                     highlighted = true,
                     onClick = { startPrimaryConnection() },
                 )
             )
             container.addView(
                 createRecentDeviceCard(
+                    icon = "🍎",
                     title = "iPhone (CarPlay)",
-                    subtitle = "🍎 Apple CarPlay · Wi-Fi / USB",
+                    subtitle = getString(R.string.core_paired_fallback_cp_sub),
                     highlighted = false,
                     onClick = { launchCarPlay(view, "iPhone (CarPlay)") },
                 )
@@ -760,18 +764,22 @@ class HomeFragment : Fragment() {
 
         container.addView(
             createRecentDeviceCard(
-                title = "Vincular otro móvil",
-                subtitle = "Abrir ajustes Bluetooth del coche",
+                icon = "＋",
+                title = getString(R.string.core_paired_add_title),
+                subtitle = getString(R.string.core_paired_add_sub),
                 highlighted = false,
+                lastCard = true,
                 onClick = { openBluetoothSettings() },
             )
         )
     }
 
     private fun createRecentDeviceCard(
+        icon: String,
         title: String,
         subtitle: String,
         highlighted: Boolean,
+        lastCard: Boolean = false,
         onClick: () -> Unit,
     ): View {
         val ctx = requireContext()
@@ -790,7 +798,7 @@ class HomeFragment : Fragment() {
                 )
             }
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginEnd = dp(12)
+                if (!lastCard) marginEnd = dp(12)
             }
             isClickable = true
             isFocusable = true
@@ -798,7 +806,7 @@ class HomeFragment : Fragment() {
         }
 
         val iconBox = TextView(ctx).apply {
-            text = if (title.contains("Vincular", ignoreCase = true)) "＋" else "📱"
+            text = icon
             textSize = 26f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
@@ -853,7 +861,7 @@ class HomeFragment : Fragment() {
             } else {
                 Toast.makeText(
                     requireContext(),
-                    "Activa primero Wi-Fi 5 GHz, Hotspot o Cable USB.",
+                    getString(R.string.core_toast_enable_mode_first),
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -871,7 +879,9 @@ class HomeFragment : Fragment() {
 
         val savedName = s.autoStartBluetoothDeviceName
         val preferred = bonded.firstOrNull { (it.name ?: "") == savedName } ?: bonded.firstOrNull()
-        val target = preferred?.name?.takeIf { it.isNotBlank() } ?: savedName.takeIf { it.isNotBlank() } ?: "tu móvil Android"
+        val target = preferred?.name?.takeIf { it.isNotBlank() }
+            ?: savedName.takeIf { it.isNotBlank() }
+            ?: getString(R.string.core_your_android_phone)
 
         beginConnectingUi(
             view = root,
@@ -977,42 +987,42 @@ class HomeFragment : Fragment() {
         }
 
         view.findViewById<MaterialButton>(R.id.mode_btn_wifi_direct)?.let {
-            it.text = if (wifi5gOn) "☑ 📡 Wi-Fi 5 GHz\nSin cables (Direct)" else "☐ 📡 Wi-Fi 5 GHz\nDesactivado"
+            it.text = getString(if (wifi5gOn) R.string.core_mode_wifi_on else R.string.core_mode_wifi_off)
             styleCheckBtn(it, wifi5gOn)
         }
         view.findViewById<MaterialButton>(R.id.mode_btn_hotspot)?.let {
-            it.text = if (hotspotOn) "☑ 📲 Hotspot Móvil\nInternet + AA" else "☐ 📲 Hotspot Móvil\nDesactivado"
+            it.text = getString(if (hotspotOn) R.string.core_mode_hotspot_on else R.string.core_mode_hotspot_off)
             styleCheckBtn(it, hotspotOn)
         }
         view.findViewById<MaterialButton>(R.id.mode_btn_usb)?.let {
-            it.text = if (usbOn) "☑ 🔌 Cable USB\nDirecto + Carga" else "☐ 🔌 Cable USB\nSolo carga"
+            it.text = getString(if (usbOn) R.string.core_mode_usb_on else R.string.core_mode_usb_off)
             styleCheckBtn(it, usbOn)
         }
 
         val activeList = buildList {
-            if (wifi5gOn) add("📡 Wi-Fi 5 GHz")
-            if (hotspotOn) add("📲 Hotspot Móvil")
-            if (usbOn) add("🔌 Cable USB")
+            if (wifi5gOn) add(getString(R.string.core_mode_chip_wifi))
+            if (hotspotOn) add(getString(R.string.core_mode_chip_hotspot))
+            if (usbOn) add(getString(R.string.core_mode_chip_usb))
         }
         view.findViewById<TextView>(R.id.mode_active_explanation)?.text = if (activeList.isEmpty()) {
-            "⏸ Activa arriba al menos un modo de conexión (Wi-Fi 5 GHz, Hotspot o Cable USB)."
+            getString(R.string.core_modes_none)
         } else {
-            "Activos: ${activeList.joinToString("  ·  ")}"
+            getString(R.string.core_modes_active, activeList.joinToString("  ·  "))
         }
     }
 
     private fun showUsbSwitchDialog(deviceName: String) {
         activeDialog?.dismiss()
         activeDialog = MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
-            .setTitle("🔌 Cable USB detectado ($deviceName)")
-            .setMessage("Has conectado el móvil por USB mientras hay una sesión Wi-Fi activa. ¿Cambiar a Cable USB?")
-            .setPositiveButton("Usar Cable USB") { _, _ ->
+            .setTitle(getString(R.string.core_usb_switch_title, deviceName))
+            .setMessage(getString(R.string.core_usb_switch_message))
+            .setPositiveButton(getString(R.string.core_usb_switch_use_usb)) { _, _ ->
                 AapService.usbSwitchPrompt.value = null
                 ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
                     action = AapService.ACTION_SWITCH_TO_USB
                 })
             }
-            .setNegativeButton("Seguir por Wi-Fi") { _, _ ->
+            .setNegativeButton(getString(R.string.core_usb_switch_keep_wifi)) { _, _ ->
                 AapService.usbSwitchPrompt.value = null
             }
             .setOnCancelListener {

@@ -48,15 +48,14 @@ object SupportDonationsDialog {
         }
 
         root.addView(TextView(context).apply {
-            text = "☕ Apoyar el proyecto · Qonecta Unit"
+            text = context.getString(com.andrerinas.openheadunit.R.string.core_donate_dialog_title)
             textSize = 26f
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             setTextColor(KOFI_AMBER)
         })
 
         root.addView(TextView(context).apply {
-            text = "Desarrollado de forma independiente por CharlysEV para la comunidad Leapmotor.\n" +
-                "Si Qonecta Unit mejora tus viajes diarios, puedes invitar a un café o apoyar su desarrollo escaneando cualquiera de estos códigos QR con tu móvil:"
+            text = context.getString(com.andrerinas.openheadunit.R.string.core_donate_dialog_intro)
             textSize = 17.5f
             setTextColor(TEXT_BODY)
             setLineSpacing(0f, 1.2f)
@@ -116,11 +115,21 @@ object SupportDonationsDialog {
         }
 
         cardsRow.addView(
-            buildQrCard("☕ Invitar a un café en Ko-fi", "ko-fi.com/charlysev", KOFI_URL, KOFI_AMBER),
+            buildQrCard(
+                context.getString(com.andrerinas.openheadunit.R.string.core_donate_kofi_card),
+                "ko-fi.com/charlysev",
+                KOFI_URL,
+                KOFI_AMBER
+            ),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(14) }
         )
         cardsRow.addView(
-            buildQrCard("💙 Donar por PayPal", "paypal.me/CharlysEV", PAYPAL_URL, PAYPAL_TEAL),
+            buildQrCard(
+                context.getString(com.andrerinas.openheadunit.R.string.core_donate_paypal_card),
+                "paypal.me/CharlysEV",
+                PAYPAL_URL,
+                PAYPAL_TEAL
+            ),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
         root.addView(
@@ -138,7 +147,7 @@ object SupportDonationsDialog {
             setPadding(0, dp(16), 0, 0)
         }
         footerRow.addView(TextView(context).apply {
-            text = "❤️ ¡Muchísimas gracias por apoyar el desarrollo libre de Qonecta!"
+            text = context.getString(com.andrerinas.openheadunit.R.string.core_donate_footer)
             textSize = 16f
             setTextColor(TEXT_MUTED)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -146,7 +155,7 @@ object SupportDonationsDialog {
         })
 
         footerRow.addView(TextView(context).apply {
-            text = "Cerrar"
+            text = context.getString(com.andrerinas.openheadunit.R.string.core_close)
             textSize = 18.5f
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             setTextColor(TEXT_PRIMARY)

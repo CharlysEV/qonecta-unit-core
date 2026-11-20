@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// UI visual language unified with Qonecta Unit Core (Android Auto + Apple CarPlay).
+// UI visual language unified with Qonecta Unit CORE (Android Auto + Apple CarPlay).
 package com.shilapi.xcertplay
 
 import android.Manifest
@@ -49,6 +49,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.andrerinas.openheadunit.R
 import com.andrerinas.openheadunit.cluster.ClusterMapController
 import com.andrerinas.openheadunit.connection.UsbDeviceCompat
+import com.andrerinas.openheadunit.utils.LocaleHelper
 import com.headqlink.unit.extended.ConnectionRingView
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import java.io.File
@@ -57,9 +58,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Pantalla unificada de Apple CarPlay para Qonecta Unit Core.
- * Comparte el mismo lenguaje visual oscuro + turquesa (#00E5C7), anillo de estado interactivo
- * y tarjetas de dispositivos vinculados que la pantalla principal de Android Auto.
+ * Pantalla unificada y multiidioma (ES · EN · PT · IT · DE) de Apple CarPlay para Qonecta Unit CORE.
  */
 class LeapCarPlayActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
@@ -107,8 +106,8 @@ class LeapCarPlayActivity : ComponentActivity() {
     private val bluetoothPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) choosePhone()
         else permissionHelp(
-            "Dispositivos cercanos",
-            "Concede el permiso de Dispositivos cercanos para conectar Qonecta Unit con tu iPhone vinculado."
+            getString(R.string.cp_perm_nearby_title),
+            getString(R.string.cp_perm_nearby_msg)
         )
     }
 
@@ -117,15 +116,16 @@ class LeapCarPlayActivity : ComponentActivity() {
     }
 
     override fun attachBaseContext(newBase: Context) {
-        val scale = com.andrerinas.openheadunit.utils.Settings(newBase).uiScaleHomePercent / 100.0f
+        val localized = LocaleHelper.wrapContext(newBase)
+        val scale = com.andrerinas.openheadunit.utils.Settings(localized).uiScaleHomePercent / 100.0f
         if (scale != 1.0f && Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            val cfg = Configuration(newBase.resources.configuration)
-            val metrics = newBase.resources.displayMetrics
+            val cfg = Configuration(localized.resources.configuration)
+            val metrics = localized.resources.displayMetrics
             cfg.densityDpi = (metrics.densityDpi * scale).toInt()
-            val ctx = newBase.createConfigurationContext(cfg)
+            val ctx = localized.createConfigurationContext(cfg)
             super.attachBaseContext(ctx)
         } else {
-            super.attachBaseContext(newBase)
+            super.attachBaseContext(localized)
         }
     }
 
@@ -139,7 +139,7 @@ class LeapCarPlayActivity : ComponentActivity() {
             hide(WindowInsetsCompat.Type.statusBars())
         }
         setupError = runCatching { LeapCarPlayBootstrap.ensure(this) }.exceptionOrNull()?.let {
-            "No se pudo completar la configuración local de CarPlay. Reinstala el APK de Qonecta Unit Core."
+            getString(R.string.cp_setup_error)
         }
         page = savedInstanceState?.getString("page") ?: intent.getStringExtra("page") ?: "home"
         render()
@@ -247,7 +247,6 @@ class LeapCarPlayActivity : ComponentActivity() {
         }
         scroll.addView(content)
 
-        // Cabecera unificada con HomeFragment
         content.addView(buildHeader())
 
         when (page) {
@@ -283,7 +282,7 @@ class LeapCarPlayActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         titleRow.addView(
-            label("Qonecta Unit Core", 32, TEXT, bold = true).apply {
+            label(getString(R.string.core_app_name), 32, TEXT, bold = true).apply {
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
             }
@@ -304,9 +303,9 @@ class LeapCarPlayActivity : ComponentActivity() {
         titleCol.addView(titleRow)
 
         val subText = when (page) {
-            "settings" -> "Ajustes de Apple CarPlay · Pantalla, vídeo y enlace inalámbrico"
-            "about" -> "Información y licencias de Qonecta Unit Core · CarPlay"
-            else -> "Proyección CarPlay inalámbrica y por Cable USB"
+            "settings" -> getString(R.string.cp_sub_settings)
+            "about" -> getString(R.string.cp_sub_about)
+            else -> getString(R.string.cp_sub_home)
         }
         titleCol.addView(
             label(subText, 15, MUTED, bold = false).apply {
@@ -363,7 +362,7 @@ class LeapCarPlayActivity : ComponentActivity() {
             )
 
             header.addView(
-                headerPillButton("Ajustes", highlighted = false) {
+                headerPillButton(getString(R.string.core_btn_settings), highlighted = false) {
                     page = "settings"
                     render()
                 },
@@ -384,7 +383,7 @@ class LeapCarPlayActivity : ComponentActivity() {
             )
         } else {
             header.addView(
-                headerPillButton("←  Volver a CarPlay", highlighted = true) {
+                headerPillButton(getString(R.string.cp_btn_back), highlighted = true) {
                     page = "home"
                     render()
                 },
@@ -411,30 +410,22 @@ class LeapCarPlayActivity : ComponentActivity() {
         val wide = resources.configuration.screenWidthDp >= 720
         val carHotspotMode = AirPlayPersistence.loadWirelessHotspotMode(this) == WirelessHotspotMode.MANUAL
 
-        // Avisos contextuales discretos (solo si aplican)
         if (setupError != null) {
             content.addView(warningBanner(setupError!!, null, null))
         } else if (carHotspotOff()) {
             content.addView(
                 warningBanner(
-                    "⚠ El Hotspot del coche «${AirPlayPersistence.loadManualHotspotSsid(this)}» está apagado. Enciéndelo antes de conectar.",
-                    "Abrir Hotspot"
+                    getString(R.string.cp_hotspot_off_banner, AirPlayPersistence.loadManualHotspotSsid(this)),
+                    getString(R.string.cp_hotspot_open_btn)
                 ) { openCarWifiSettings() }
             )
         } else if (carHotspotMode) {
             val wifiMgr = applicationContext.getSystemService(android.net.wifi.WifiManager::class.java)
             if (wifiMgr?.isWifiEnabled == true) {
-                content.addView(
-                    warningBanner(
-                        "⚠ Consejo C10 (Modo Hotspot): apaga el Wi-Fi cliente en la barra superior del coche y deja solo la Zona Wi-Fi para evitar cortes.",
-                        null,
-                        null
-                    )
-                )
+                content.addView(warningBanner(getString(R.string.cp_hotspot_c10_tip), null, null))
             }
         }
 
-        // Tarjeta Hero principal (llena la pantalla en formato panorámico 16:9 igual que Android Auto)
         val heroCard = LinearLayout(this).apply {
             orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
@@ -442,20 +433,17 @@ class LeapCarPlayActivity : ComponentActivity() {
             background = rounded(CARD_BG, CARD_BORDER, radiusDp = 26, strokeDp = 2)
         }
 
-        val leftCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        val leftCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
-        // Fila de píldoras de estado y transporte
         val pillsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        statusPill = pillLabel("●  LISTO", ACCENT, 0x40000000).apply {
+        statusPill = pillLabel(getString(R.string.core_status_ready), ACCENT, 0x40000000).apply {
             textSize = 16.5f
             letterSpacing = 0.05f
         }
-        transportBadge = pillLabel("📡 Wi-Fi Direct 5 GHz", TEXT, 0x40000000).apply {
+        transportBadge = pillLabel(getString(R.string.cp_badge_p2p), TEXT, 0x40000000).apply {
             textSize = 16.5f
         }
         pillsRow.addView(statusPill)
@@ -467,30 +455,25 @@ class LeapCarPlayActivity : ComponentActivity() {
         )
         leftCol.addView(pillsRow)
 
-        heroTitle = label("Conecta tu iPhone", if (wide) 42 else 34, TEXT, bold = true).apply {
+        heroTitle = label(getString(R.string.cp_hero_title_idle), if (wide) 42 else 34, TEXT, bold = true).apply {
             setPadding(0, dp(10), 0, 0)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }
         leftCol.addView(heroTitle)
 
-        heroSubtitle = label(
-            "Mantén Bluetooth y Wi-Fi activos en tu iPhone, o conéctalo por Cable USB.",
-            18,
-            MUTED
-        ).apply {
+        heroSubtitle = label(getString(R.string.cp_hero_sub_idle), 18, MUTED).apply {
             setPadding(0, dp(4), 0, 0)
         }
         leftCol.addView(heroSubtitle)
 
-        // Fila de botones principales (Turquesa alto contraste + USB + Desconectar)
         val actionsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(16), 0, 0)
         }
 
-        connectButton = primaryPillButton("Conectar CarPlay") {
+        connectButton = primaryPillButton(getString(R.string.cp_btn_connect)) {
             if (CarPlayBackgroundSession.hasSession()) openProjection()
             else connect(true)
         }
@@ -501,7 +484,7 @@ class LeapCarPlayActivity : ComponentActivity() {
             }
         )
 
-        usbButton = secondaryPillButton("🔌 Cable USB") {
+        usbButton = secondaryPillButton("🔌 ${getString(R.string.core_btn_usb_cable)}") {
             connect(false)
         }
         actionsRow.addView(
@@ -511,7 +494,7 @@ class LeapCarPlayActivity : ComponentActivity() {
             }
         )
 
-        disconnectButton = dangerPillButton("✕ Desconectar") {
+        disconnectButton = dangerPillButton(getString(R.string.cp_btn_disconnect)) {
             disconnectButton?.isEnabled = false
             CarPlayBackgroundSession.stop {
                 runOnUiThread {
@@ -526,25 +509,26 @@ class LeapCarPlayActivity : ComponentActivity() {
         )
         leftCol.addView(actionsRow)
 
-        // Selector limpio de enlace inalámbrico (espejo de los modos de HomeFragment)
         leftCol.addView(
-            label("MODO INALÁMBRICO PARA CARPLAY:", 14, ACCENT, bold = true).apply {
+            label(getString(R.string.cp_modes_header), 14, ACCENT, bold = true).apply {
                 letterSpacing = 0.04f
                 setPadding(0, dp(18), 0, dp(8))
             }
         )
 
-        val modeRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
+        val modeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val wifiDirectCard = modeToggleButton(
-            title = if (!carHotspotMode) "☑ 📡 Wi-Fi Direct 5 GHz\nRed directa automática" else "☐ 📡 Wi-Fi Direct 5 GHz\nRed directa automática",
+            title = getString(if (!carHotspotMode) R.string.cp_mode_p2p_on else R.string.cp_mode_p2p_off),
             selected = !carHotspotMode
         ) {
             if (carHotspotMode) applyWirelessLink(WirelessHotspotMode.WIFI_P2P)
         }
         val hotspotCard = modeToggleButton(
-            title = if (carHotspotMode) "☑ 📲 Hotspot del coche\n${storedSsid().ifBlank { "Configurar red" }}" else "☐ 📲 Hotspot del coche\nAlternativa sin Wi-Fi Direct",
+            title = if (carHotspotMode) {
+                getString(R.string.cp_mode_hotspot_on, storedSsid().ifBlank { getString(R.string.cp_mode_configure) })
+            } else {
+                getString(R.string.cp_mode_hotspot_off)
+            },
             selected = carHotspotMode
         ) {
             if (!carHotspotMode) {
@@ -569,9 +553,9 @@ class LeapCarPlayActivity : ComponentActivity() {
         leftCol.addView(modeRow)
 
         val activeModeSummary = if (carHotspotMode) {
-            "Activo: 📲 Hotspot «${storedSsid()}»  ·  🔌 Cable USB siempre disponible"
+            getString(R.string.cp_mode_summary_hotspot, storedSsid())
         } else {
-            "Activo: 📡 Wi-Fi Direct 5 GHz  ·  🔌 Cable USB siempre disponible"
+            getString(R.string.cp_mode_summary_p2p)
         }
         leftCol.addView(
             label(activeModeSummary, 15, TEXT, bold = true).apply {
@@ -579,11 +563,10 @@ class LeapCarPlayActivity : ComponentActivity() {
             }
         )
 
-        // Anillo interactivo de estado (idéntico al de Android Auto para simetría total)
         val ringHolder = FrameLayout(this)
         connectionRing = ConnectionRingView(this).apply {
             protocolTitle = "Apple CarPlay"
-            subtitleText = "Toca para conectar"
+            subtitleText = getString(R.string.core_ring_tap_connect)
             isClickable = true
             isFocusable = true
             setOnClickListener {
@@ -614,7 +597,6 @@ class LeapCarPlayActivity : ComponentActivity() {
             }
         )
 
-        // Fila inferior: iPhones / dispositivos Bluetooth vinculados (llena el 100% de la pantalla sin huecos vacíos)
         content.addView(buildBondedIphonesSection())
     }
 
@@ -630,7 +612,7 @@ class LeapCarPlayActivity : ComponentActivity() {
         }
 
         section.addView(
-            label("IPHONES VINCULADOS (TOCA TU IPHONE PARA CONECTAR)", 15, ACCENT, bold = true).apply {
+            label(getString(R.string.cp_paired_header), 15, ACCENT, bold = true).apply {
                 letterSpacing = 0.06f
             }
         )
@@ -654,9 +636,9 @@ class LeapCarPlayActivity : ComponentActivity() {
                 val isSelected = if (savedAddr != null) dev.address == savedAddr else index == 0
                 val isIphone = name.contains("iPhone", ignoreCase = true) || name.contains("Apple", ignoreCase = true)
                 val sub = when {
-                    isSelected -> "🍎 iPhone seleccionado · Toca para conectar"
-                    isIphone -> "🍎 Apple CarPlay · Toca para conectar"
-                    else -> "📱 Bluetooth vinculado · Usar en CarPlay"
+                    isSelected -> getString(R.string.cp_paired_selected)
+                    isIphone -> getString(R.string.cp_paired_iphone)
+                    else -> getString(R.string.cp_paired_bt)
                 }
                 cardsRow.addView(
                     deviceCard(
@@ -676,8 +658,8 @@ class LeapCarPlayActivity : ComponentActivity() {
             cardsRow.addView(
                 deviceCard(
                     icon = "🍎",
-                    title = savedName ?: "Elegir iPhone vinculado",
-                    subtitle = "Bluetooth + Wi-Fi para CarPlay inalámbrico",
+                    title = savedName ?: getString(R.string.cp_paired_choose),
+                    subtitle = getString(R.string.cp_paired_choose_sub),
                     highlighted = savedName != null,
                 ) {
                     choosePhone()
@@ -686,8 +668,8 @@ class LeapCarPlayActivity : ComponentActivity() {
             cardsRow.addView(
                 deviceCard(
                     icon = "🔌",
-                    title = "Conectar por Cable USB",
-                    subtitle = "Enchufa el iPhone al puerto de datos",
+                    title = getString(R.string.cp_paired_usb_title),
+                    subtitle = getString(R.string.cp_paired_usb_sub),
                     highlighted = findConnectedAppleUsb() != null,
                 ) {
                     connect(false)
@@ -698,8 +680,8 @@ class LeapCarPlayActivity : ComponentActivity() {
         cardsRow.addView(
             deviceCard(
                 icon = "＋",
-                title = "Elegir / Vincular iPhone",
-                subtitle = "Selector o ajustes Bluetooth del coche",
+                title = getString(R.string.cp_paired_add_title),
+                subtitle = getString(R.string.cp_paired_add_sub),
                 highlighted = false,
                 lastCard = true,
             ) {
@@ -849,71 +831,69 @@ class LeapCarPlayActivity : ComponentActivity() {
     private fun settings(content: LinearLayout) {
         content.addView(space(14))
         content.addView(
-            label(
-                "Los cambios de tamaño, resolución, búfer de audio y frecuencia de imagen reconectan CarPlay si hay sesión activa. El resto se aplica en la próxima conexión.",
-                16,
-                MUTED
-            ).apply { setPadding(0, 0, 0, dp(18)) }
+            label(getString(R.string.cp_settings_intro), 16, MUTED)
+                .apply { setPadding(0, 0, 0, dp(18)) }
         )
 
-        section(content, "Conexión automática e iPhone") { card ->
+        section(content, getString(R.string.cp_sec_auto)) { card ->
             toggle(
                 card,
-                "Conectar al abrir CarPlay",
-                "Usa el último modo de conexión y el iPhone seleccionado.",
+                getString(R.string.cp_opt_autoconnect),
+                getString(R.string.cp_opt_autoconnect_desc),
                 LeapCarPlayPreferences.autoConnect(this)
             ) { LeapCarPlayPreferences.saveAutoConnect(this, it) }
-            val currentPhone = LeapCarPlayPreferences.phoneAddress(this)?.let { LeapCarPlayPreferences.phoneName(this) } ?: "Sin elegir"
+            val currentPhone = LeapCarPlayPreferences.phoneAddress(this)?.let { LeapCarPlayPreferences.phoneName(this) }
+                ?: getString(R.string.cp_none_selected)
             card.addView(
-                settingsButton("Elegir iPhone · $currentPhone") { choosePhone() },
+                settingsButton(getString(R.string.cp_opt_choose_iphone, currentPhone)) { choosePhone() },
                 matchButton(10, 58)
             )
         }
 
-        section(content, "Enlace inalámbrico") { card -> wirelessLinkControls(card) }
+        section(content, getString(R.string.cp_sec_wireless)) { card -> wirelessLinkControls(card) }
 
-        section(content, "Pantalla y rendimiento") { card ->
+        section(content, getString(R.string.cp_sec_display)) { card ->
             carPlaySizeControl(card)
             choice(
                 card,
-                "Resolución",
-                listOf("Nativa (máxima nitidez)", "80 % · carga media", "60 % · carga ligera"),
+                getString(R.string.cp_opt_resolution),
+                listOf(getString(R.string.cp_res_native), getString(R.string.cp_res_80), getString(R.string.cp_res_60)),
                 listOf(10, 8, 6).indexOf(AirPlayPersistence.loadDisplayScaleTenths(this)).coerceAtLeast(0)
             ) { AirPlayPersistence.saveDisplayScaleTenths(this, listOf(10, 8, 6)[it]) }
 
             val bufferPresets = com.shilapi.xcertplay.media.MediaAudioBuffer.presets
             choice(
                 card,
-                "Búfer de música",
-                listOf("300 ms · por defecto", "500 ms · equilibrado", "1000 ms · máxima estabilidad"),
+                getString(R.string.cp_opt_buffer),
+                listOf(getString(R.string.cp_buf_300), getString(R.string.cp_buf_500), getString(R.string.cp_buf_1000)),
                 bufferPresets.indexOf(AirPlayPersistence.loadMediaBufferMillis(this)).coerceAtLeast(0)
             ) { AirPlayPersistence.saveMediaBufferMillis(this, bufferPresets[it]) }
 
             choice(
                 card,
-                "Frecuencia de imagen",
-                listOf("30 fps · menor consumo", "60 fps · movimiento fluido"),
+                getString(R.string.cp_opt_fps),
+                listOf(getString(R.string.cp_fps_30), getString(R.string.cp_fps_60)),
                 if (AirPlayPersistence.loadFps(this) == 60) 1 else 0
             ) { AirPlayPersistence.saveFps(this, if (it == 1) 60 else 30) }
 
             toggle(
                 card,
-                "Vídeo eficiente (HEVC)",
-                "Déjalo desactivado (H.264) para máxima compatibilidad en la pantalla del coche.",
+                getString(R.string.cp_opt_hevc),
+                getString(R.string.cp_opt_hevc_desc),
                 AirPlayPersistence.loadHevcEnabled(this)
             ) { AirPlayPersistence.saveHevcEnabled(this, it) }
 
             toggle(
                 card,
-                "Volante a la derecha",
-                "Coloca la barra de controles de CarPlay en el lado derecho.",
+                getString(R.string.cp_opt_rhd),
+                getString(R.string.cp_opt_rhd_desc),
                 AirPlayPersistence.loadRightHandDrive(this)
             ) { AirPlayPersistence.saveRightHandDrive(this, it) }
 
             toggle(
                 card,
-                "Pantalla completa",
-                "Oculta las barras del sistema mientras CarPlay está abierto.",
+                getString(R.string.cp_opt_fullscreen),
+                getString(R.string.cp_opt_fullscreen_desc),
                 AirPlayPersistence.loadHideTopBar(this) && AirPlayPersistence.loadHideBottomBar(this)
             ) {
                 AirPlayPersistence.saveHideTopBar(this, it)
@@ -921,52 +901,35 @@ class LeapCarPlayActivity : ComponentActivity() {
             }
         }
 
-        if (com.shilapi.xcertplay.hud.BydOutputSettings.available(this)) {
-            section(content, "Navegación en cuadro BYD") { card ->
-                toggle(
-                    card,
-                    "Indicaciones en HUD y cuadro",
-                    "Muestra flechas de navegación y calles en pantallas BYD compatibles.",
-                    com.shilapi.xcertplay.hud.BydOutputSettings.enabled(this)
-                ) { com.shilapi.xcertplay.hud.BydOutputSettings.setEnabled(this, it) }
-            }
-        }
-
-        section(content, "Permisos y ayuda de conexión") { card ->
+        section(content, getString(R.string.cp_sec_permissions)) { card ->
+            card.addView(label(getString(R.string.cp_perm_desc), 15, MUTED))
             card.addView(
-                label(
-                    "«Dispositivos cercanos» conecta con tu iPhone. En modo USB, Android puede pedir autorización para un túnel VPN local necesario para el enlace de datos con el iPhone.",
-                    15,
-                    MUTED
-                )
-            )
-            card.addView(
-                settingsButton("Permisos de la aplicación") {
+                settingsButton(getString(R.string.cp_btn_app_perms)) {
                     openSystem(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
                 },
                 matchButton(14, 58)
             )
             card.addView(
-                settingsButton("Ajustes de Bluetooth del coche") {
+                settingsButton(getString(R.string.cp_btn_bt_settings)) {
                     openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
                 },
                 matchButton(10, 58)
             )
             card.addView(
-                settingsButton("Ayuda y reinicio de Wi-Fi CarPlay") { wirelessHelp() },
+                settingsButton(getString(R.string.cp_btn_wifi_help)) { wirelessHelp() },
                 matchButton(10, 58)
             )
         }
 
-        section(content, "Diagnóstico, pruebas y acerca de") { card ->
+        section(content, getString(R.string.cp_sec_diag)) { card ->
             card.addView(
-                settingsButton("☕ Apoyar el proyecto (Ko-fi / PayPal)") {
+                settingsButton(getString(R.string.cp_btn_donate)) {
                     com.andrerinas.openheadunit.main.SupportDonationsDialog.show(this)
                 },
                 matchButton(0, 58)
             )
             card.addView(
-                settingsButton("Simular iPhone (Demo de vídeo)") {
+                settingsButton(getString(R.string.cp_btn_demo)) {
                     startActivity(
                         Intent(this, CarPlayHostActivity::class.java)
                             .putExtra(CarPlayLoopbackSimulator.EXTRA_SIMULATE_IPHONE, true)
@@ -975,53 +938,36 @@ class LeapCarPlayActivity : ComponentActivity() {
                 matchButton(10, 58)
             )
             exportButton = settingsButton(
-                if (exportInProgress) "Guardando informe…" else "Guardar informe de diagnóstico"
+                getString(if (exportInProgress) R.string.cp_btn_saving_report else R.string.cp_btn_save_report)
             ) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) exportDiagnostics()
                 else chooseReportDestination()
             }.apply { isEnabled = !exportInProgress }
             card.addView(exportButton, matchButton(10, 58))
             card.addView(
-                settingsButton("Acerca de Qonecta Unit · CarPlay") {
+                settingsButton(getString(R.string.cp_btn_about)) {
                     page = "about"
                     render()
                 },
                 matchButton(10, 58)
             )
-            val destination = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                "Los informes se guardan en Descargas/LeapCarPlay. "
-            } else {
-                "Elige dónde guardar tu informe. "
-            }
+            val destination = getString(
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) R.string.cp_report_dest_q else R.string.cp_report_dest_legacy
+            )
             card.addView(
-                label(
-                    destination + "No se envía nada automáticamente y se excluyen credenciales privadas.",
-                    14,
-                    MUTED
-                ).apply { setPadding(0, dp(10), 0, 0) }
+                label(destination + getString(R.string.cp_report_privacy), 14, MUTED)
+                    .apply { setPadding(0, dp(10), 0, 0) }
             )
         }
     }
 
     private fun about(content: LinearLayout) {
         content.addView(space(14))
-        section(content, "Qonecta Unit Core · CarPlay  ·  v${version()}") { card ->
-            card.addView(
-                label(
-                    "Receptor independiente de Apple CarPlay integrado en Qonecta Unit Core para pantallas Android automotrices. Funciona por Cable USB o de forma inalámbrica con autenticación local, sin dongle externo ni cuenta adicional.\n\nNo es un producto certificado por Apple Inc.",
-                    16,
-                    TEXT
-                )
-            )
+        section(content, "${getString(R.string.cp_host_title)}  ·  v${version()}") { card ->
+            card.addView(label(getString(R.string.cp_about_body), 16, TEXT))
         }
-        section(content, "Software libre y avisos") { card ->
-            card.addView(
-                label(
-                    "Motor receptor basado en xcertplay (licencia GPL-3.0) e integración adaptada para Qonecta Unit Core (AGPL-3.0).\n\nIncluye AndroidX, Bouncy Castle, JmDNS y SLF4J.\n\nCarPlay y el icono de CarPlay son marcas registradas de Apple Inc.",
-                    15,
-                    MUTED
-                )
-            )
+        section(content, getString(R.string.cp_about_oss_title)) { card ->
+            card.addView(label(getString(R.string.cp_about_oss_body), 15, MUTED))
         }
     }
 
@@ -1031,11 +977,11 @@ class LeapCarPlayActivity : ComponentActivity() {
 
     private fun carHotspotOffDialog() {
         darkDialog()
-            .setTitle("El Hotspot del coche está apagado")
-            .setMessage("CarPlay está configurado para conectarse mediante el Hotspot «${AirPlayPersistence.loadManualHotspotSsid(this)}». Enciéndelo en los ajustes del coche y vuelve a conectar.")
-            .setPositiveButton("Abrir ajustes del coche") { _, _ -> openCarWifiSettings() }
-            .setNeutralButton("Conectar igualmente") { _, _ -> connect(true) }
-            .setNegativeButton("Cancelar", null)
+            .setTitle(getString(R.string.cp_dlg_hotspot_off_title))
+            .setMessage(getString(R.string.cp_dlg_hotspot_off_msg, AirPlayPersistence.loadManualHotspotSsid(this)))
+            .setPositiveButton(getString(R.string.cp_dlg_hotspot_open_settings)) { _, _ -> openCarWifiSettings() }
+            .setNeutralButton(getString(R.string.cp_dlg_hotspot_connect_anyway)) { _, _ -> connect(true) }
+            .setNegativeButton(getString(R.string.cp_btn_cancel), null)
             .show()
     }
 
@@ -1055,14 +1001,16 @@ class LeapCarPlayActivity : ComponentActivity() {
 
     private fun wirelessLinkControls(parent: LinearLayout) {
         val carHotspot = AirPlayPersistence.loadWirelessHotspotMode(this) == WirelessHotspotMode.MANUAL
-        val options = arrayOf("Wi-Fi Direct 5 GHz (recomendado)", "Hotspot del coche")
-        val control = settingsButton("Tipo de enlace · ${options[if (carHotspot) 1 else 0]}") {}
+        val options = arrayOf(getString(R.string.cp_link_p2p), getString(R.string.cp_link_hotspot))
+        val control = settingsButton(getString(R.string.cp_link_type, options[if (carHotspot) 1 else 0])) {}
         control.setOnClickListener {
             var selection = if (carHotspot) 1 else 0
             darkDialog()
-                .setTitle("Enlace inalámbrico de CarPlay")
+                .setTitle(getString(R.string.cp_link_dialog_title))
                 .setSingleChoiceItems(options, selection) { _, index -> selection = index }
-                .setPositiveButton(if (CarPlayBackgroundSession.hasSession()) "Aplicar y reconectar" else "Guardar") { _, _ ->
+                .setPositiveButton(
+                    getString(if (CarPlayBackgroundSession.hasSession()) R.string.cp_btn_apply_reconnect else R.string.cp_btn_save)
+                ) { _, _ ->
                     when {
                         (selection == 1) == carHotspot -> Unit
                         selection == 0 -> applyWirelessLink(WirelessHotspotMode.WIFI_P2P)
@@ -1073,14 +1021,14 @@ class LeapCarPlayActivity : ComponentActivity() {
                         }
                     }
                 }
-                .setNegativeButton("Cancelar", null)
+                .setNegativeButton(getString(R.string.cp_btn_cancel), null)
                 .show()
         }
         parent.addView(control, matchButton(0, 58))
         parent.addView(space(10))
         if (!carHotspot) {
             parent.addView(
-                label("Qonecta Unit crea su propia red Wi-Fi Direct 5 GHz para conectar el iPhone automáticamente.", 14, MUTED)
+                label(getString(R.string.cp_link_p2p_desc), 14, MUTED)
                     .apply { setPadding(0, 0, 0, dp(12)) }
             )
             return
@@ -1088,8 +1036,8 @@ class LeapCarPlayActivity : ComponentActivity() {
         val ssid = storedSsid()
         val password = storedPassword()
         parent.addView(
-            settingsButton("Nombre del Hotspot · $ssid") {
-                textInput("Nombre del Hotspot del coche", ssid, secret = false) { value ->
+            settingsButton(getString(R.string.cp_hotspot_name_btn, ssid)) {
+                textInput(getString(R.string.cp_hotspot_name_title), ssid, secret = false) { value ->
                     hotspotError(value, password)?.let { toast(it); return@textInput }
                     saveHotspotCredentials(value, password)
                     render()
@@ -1099,8 +1047,13 @@ class LeapCarPlayActivity : ComponentActivity() {
         )
         parent.addView(space(10))
         parent.addView(
-            settingsButton("Contraseña del Hotspot · ${if (password.isEmpty()) "ninguna" else "•".repeat(8)}") {
-                textInput("Contraseña del Hotspot del coche", password, secret = true) { value ->
+            settingsButton(
+                getString(
+                    R.string.cp_hotspot_pass_btn,
+                    if (password.isEmpty()) getString(R.string.cp_hotspot_pass_none) else "•".repeat(8)
+                )
+            ) {
+                textInput(getString(R.string.cp_hotspot_pass_title), password, secret = true) { value ->
                     hotspotError(ssid, value)?.let { toast(it); return@textInput }
                     saveHotspotCredentials(ssid, value)
                     render()
@@ -1109,11 +1062,8 @@ class LeapCarPlayActivity : ComponentActivity() {
             matchButton(0, 58)
         )
         parent.addView(
-            label(
-                "Activa la Zona Wi-Fi en los ajustes del coche e introduce aquí el mismo nombre y contraseña. El iPhone se unirá a esa red para proyectar CarPlay.",
-                14,
-                MUTED
-            ).apply { setPadding(0, dp(8), 0, dp(12)) }
+            label(getString(R.string.cp_hotspot_desc), 14, MUTED)
+                .apply { setPadding(0, dp(8), 0, dp(12)) }
         )
     }
 
@@ -1134,8 +1084,8 @@ class LeapCarPlayActivity : ComponentActivity() {
     }
 
     private fun askHotspotCredentials(done: (String, String) -> Unit) {
-        textInput("Nombre del Hotspot del coche", storedSsid(), secret = false) { ssid ->
-            textInput("Contraseña del Hotspot del coche", storedPassword(), secret = true) { password ->
+        textInput(getString(R.string.cp_hotspot_name_title), storedSsid(), secret = false) { ssid ->
+            textInput(getString(R.string.cp_hotspot_pass_title), storedPassword(), secret = true) { password ->
                 val error = hotspotError(ssid, password)
                 if (error != null) toast(error) else done(ssid, password)
             }
@@ -1162,26 +1112,28 @@ class LeapCarPlayActivity : ComponentActivity() {
         darkDialog()
             .setTitle(title)
             .setView(input)
-            .setPositiveButton("Guardar") { _, _ -> save(input.text.toString().let { if (secret) it else it.trim() }) }
-            .setNegativeButton("Cancelar", null)
+            .setPositiveButton(getString(R.string.cp_btn_save)) { _, _ ->
+                save(input.text.toString().let { if (secret) it else it.trim() })
+            }
+            .setNegativeButton(getString(R.string.cp_btn_cancel), null)
             .show()
     }
 
     private fun carPlaySizeControl(parent: LinearLayout) {
         val sizes = com.shilapi.xcertplay.airplay.CarPlaySize.entries
         val current = com.shilapi.xcertplay.airplay.CarPlaySize.fromWidthMillimeters(AirPlayPersistence.loadWidthPhysicalMm(this))
-        val spanishLabels = sizes.map { size ->
+        val localizedLabels = sizes.map { size ->
             when (size) {
-                com.shilapi.xcertplay.airplay.CarPlaySize.LARGE -> "Grande"
-                com.shilapi.xcertplay.airplay.CarPlaySize.MEDIUM -> "Mediano (recomendado)"
-                com.shilapi.xcertplay.airplay.CarPlaySize.SMALL -> "Pequeño (más espacio)"
+                com.shilapi.xcertplay.airplay.CarPlaySize.LARGE -> getString(R.string.cp_size_large)
+                com.shilapi.xcertplay.airplay.CarPlaySize.MEDIUM -> getString(R.string.cp_size_medium)
+                com.shilapi.xcertplay.airplay.CarPlaySize.SMALL -> getString(R.string.cp_size_small)
             }
         }
-        choice(parent, "Tamaño de iconos y texto", spanishLabels, sizes.indexOf(current)) {
+        choice(parent, getString(R.string.cp_opt_size), localizedLabels, sizes.indexOf(current)) {
             AirPlayPersistence.saveWidthPhysicalMm(this, sizes[it].widthMillimeters)
         }
         parent.addView(
-            label("Ajusta el tamaño de los iconos de CarPlay en la pantalla del coche.", 14, MUTED)
+            label(getString(R.string.cp_opt_size_desc), 14, MUTED)
                 .apply { setPadding(0, 0, 0, dp(14)) }
         )
     }
@@ -1211,7 +1163,6 @@ class LeapCarPlayActivity : ComponentActivity() {
             return
         }
         val open = {
-            // Detiene Android Auto inalámbrico antes de iniciar CarPlay para evitar colisión Wi-Fi/P2P
             runCatching {
                 startService(Intent(this, com.andrerinas.openheadunit.aap.AapService::class.java).apply {
                     action = com.andrerinas.openheadunit.aap.AapService.ACTION_STOP_WIRELESS
@@ -1240,10 +1191,10 @@ class LeapCarPlayActivity : ComponentActivity() {
         val adapter = getSystemService(BluetoothManager::class.java)?.adapter
         if (adapter == null || !adapter.isEnabled) {
             darkDialog()
-                .setTitle("Enciende el Bluetooth")
-                .setMessage("Activa el Bluetooth del coche y vincula primero tu iPhone.")
-                .setPositiveButton("Abrir Bluetooth") { _, _ -> openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
-                .setNegativeButton("Más tarde", null)
+                .setTitle(getString(R.string.cp_dlg_bt_on_title))
+                .setMessage(getString(R.string.cp_dlg_bt_on_msg))
+                .setPositiveButton(getString(R.string.cp_dlg_open_bt)) { _, _ -> openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+                .setNegativeButton(getString(R.string.cp_btn_later), null)
                 .show()
             return
         }
@@ -1251,10 +1202,10 @@ class LeapCarPlayActivity : ComponentActivity() {
         val devices = loadBondedDevicesSortedForCarPlay(savedAddr)
         if (devices.isEmpty()) {
             darkDialog()
-                .setTitle("Vincula tu iPhone")
-                .setMessage("En tu iPhone abre Ajustes → Bluetooth y vincúlalo con el coche. Después vuelve aquí y toca Conectar CarPlay.")
-                .setPositiveButton("Abrir Bluetooth") { _, _ -> openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
-                .setNegativeButton("Entendido", null)
+                .setTitle(getString(R.string.cp_dlg_pair_title))
+                .setMessage(getString(R.string.cp_dlg_pair_msg))
+                .setPositiveButton(getString(R.string.cp_dlg_open_bt)) { _, _ -> openSystem(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+                .setNegativeButton(getString(R.string.cp_btn_got_it), null)
                 .show()
             return
         }
@@ -1269,11 +1220,11 @@ class LeapCarPlayActivity : ComponentActivity() {
         }
         com.andrerinas.openheadunit.main.PhonePickerDialog.show(
             context = this,
-            title = "Elige tu iPhone para CarPlay",
-            subtitle = "Toca tu iPhone vinculado por Bluetooth para conectar por Wi-Fi",
+            title = getString(R.string.cp_picker_title),
+            subtitle = getString(R.string.cp_picker_sub),
             items = items,
-            pairButtonText = "Vincular otro iPhone",
-            cancelButtonText = "Cancelar",
+            pairButtonText = getString(R.string.cp_picker_pair),
+            cancelButtonText = getString(R.string.cp_btn_cancel),
             onSelect = { index, _ ->
                 val device = devices[index]
                 LeapCarPlayPreferences.savePhone(this, device.address, device.name ?: "iPhone")
@@ -1289,10 +1240,10 @@ class LeapCarPlayActivity : ComponentActivity() {
 
     private fun wirelessHelp() {
         darkDialog()
-            .setTitle("Ayuda de conexión inalámbrica")
-            .setMessage("Vincula tu iPhone al Bluetooth del coche, mantén el Wi-Fi activado y permite CarPlay cuando el iPhone pregunte.\n\nSi una app anterior dejó una red Wi-Fi Direct bloqueada, pulsa «Reiniciar Wi-Fi CarPlay» abajo. El Wi-Fi normal del coche no se desactiva.")
-            .setPositiveButton("Entendido", null)
-            .setNeutralButton("Reiniciar Wi-Fi CarPlay") { _, _ -> confirmWirelessReset() }
+            .setTitle(getString(R.string.cp_dlg_wifi_help_title))
+            .setMessage(getString(R.string.cp_dlg_wifi_help_msg))
+            .setPositiveButton(getString(R.string.cp_btn_got_it), null)
+            .setNeutralButton(getString(R.string.cp_dlg_reset_wifi_btn)) { _, _ -> confirmWirelessReset() }
             .show()
     }
 
@@ -1305,19 +1256,19 @@ class LeapCarPlayActivity : ComponentActivity() {
 
     private fun confirmWirelessReset() {
         darkDialog()
-            .setTitle("¿Reiniciar Wi-Fi CarPlay?")
-            .setMessage("Esto cierra cualquier grupo Wi-Fi Direct previo que haya quedado bloqueado y vuelve a intentar la conexión.")
-            .setPositiveButton("Reiniciar y conectar") { _, _ ->
+            .setTitle(getString(R.string.cp_dlg_reset_confirm_title))
+            .setMessage(getString(R.string.cp_dlg_reset_confirm_msg))
+            .setPositiveButton(getString(R.string.cp_dlg_reset_confirm_ok)) { _, _ ->
                 CarPlayBackgroundSession.stop { runOnUiThread { resetWirelessGroup() } }
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cp_btn_cancel), null)
             .show()
     }
 
     private fun resetWirelessGroup() {
         val manager = getSystemService(android.net.wifi.p2p.WifiP2pManager::class.java)
         if (manager == null) {
-            toast("Esta unidad no admite Wi-Fi Direct.")
+            toast(getString(R.string.cp_toast_no_p2p))
             return
         }
         val channel = manager.initialize(this, mainLooper, null)
@@ -1340,7 +1291,7 @@ class LeapCarPlayActivity : ComponentActivity() {
                                     }
                                     SystemClock.elapsedRealtime() >= deadline -> {
                                         channel.close()
-                                        toast("Wi-Fi Direct sigue ocupado. Cierra otras apps de proyección e inténtalo de nuevo.")
+                                        toast(getString(R.string.cp_toast_p2p_busy))
                                     }
                                     else -> handler.postDelayed({ waitUntilRemoved() }, 200)
                                 }
@@ -1351,16 +1302,13 @@ class LeapCarPlayActivity : ComponentActivity() {
 
                     override fun onFailure(reason: Int) {
                         channel.close()
-                        toast("No se pudo reiniciar Wi-Fi Direct. Cierra otras apps de proyección e inténtalo de nuevo.")
+                        toast(getString(R.string.cp_toast_p2p_fail))
                     }
                 })
             }
         } catch (_: SecurityException) {
             channel.close()
-            permissionHelp(
-                "Permisos inalámbricos",
-                "Concede Dispositivos cercanos (y Ubicación en versiones anteriores de Android) para reiniciar Wi-Fi CarPlay."
-            )
+            permissionHelp(getString(R.string.cp_perm_wireless_title), getString(R.string.cp_perm_wireless_msg))
         }
     }
 
@@ -1381,43 +1329,47 @@ class LeapCarPlayActivity : ComponentActivity() {
         when {
             setupError != null -> {
                 pill?.setTextColor(WARNING)
-                pill?.text = "●  ATENCIÓN"
+                pill?.text = getString(R.string.core_status_attention)
                 badge?.setTextColor(TEXT)
-                badge?.text = "⚠ Revisar instalación"
-                title?.text = "Configuración pendiente"
+                badge?.text = getString(R.string.cp_badge_check_install)
+                title?.text = getString(R.string.cp_hero_title_setup)
                 sub?.text = setupError
                 ring?.state = ConnectionRingView.State.IDLE
                 ring?.protocolTitle = "Apple CarPlay"
-                ring?.subtitleText = "Revisar aviso"
+                ring?.subtitleText = getString(R.string.cp_ring_check_notice)
             }
             active -> {
                 pill?.setTextColor(OK_GREEN)
-                pill?.text = "●  CONECTADO"
+                pill?.text = getString(R.string.core_status_connected)
                 badge?.setTextColor(OK_GREEN)
                 badge?.text = if (AirPlayPersistence.loadWirelessEnabled(this)) {
-                    if (carHotspotMode) "📲 Hotspot CarPlay activo" else "📡 Wi-Fi Direct activo"
+                    getString(if (carHotspotMode) R.string.cp_badge_hotspot_active else R.string.cp_badge_p2p_active)
                 } else {
-                    "🔌 CarPlay USB activo"
+                    getString(R.string.cp_badge_usb_active)
                 }
-                title?.text = if (savedPhoneName != null) "Conectado a $savedPhoneName" else "CarPlay conectado"
-                sub?.text = "Sesión activa. Toca «Abrir CarPlay» para volver a pantalla completa."
+                title?.text = if (savedPhoneName != null) {
+                    getString(R.string.cp_hero_title_connected_to, savedPhoneName)
+                } else {
+                    getString(R.string.cp_hero_title_connected)
+                }
+                sub?.text = getString(R.string.cp_hero_sub_connected)
                 ring?.state = ConnectionRingView.State.CONNECTED
                 ring?.protocolTitle = "Apple CarPlay"
-                ring?.subtitleText = "En proyección"
+                ring?.subtitleText = getString(R.string.core_ring_projecting)
             }
             running -> {
                 if (connectingStartElapsedMs == 0L) connectingStartElapsedMs = SystemClock.elapsedRealtime()
                 val elapsed = ((SystemClock.elapsedRealtime() - connectingStartElapsedMs) / 1000L).toInt().coerceAtLeast(0)
                 pill?.setTextColor(ACCENT)
-                pill?.text = "●  CONECTANDO"
+                pill?.text = getString(R.string.core_status_connecting)
                 badge?.setTextColor(ACCENT)
                 badge?.text = if (AirPlayPersistence.loadWirelessEnabled(this)) {
-                    if (carHotspotMode) "📲 Conectando por Hotspot" else "📡 Conectando por Wi-Fi Direct"
+                    getString(if (carHotspotMode) R.string.cp_badge_conn_hotspot else R.string.cp_badge_conn_p2p)
                 } else {
-                    "🔌 Conectando iPhone por USB"
+                    getString(R.string.cp_badge_conn_usb)
                 }
-                title?.text = "Conectando a ${savedPhoneName ?: "tu iPhone"}…"
-                sub?.text = "Mantén el iPhone desbloqueado y acepta CarPlay si aparece el aviso."
+                title?.text = getString(R.string.cp_hero_title_connecting, savedPhoneName ?: "iPhone")
+                sub?.text = getString(R.string.cp_hero_sub_connecting)
                 ring?.state = ConnectionRingView.State.CONNECTING
                 ring?.elapsedSeconds = elapsed
                 ring?.activeStep = when {
@@ -1426,44 +1378,49 @@ class LeapCarPlayActivity : ComponentActivity() {
                     else -> 3
                 }
                 ring?.protocolTitle = "Apple CarPlay"
-                ring?.subtitleText = if (elapsed < 4) "Negociando enlace" else "Esperando al iPhone"
+                ring?.subtitleText = getString(
+                    if (elapsed < 4) R.string.core_ring_negotiating else R.string.cp_ring_waiting_iphone
+                )
             }
             else -> {
                 connectingStartElapsedMs = 0L
                 pill?.setTextColor(ACCENT)
-                pill?.text = "●  LISTO"
+                pill?.text = getString(R.string.core_status_ready)
                 if (appleUsb != null) {
                     badge?.setTextColor(ACCENT)
-                    badge?.text = "🔌 iPhone USB detectado"
+                    badge?.text = getString(R.string.cp_badge_usb_detected)
                 } else {
                     badge?.setTextColor(TEXT)
-                    badge?.text = if (carHotspotMode) "📲 Hotspot del coche" else "📡 Wi-Fi Direct 5 GHz"
+                    badge?.text = getString(if (carHotspotMode) R.string.cp_badge_hotspot else R.string.cp_badge_p2p)
                 }
-                title?.text = if (savedPhoneName != null) "Listo para $savedPhoneName" else "Conecta tu iPhone"
+                title?.text = if (savedPhoneName != null) {
+                    getString(R.string.cp_hero_title_ready_for, savedPhoneName)
+                } else {
+                    getString(R.string.cp_hero_title_idle)
+                }
                 sub?.text = when {
-                    appleUsb != null ->
-                        "iPhone detectado en el puerto USB. Toca «CarPlay USB» para iniciar al instante."
-                    savedPhoneName != null ->
-                        "Toca «Conectar CarPlay», usa el Cable USB o elige otro iPhone abajo."
-                    else ->
-                        "Vincula tu iPhone por Bluetooth con el coche o enchúfalo al puerto USB de datos."
+                    appleUsb != null -> getString(R.string.cp_hero_sub_usb)
+                    savedPhoneName != null -> getString(R.string.cp_hero_sub_ready_named)
+                    else -> getString(R.string.cp_hero_sub_idle)
                 }
                 ring?.state = ConnectionRingView.State.IDLE
-                ring?.protocolTitle = if (appleUsb != null) "CarPlay USB" else "Apple CarPlay"
-                ring?.subtitleText = if (appleUsb != null) "iPhone USB listo" else "Toca para conectar"
+                ring?.protocolTitle = if (appleUsb != null) getString(R.string.core_btn_usb_carplay) else "Apple CarPlay"
+                ring?.subtitleText = getString(
+                    if (appleUsb != null) R.string.cp_ring_iphone_ready else R.string.core_ring_tap_connect
+                )
             }
         }
 
-        connectButton?.text = if (running) "Abrir CarPlay" else "Conectar CarPlay"
+        connectButton?.text = getString(if (running) R.string.cp_btn_open else R.string.cp_btn_connect)
         connectButton?.isEnabled = setupError == null
 
         usbButton?.let { btn ->
             if (appleUsb != null) {
-                btn.text = "🔌 CarPlay USB"
+                btn.text = "🔌 ${getString(R.string.core_btn_usb_carplay)}"
                 btn.setTextColor(ACCENT)
                 btn.background = rippleRounded(ACCENT_DARK_BG, ACCENT, radiusDp = 33, strokeDp = 2)
             } else {
-                btn.text = "🔌 Cable USB"
+                btn.text = "🔌 ${getString(R.string.core_btn_usb_cable)}"
                 btn.setTextColor(TEXT)
                 btn.background = rippleRounded(SURFACE_TOP, EDGE, radiusDp = 33, strokeDp = 2)
             }
@@ -1480,9 +1437,10 @@ class LeapCarPlayActivity : ComponentActivity() {
     private fun chooseReportDestination() {
         runCatching { export.launch(reportFileName()) }.onFailure {
             toast(
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                    "No se pudo abrir el selector de destino. Intenta guardar de nuevo en Descargas."
-                else "Esta unidad no dispone de selector de archivos para guardar el informe."
+                getString(
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) R.string.cp_report_picker_fail_q
+                    else R.string.cp_report_picker_fail_legacy
+                )
             )
         }
     }
@@ -1490,13 +1448,13 @@ class LeapCarPlayActivity : ComponentActivity() {
     private fun exportDiagnostics(uri: Uri? = null) {
         if (exportInProgress) return
         exportInProgress = true
-        exportButton?.apply { isEnabled = false; text = "Guardando informe…" }
+        exportButton?.apply { isEnabled = false; text = getString(R.string.cp_btn_saving_report) }
         val appContext = applicationContext
         val fileName = reportFileName()
         Thread({
             val result = runCatching {
                 val report = buildString {
-                    appendLine("Qonecta Unit Core · CarPlay ${version()} · diagnostic report")
+                    appendLine("Qonecta Unit CORE · CarPlay ${version()} · diagnostic report")
                     appendLine("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
                     appendLine("Head unit: ${Build.MANUFACTURER} ${Build.MODEL}")
                     appendLine("Connection: ${if (AirPlayPersistence.loadWirelessEnabled(appContext)) "wireless" else "USB"}")
@@ -1526,19 +1484,19 @@ class LeapCarPlayActivity : ComponentActivity() {
             runOnUiThread {
                 exportInProgress = false
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                exportButton?.apply { isEnabled = true; text = "Guardar informe de diagnóstico" }
+                exportButton?.apply { isEnabled = true; text = getString(R.string.cp_btn_save_report) }
                 if (result.isSuccess) {
                     darkDialog()
-                        .setTitle("Informe guardado")
-                        .setMessage(if (uri == null) "Descargas/LeapCarPlay/$fileName" else "El informe se guardó en la ubicación elegida.")
-                        .setPositiveButton("Listo", null)
+                        .setTitle(getString(R.string.cp_report_saved_title))
+                        .setMessage(if (uri == null) "Downloads/LeapCarPlay/$fileName" else getString(R.string.cp_report_saved_chosen))
+                        .setPositiveButton(getString(R.string.cp_btn_done), null)
                         .show()
                 } else {
                     darkDialog()
-                        .setTitle("No se pudo guardar el informe")
-                        .setMessage("Comprueba el espacio disponible o elige otra carpeta.")
-                        .setPositiveButton("Elegir carpeta") { _, _ -> chooseReportDestination() }
-                        .setNegativeButton("Cerrar", null)
+                        .setTitle(getString(R.string.cp_report_fail_title))
+                        .setMessage(getString(R.string.cp_report_fail_msg))
+                        .setPositiveButton(getString(R.string.cp_report_choose_folder)) { _, _ -> chooseReportDestination() }
+                        .setNegativeButton(getString(R.string.core_close), null)
                         .show()
                 }
             }
@@ -1549,16 +1507,16 @@ class LeapCarPlayActivity : ComponentActivity() {
         darkDialog()
             .setTitle(title)
             .setMessage(body)
-            .setPositiveButton("Ajustes de la app") { _, _ ->
+            .setPositiveButton(getString(R.string.cp_btn_app_settings)) { _, _ ->
                 openSystem(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
             }
-            .setNegativeButton("Más tarde", null)
+            .setNegativeButton(getString(R.string.cp_btn_later), null)
             .show()
     }
 
     private fun openSystem(intent: Intent) {
         runCatching { startActivity(intent) }.onFailure {
-            toast("Abre este ajuste desde la app de Ajustes del coche.")
+            toast(getString(R.string.cp_toast_open_car_settings))
         }
     }
 
@@ -1569,8 +1527,8 @@ class LeapCarPlayActivity : ComponentActivity() {
     }
 
     private fun version() = runCatching {
-        packageManager.getPackageInfo(packageName, 0).versionName ?: "0.2.8-core"
-    }.getOrDefault("0.2.8-core")
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0.0-core"
+    }.getOrDefault("1.0.0-core")
 
     private fun section(parent: LinearLayout, title: String, build: (LinearLayout) -> Unit) {
         val card = LinearLayout(this).apply {
@@ -1623,7 +1581,9 @@ class LeapCarPlayActivity : ComponentActivity() {
             darkDialog()
                 .setTitle(title)
                 .setSingleChoiceItems(options.toTypedArray(), selection) { _, index -> pendingSelection = index }
-                .setPositiveButton(if (CarPlayBackgroundSession.hasSession()) "Aplicar y reconectar" else "Guardar") { _, _ ->
+                .setPositiveButton(
+                    getString(if (CarPlayBackgroundSession.hasSession()) R.string.cp_btn_apply_reconnect else R.string.cp_btn_save)
+                ) { _, _ ->
                     if (pendingSelection != selection) {
                         selection = pendingSelection
                         save(selection)
@@ -1633,7 +1593,7 @@ class LeapCarPlayActivity : ComponentActivity() {
                         }
                     }
                 }
-                .setNegativeButton("Cancelar", null)
+                .setNegativeButton(getString(R.string.cp_btn_cancel), null)
                 .show()
         }
         parent.addView(btn, matchButton(0, 58))

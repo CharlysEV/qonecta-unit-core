@@ -786,7 +786,7 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
                             handler.post {
                                 if (deliveryEpoch == credentialsEpoch) {
                                     AppLog.i("WifiDirectManager: SUCCESS - Providing credentials to listener. SSID=$ssid, IP=$finalIp, BSSID=$readyBssid")
-                                    AapService.wirelessStatusText.value = "Wi-Fi 5 GHz lista ($ssid) · Esperando al móvil"
+                                    AapService.wirelessStatusText.value = context.getString(R.string.core_live_p2p_ready, ssid)
                                     onCredentialsReady?.invoke(ssid, psk, finalIp, readyBssid)
                                 }
                             }
@@ -1179,7 +1179,7 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
             if (supersededByStop(gen, "credential refresh")) return@post
             if (!hasP2pPermission()) {
                 AppLog.w("WifiDirectManager: Missing location/nearby Wi-Fi permission during credential refresh.")
-                AapService.wirelessStatusText.value = "Falta permiso de Ubicación para Wi-Fi Direct"
+                AapService.wirelessStatusText.value = context.getString(R.string.core_live_p2p_need_loc)
                 isGroupCreatingOrCreated = false
                 return@post
             }
@@ -1208,7 +1208,7 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
                     }
                 } catch (se: SecurityException) {
                     AppLog.w("WifiDirectManager: requestGroupInfo denied during refresh: ${se.message}")
-                    AapService.wirelessStatusText.value = "Falta permiso de Ubicación para Wi-Fi Direct"
+                    AapService.wirelessStatusText.value = context.getString(R.string.core_live_p2p_need_loc)
                     isGroupCreatingOrCreated = false
                 }
             }
@@ -1220,7 +1220,7 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
         registerReceiverIfNeeded()
         if (!hasP2pPermission()) {
             AppLog.w("WifiDirectManager: Missing location/nearby Wi-Fi permission — deferring Native AA Wi-Fi Direct bring-up until granted.")
-            AapService.wirelessStatusText.value = "Concede permiso de Ubicación para activar Wi-Fi Direct"
+            AapService.wirelessStatusText.value = context.getString(R.string.core_live_p2p_grant_loc)
             isGroupCreatingOrCreated = false
             return
         }
@@ -1242,7 +1242,7 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
         }
         isGroupCreatingOrCreated = true
         groupCreateStartedAtElapsedMs = SystemClock.elapsedRealtime()
-        AapService.wirelessStatusText.value = "Preparando red Wi-Fi 5 GHz…"
+        AapService.wirelessStatusText.value = context.getString(R.string.core_live_p2p_preparing)
         var mgr = manager
         var ch = channel
 
@@ -1274,7 +1274,7 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
         if (!wifiManager.isWifiEnabled) {
             AppLog.i("WifiDirectManager: WiFi is disabled but needed for Native AA. Attempting to enable...")
-            AapService.wirelessStatusText.value = "Activa el Wi-Fi del coche para conectar"
+            AapService.wirelessStatusText.value = context.getString(R.string.core_live_p2p_turn_on_wifi)
             if (Build.VERSION.SDK_INT < 29) {
                 @Suppress("DEPRECATION")
                 wifiManager.isWifiEnabled = true
@@ -1321,7 +1321,7 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
             }
         } catch (se: SecurityException) {
             AppLog.w("WifiDirectManager: requestGroupInfo denied in startNativeAaQuietHost: ${se.message}")
-            AapService.wirelessStatusText.value = "Concede permiso de Ubicación para activar Wi-Fi Direct"
+            AapService.wirelessStatusText.value = context.getString(R.string.core_live_p2p_grant_loc)
             isGroupCreatingOrCreated = false
         }
     }
@@ -1432,7 +1432,7 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
                 // Missing runtime permission (e.g. Location not granted yet on first launch) is
                 // temporary — never poison bandRequestRejected or fall through to an unguarded call.
                 AppLog.w("WifiDirectManager: $bandLabel createGroup denied (permission missing): ${se.message}")
-                AapService.wirelessStatusText.value = "Concede permiso de Ubicación para activar Wi-Fi Direct"
+                AapService.wirelessStatusText.value = context.getString(R.string.core_live_p2p_grant_loc)
                 isGroupCreatingOrCreated = false
                 return
             } catch (t: Throwable) {
@@ -1580,7 +1580,7 @@ class WifiDirectManager(private val context: Context) : WifiP2pManager.Connectio
             })
         } catch (se: SecurityException) {
             AppLog.w("WifiDirectManager: standard createGroup denied (permission missing): ${se.message}")
-            AapService.wirelessStatusText.value = "Concede permiso de Ubicación para activar Wi-Fi Direct"
+            AapService.wirelessStatusText.value = context.getString(R.string.core_live_p2p_grant_loc)
             isGroupCreatingOrCreated = false
         }
     }
