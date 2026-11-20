@@ -36,6 +36,31 @@ class ClusterMapPolicyTest {
     }
 
     @Test
+    fun `custom turn pill is always hidden in Android Auto because AA draws its own native turn card`() {
+        assertFalse(
+            ClusterMapController.shouldShowTurnPill(
+                mode = ClusterMapController.Mode.ANDROID_AUTO,
+                turnOverlayEnabled = true,
+                isNavigating = true,
+            )
+        )
+        assertTrue(
+            ClusterMapController.shouldShowTurnPill(
+                mode = ClusterMapController.Mode.CARPLAY,
+                turnOverlayEnabled = true,
+                isNavigating = true,
+            )
+        )
+        assertFalse(
+            ClusterMapController.shouldShowTurnPill(
+                mode = ClusterMapController.Mode.CARPLAY,
+                turnOverlayEnabled = false,
+                isNavigating = true,
+            )
+        )
+    }
+
+    @Test
     fun `cluster control handshake messages never bypass AapControl into video decoder`() {
         val singleFlags = VideoFragmentAssembler.FLAG_SINGLE.toByte()
         val controlTypes = listOf(

@@ -73,8 +73,8 @@ android {
         applicationId = "com.tencent.qqmusiccar"
         minSdk = 28
         targetSdk = 36
-        versionCode = 26
-        versionName = "0.2.5-core"
+        versionCode = 27
+        versionName = "0.2.6-core"
         setProperty("archivesBaseName", "QonectaUnit_${versionName}")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled = true

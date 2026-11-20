@@ -6,7 +6,10 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioManager
 import com.andrerinas.openheadunit.aap.AapService
 import com.andrerinas.openheadunit.aap.BluetoothWakePolicy
@@ -58,6 +61,8 @@ class NativeAaHandshakeManager(
 
         /** Hidden `BluetoothProfile.HEADSET_CLIENT` constant used by Android Automotive / OEM head units. */
         private const val PROFILE_HEADSET_CLIENT = 16
+        private const val ACTION_HFP_CLIENT_CONNECTION_STATE_CHANGED =
+            "android.bluetooth.headsetclient.profile.action.CONNECTION_STATE_CHANGED"
         private const val HEADSET_CLIENT_PROXY_TIMEOUT_MS = 2_000L
         private const val HEADSET_CLIENT_RECONNECT_GAP_MS = 1_500L
         private const val HEADSET_CLIENT_WAIT_AFTER_RECONNECT_MS = 8_000L
@@ -154,6 +159,71 @@ class NativeAaHandshakeManager(
     // again rather than hiding behind a line from minutes earlier.
     @Volatile private var handsFreeSkipLogged = false
     @Volatile private var autoHeadsetClientCycleAttempted = false
+    @Volatile private var hfpDropReceiverRegistered = false
+
+    /**
+     * Scoped dynamic receiver active ONLY while this handshake manager is running (unregistered in
+     * [stop]). On head units where the phone's hands-free link was already connected before this app
+     * opened, disconnecting the car BT link on the phone frees the HFP slot — catching that drop
+     * immediately wakes the phone in <1 s instead of waiting for the 15 s retry timer.
+     */
+    private val hfpDropWakeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context?, intent: Intent?) {
+            if (!isRunning || aaListenersClosedForSession) return
+            if (isAttemptInFlight() || commManager.isConnected ||
+                commManager.connectionState.value is CommManager.ConnectionState.Connecting
+            ) return
+
+            val action = intent?.action ?: return
+            val shouldWakeNow = when (action) {
+                BluetoothDevice.ACTION_ACL_DISCONNECTED -> true
+                ACTION_HFP_CLIENT_CONNECTION_STATE_CHANGED -> {
+                    val state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1)
+                    state == BluetoothProfile.STATE_DISCONNECTED
+                }
+                else -> false
+            }
+            if (!shouldWakeNow) return
+
+            val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+            }
+            AppLog.i(
+                "NativeAA: Bluetooth hands-free/ACL drop observed ($action, ${device?.address ?: "?"}) " +
+                    "while waiting for phone — triggering immediate wake poke."
+            )
+            lastPokeTriggerCredentials = null
+            triggerPoke()
+        }
+    }
+
+    private fun registerHfpDropWakeReceiver() {
+        if (hfpDropReceiverRegistered) return
+        runCatching {
+            val filter = IntentFilter().apply {
+                addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+                addAction(ACTION_HFP_CLIENT_CONNECTION_STATE_CHANGED)
+            }
+            ContextCompat.registerReceiver(
+                context.applicationContext,
+                hfpDropWakeReceiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            hfpDropReceiverRegistered = true
+        }.onFailure { e ->
+            AppLog.d("NativeAA: Could not register HFP drop wake receiver: ${e.message}")
+        }
+    }
+
+    private fun unregisterHfpDropWakeReceiver() {
+        if (!hfpDropReceiverRegistered) return
+        hfpDropReceiverRegistered = false
+        runCatching { context.applicationContext.unregisterReceiver(hfpDropWakeReceiver) }
+    }
 
     /**
      * The credentials to hand the phone, as one value.
@@ -318,6 +388,7 @@ class NativeAaHandshakeManager(
         isRunning = true
         aaListenersClosedForSession = false
         autoHeadsetClientCycleAttempted = false
+        registerHfpDropWakeReceiver()
         // Local Bluetooth radio name; logged on every accept so a dual-radio head unit's logs
         // show which radio the phone actually reached (compare with the HU name in the phone's
         // log). Uses adapter.name, not adapter.address: getAddress() returns the fixed masked
@@ -976,7 +1047,11 @@ class NativeAaHandshakeManager(
                 if (isRunning && !isHandshakeInFlight() && !isHandoffSettling() && !commManager.isConnected) {
                     val radioHint = localRadioName.takeIf { it.isNotBlank() && it != "?" } ?: "Bluetooth del coche"
                     AapService.wirelessStatusText.value =
-                        "Sin respuesta del móvil · Desconecta y reconecta «$radioHint» en tu móvil"
+                        "Si ya estabas conectado a «$radioHint», desconéctalo 1 s en tu móvil para entrar por Wi-Fi 5 GHz"
+                    // Re-arm the background wake loop so if the user disconnects CharlysBT right
+                    // after a manual tap, we immediately wake the phone instead of leaving pokeJob dead.
+                    lastPokeTriggerCredentials = null
+                    triggerPoke()
                 }
             }
         } catch (e: Exception) {
@@ -1684,6 +1759,7 @@ class NativeAaHandshakeManager(
 
     fun stop() {
         isRunning = false
+        unregisterHfpDropWakeReceiver()
         try { aaServerSocket?.close() } catch (e: Exception) {}
         try { hfpServerSocket?.close() } catch (e: Exception) {}
         synchronized(extraAaServerSockets) {

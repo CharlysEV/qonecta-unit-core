@@ -165,6 +165,14 @@ object ClusterMapController {
         return trackSignature(cleanTitle, newArtist) != previousSignature
     }
 
+    /**
+     * Pure helper: Android Auto's native `DISPLAY_TYPE_CLUSTER` stream already renders Google Maps'
+     * own green turn-by-turn banner in the clear top window, so our custom top turn card MUST stay
+     * hidden in Android Auto mode to avoid covering it.
+     */
+    fun shouldShowTurnPill(mode: Mode, turnOverlayEnabled: Boolean, isNavigating: Boolean): Boolean =
+        mode != Mode.ANDROID_AUTO && turnOverlayEnabled && isNavigating
+
     fun findClusterDisplay(context: Context): Display? {
         val dm = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager ?: return null
         dm.getDisplay(LEAPMOTOR_CLUSTER_DISPLAY_ID)?.let { display ->

@@ -158,7 +158,7 @@ class ClusterMapActivity : Activity(), SurfaceHolder.Callback {
         val nav = ClusterMapController.navState
         val media = ClusterMapController.mediaState
 
-        val showNavPill = turnOverlayEnabled && nav.isNavigating
+        val showNavPill = ClusterMapController.shouldShowTurnPill(mode, turnOverlayEnabled, nav.isNavigating)
         navPill?.visibility = if (showNavPill) View.VISIBLE else View.GONE
         if (showNavPill) {
             navArrowText?.text = resolveTurnSymbol(nav.nextEventType, nav.turnSide)
