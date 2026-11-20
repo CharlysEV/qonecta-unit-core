@@ -1904,15 +1904,16 @@ class AapService : Service(), UsbReceiver.Listener {
         when (intent?.action) {
             ACTION_START_SELF_MODE       -> startSelfMode()
             ACTION_SWITCH_TO_USB         -> {
-                AppLog.i("AapService: Switching from Wireless to USB/BT-only mode by user confirmation")
+                AppLog.i("AapService: Switching from active Wireless session to USB by user confirmation")
                 usbSwitchPrompt.value = null
                 userExitedAA = false
                 userExitCooldownUntil = 0L
+                Settings.clearBootLoopState(this)
                 val settings = App.provide(this).settings
-                settings.wifi5gEnabled = false
-                settings.hotspotModeEnabled = false
                 settings.usbModeEnabled = true
-                initWifiMode(force = true)
+                settings.listenForUsbDevices = true
+                Settings.setUsbAttachedActivityEnabled(this, true)
+                nativeAaHandshakeManager?.pauseForActiveSession()
                 serviceScope.launch {
                     if (commManager.isConnected && commManager.isWirelessSession ||
                         commManager.connectionState.value is CommManager.ConnectionState.Connecting) {
@@ -2039,7 +2040,18 @@ class AapService : Service(), UsbReceiver.Listener {
                 // Caller already invoked commManager.connect(socket); the connectionState
                 // observer in observeConnectionState() handles the rest — nothing to do here.
             }
-            ACTION_CHECK_USB             -> checkAlreadyConnectedUsb(force = true)
+            ACTION_CHECK_USB             -> {
+                usbSwitchPrompt.value = null
+                userExitedAA = false
+                userExitCooldownUntil = 0L
+                Settings.clearBootLoopState(this)
+                val usbMgr = getSystemService(Context.USB_SERVICE) as? UsbManager
+                val hasAndroidUsb = usbMgr?.deviceList?.values?.any { UsbDeviceCompat.isAndroidDevice(it) } == true
+                if (hasAndroidUsb) {
+                    nativeAaHandshakeManager?.pauseForActiveSession()
+                }
+                checkAlreadyConnectedUsb(force = true)
+            }
             else                         -> {
                 if (intent?.action == null || intent.action == Intent.ACTION_MAIN) {
                     checkAlreadyConnectedUsb()
@@ -2065,18 +2077,18 @@ class AapService : Service(), UsbReceiver.Listener {
         }
         usbAttachSeen = true
         userExitedAA = false
+        userExitCooldownUntil = 0L
         val deviceName = UsbDeviceCompat(device).uniqueName
         val wirelessSessionActive = commManager.isConnected && commManager.isWirelessSession
-        val effectiveWirelessMode = WirelessScopePolicy.effectiveMode(settings.wifiConnectionMode, settings.connectionModes)
-        val wirelessModeSelected = effectiveWirelessMode != WirelessScopePolicy.NO_WIRELESS_MODE
-        if (wirelessSessionActive || wirelessModeSelected) {
-            AppLog.i("USB device attached ($deviceName) while wireless mode/session active (wirelessSession=$wirelessSessionActive, effectiveMode=$effectiveWirelessMode) — prompting user to switch to USB.")
+        if (UsbAttachPolicy.shouldPromptSwitchToUsb(wirelessSessionActive)) {
+            AppLog.i("USB device attached ($deviceName) while wireless session is active — prompting user to switch to USB.")
             usbSwitchPrompt.value = UsbSwitchPrompt(deviceName = deviceName)
-            if (!wirelessSessionActive) {
-                launchMainActivityIfNeeded("USB attach switch prompt ($deviceName)")
-            }
             return
         }
+        // No active wireless session: let USB connect directly without disabling Wi-Fi settings,
+        // pausing any idle wireless wake attempt so it cannot race the USB handshake.
+        usbSwitchPrompt.value = null
+        nativeAaHandshakeManager?.pauseForActiveSession()
         if (UsbDeviceCompat.isInAccessoryMode(device)) {
             // Device already in AOA mode (re-enumerated after UsbAttachedActivity switched it).
             AppLog.i("USB accessory device attached, connecting.")
@@ -2150,6 +2162,7 @@ class AapService : Service(), UsbReceiver.Listener {
                     try {
                         if (usbMode.connectAndSwitch(device, settings.useLibusb)) {
                             AppLog.i("Successfully requested switch to accessory mode for $deviceName")
+                            schedulePostAoaSwitchScan(deviceName)
                         } else {
                             AppLog.w("USB permission granted but connectAndSwitch failed for $deviceName")
                         }
@@ -2269,16 +2282,28 @@ class AapService : Service(), UsbReceiver.Listener {
                 if (!force && !usbAttachSeen) {
                     usbAttachSeen = true
                     isSwitchingToAccessory.set(true)
+                    val oldBusPath = device.deviceName
                     val usbMode = UsbAccessoryMode(usbManager)
                     serviceScope.launch(Dispatchers.IO) {
+                        var reEnumerated = false
                         try {
                             recoverStaleAccessory(usbMode, device, settings.useLibusb, "cold-start stale accessory")
-                            val refreshed = usbManager.deviceList.values.firstOrNull { UsbDeviceCompat.isInAccessoryMode(it) }
-                            if (refreshed != null && usbManager.hasPermission(refreshed)) {
-                                connectUsbWithRetry(refreshed)
+                            reEnumerated = !usbManager.deviceList.containsKey(oldBusPath)
+                            if (reEnumerated) {
+                                AppLog.i("Cold-start stale accessory $deviceName re-enumerated (bus path $oldBusPath vanished); deferring to fresh attach/fallback scan.")
+                            } else {
+                                val refreshed = usbManager.deviceList.values.firstOrNull {
+                                    it.deviceName == oldBusPath && UsbDeviceCompat.isInAccessoryMode(it)
+                                }
+                                if (refreshed != null && usbManager.hasPermission(refreshed)) {
+                                    connectUsbWithRetry(refreshed)
+                                }
                             }
                         } finally {
                             isSwitchingToAccessory.set(false)
+                        }
+                        if (reEnumerated) {
+                            schedulePostAoaSwitchScan(deviceName)
                         }
                     }
                     return
@@ -2308,6 +2333,7 @@ class AapService : Service(), UsbReceiver.Listener {
                             try {
                                 if (usbMode.connectAndSwitch(device, settings.useLibusb)) {
                                     AppLog.i("Successfully requested switch to accessory mode for ${deviceCompat.uniqueName}")
+                                    schedulePostAoaSwitchScan(deviceCompat.uniqueName)
                                 } else {
                                     AppLog.w("connectAndSwitch failed for ${deviceCompat.uniqueName}")
                                 }
@@ -2356,14 +2382,38 @@ class AapService : Service(), UsbReceiver.Listener {
             }
         }
 
-        // Fallback: if force=true and we have a single known phone vendor device in normal mode,
+        // Fallback: if force=true and we have a single Android phone in normal mode,
         // switch it to accessory mode. This handles cases where UsbAttachedActivity didn't fire.
         if (force) {
             val nonAccessoryDevices = deviceList.filter { !UsbDeviceCompat.isInAccessoryMode(it) }
             val phoneDevices = nonAccessoryDevices.filter { UsbDeviceCompat.isKnownPhoneVendor(it) }
-            if (phoneDevices.size == 1) {
-                AppLog.i("Fallback: force=true and found single phone normal-mode device ${UsbDeviceCompat(phoneDevices[0]).uniqueName}. Switching to accessory mode.")
-                performSingleUsbConnect(phoneDevices[0])
+            val target = when {
+                phoneDevices.size == 1 -> phoneDevices[0]
+                nonAccessoryDevices.size == 1 -> nonAccessoryDevices[0]
+                else -> null
+            }
+            if (target != null) {
+                AppLog.i("Fallback: force=true and found single normal-mode Android device ${UsbDeviceCompat(target).uniqueName}. Switching to accessory mode.")
+                performSingleUsbConnect(target)
+            }
+        }
+    }
+
+    /**
+     * Fallback scan after switching a normal-mode phone to AOA (`18D1:2D00/2D01`) or resetting
+     * a stale accessory handle. Some automotive head units drop the subsequent
+     * `USB_DEVICE_ATTACHED` broadcast upon re-enumeration; scanning once after 2.2 s recovers
+     * cleanly without racing when the broadcast already triggered a connection.
+     */
+    private fun schedulePostAoaSwitchScan(deviceName: String) {
+        serviceScope.launch {
+            delay(2200)
+            if (commManager.isBusy || isSwitchingToAccessory.get()) return@launch
+            val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+            val hasAccessory = usbManager.deviceList.values.any { UsbDeviceCompat.isInAccessoryMode(it) }
+            if (hasAccessory) {
+                AppLog.i("Post-AOA fallback scan found re-enumerated accessory after switching $deviceName — connecting.")
+                checkAlreadyConnectedUsb(force = true)
             }
         }
     }
@@ -2379,6 +2429,7 @@ class AapService : Service(), UsbReceiver.Listener {
                 try {
                     if (usbMode.connectAndSwitch(device, settings.useLibusb)) {
                         AppLog.i("Successfully requested switch to accessory mode for single USB device. Waiting for re-enumeration...")
+                        schedulePostAoaSwitchScan(deviceName)
                     } else {
                         AppLog.w("Single USB auto-connect: connectAndSwitch failed for $deviceName")
                     }
@@ -2506,8 +2557,9 @@ class AapService : Service(), UsbReceiver.Listener {
         AppLog.i("AapService: Received WiFi credentials from manager (SSID=$ssid, IP=$ip). Updating and Triggering Poke.")
         nativeAaHandshakeManager?.updateWifiCredentials(ssid, psk, ip, bssid)
         if (commManager.isConnected ||
-            commManager.connectionState.value is CommManager.ConnectionState.Connecting) {
-            AppLog.i("AapService: USB/other session already active. Skipping auto-poke to avoid pulling phone into wireless flow.")
+            commManager.connectionState.value is CommManager.ConnectionState.Connecting ||
+            isSwitchingToAccessory.get()) {
+            AppLog.i("AapService: USB/other session already active or switching. Skipping auto-poke to avoid pulling phone into wireless flow.")
         } else if (!userExitedAA) {
             nativeAaHandshakeManager?.triggerPoke()
         } else {

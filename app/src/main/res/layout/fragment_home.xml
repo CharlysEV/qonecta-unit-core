@@ -71,13 +71,13 @@
                     android:id="@+id/home_subtitle_banner"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:singleLine="true"
                     android:ellipsize="end"
-                    android:text="MODO LIMPIO  ·  SOLO ANDROID AUTO Y APPLE CARPLAY  ·  SIN EXTENDIDO NI SERVICIOS EN SEGUNDO PLANO"
-                    android:textSize="14sp"
-                    android:textColor="@color/hql_accent"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.03" />
+                    android:text="Android Auto y Apple CarPlay  ·  Conexión directa"
+                    android:textSize="15sp"
+                    android:textColor="@color/hql_text_dim"
+                    android:fontFamily="sans-serif-medium" />
             </LinearLayout>
 
             <com.google.android.material.button.MaterialButton
@@ -420,7 +420,7 @@
                         app:backgroundTint="@color/hql_accent"
                         app:strokeColor="@color/hql_accent"
                         app:strokeWidth="2dp"
-                        app:cornerRadius="16dp" />
+                        app:cornerRadius="18dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/mode_btn_hotspot"
@@ -439,7 +439,7 @@
                         app:backgroundTint="@color/hql_surface_top"
                         app:strokeColor="@color/hql_outline"
                         app:strokeWidth="2dp"
-                        app:cornerRadius="16dp" />
+                        app:cornerRadius="18dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/mode_btn_usb"
@@ -457,7 +457,7 @@
                         app:backgroundTint="@color/hql_surface_top"
                         app:strokeColor="@color/hql_outline"
                         app:strokeWidth="2dp"
-                        app:cornerRadius="16dp" />
+                        app:cornerRadius="18dp" />
                 </LinearLayout>
 
                 <TextView

@@ -3,13 +3,16 @@ package com.andrerinas.openheadunit.main
 import android.Manifest
 import android.app.Dialog
 import android.bluetooth.BluetoothDevice
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -35,6 +38,7 @@ import com.andrerinas.openheadunit.R
 import com.andrerinas.openheadunit.aap.AapProjectionActivity
 import com.andrerinas.openheadunit.aap.AapService
 import com.andrerinas.openheadunit.connection.CommManager
+import com.andrerinas.openheadunit.connection.UsbDeviceCompat
 import com.andrerinas.openheadunit.utils.BluetoothHelper
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -65,6 +69,16 @@ class HomeFragment : Fragment() {
     private var connectingTransportLabel = "📡 Conectando sin cables (5 GHz)"
     private var connectingTickJob: Job? = null
     private var carPlayLaunchJob: Job? = null
+    private var usbReceiverRegistered = false
+
+    private val usbStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            view?.let {
+                updateConnectionModeButtons(it)
+                refreshHeroState(it)
+            }
+        }
+    }
 
     private val carFilesPickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -153,13 +167,17 @@ class HomeFragment : Fragment() {
             if (app.commManager.isConnected) {
                 openProjection()
             } else if (!manualConnectingActive) {
-                val missing = if (app.settings.wifi5gEnabled || app.settings.hotspotModeEnabled) {
-                    missingWirelessPermissions()
-                } else emptyArray()
-                if (missing.isNotEmpty()) {
-                    wirelessPermissions.launch(missing)
+                if (findConnectedUsbPhone() != null) {
+                    handleUsbConnectTap(view)
                 } else {
-                    startPrimaryConnection()
+                    val missing = if (app.settings.wifi5gEnabled || app.settings.hotspotModeEnabled) {
+                        missingWirelessPermissions()
+                    } else emptyArray()
+                    if (missing.isNotEmpty()) {
+                        wirelessPermissions.launch(missing)
+                    } else {
+                        startPrimaryConnection()
+                    }
                 }
             }
         }
@@ -173,32 +191,7 @@ class HomeFragment : Fragment() {
         }
 
         view.findViewById<View>(R.id.usb_button)?.setOnClickListener {
-            if (app.commManager.isConnected && !app.commManager.isWirelessSession) {
-                openProjection()
-            } else if (app.commManager.isConnected && app.commManager.isWirelessSession) {
-                showUsbSwitchDialog("Dispositivo USB")
-            } else {
-                app.settings.usbModeEnabled = true
-                app.settings.listenForUsbDevices = true
-                com.andrerinas.openheadunit.utils.Settings.setUsbAttachedActivityEnabled(requireContext(), true)
-                val usbManager = requireContext().getSystemService(Context.USB_SERVICE) as? UsbManager
-                val appleDevice = usbManager?.deviceList?.values?.firstOrNull { it.vendorId == 0x05AC }
-                if (appleDevice != null) {
-                    launchCarPlay(view, "iPhone por USB", usbDevice = appleDevice)
-                } else {
-                    stopCarPlayForAndroidAuto()
-                    updateConnectionModeButtons(view)
-                    beginConnectingUi(
-                        view = view,
-                        targetName = "móvil por Cable USB",
-                        protocol = "Android Auto",
-                        transportLabel = "🔌 Conectando por cable USB",
-                    )
-                    ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
-                        action = AapService.ACTION_CHECK_USB
-                    })
-                }
-            }
+            handleUsbConnectTap(view)
         }
 
         // Modo 1: Wi-Fi 5 GHz (Android Auto inalámbrico)
@@ -368,14 +361,110 @@ class HomeFragment : Fragment() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (!usbReceiverRegistered) {
+            val filter = IntentFilter().apply {
+                addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+                addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+            }
+            runCatching {
+                ContextCompat.registerReceiver(
+                    requireContext(),
+                    usbStateReceiver,
+                    filter,
+                    ContextCompat.RECEIVER_NOT_EXPORTED,
+                )
+                usbReceiverRegistered = true
+            }
+        }
+    }
+
+    override fun onStop() {
+        if (usbReceiverRegistered) {
+            runCatching { requireContext().unregisterReceiver(usbStateReceiver) }
+            usbReceiverRegistered = false
+        }
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
+        com.andrerinas.openheadunit.utils.Settings.setUsbAttachedActivityEnabled(
+            requireContext(),
+            app.settings.usbModeEnabled,
+        )
         view?.let {
             updateClusterToggleButton(it)
             updateConnectionModeButtons(it)
             rebuildRecentDevicesRow(it)
             refreshHeroState(it)
         }
+    }
+
+    private fun findConnectedUsbPhone(): Pair<UsbDevice, Boolean>? {
+        val usbManager = context?.getSystemService(Context.USB_SERVICE) as? UsbManager ?: return null
+        val devices = runCatching { usbManager.deviceList.values }.getOrDefault(emptyList())
+        devices.firstOrNull { UsbDeviceCompat.isInAccessoryMode(it) }?.let { return it to false }
+        devices.firstOrNull { UsbDeviceCompat.isAndroidDevice(it) }?.let { return it to false }
+        devices.firstOrNull { UsbDeviceCompat.isAppleDevice(it) }?.let { return it to true }
+        return null
+    }
+
+    private fun shortUsbDeviceLabel(device: UsbDevice, isApple: Boolean): String {
+        if (isApple) return "iPhone"
+        if (UsbDeviceCompat.isInAccessoryMode(device)) return "Android Auto"
+        val label = listOfNotNull(
+            device.manufacturerName?.trim()?.takeIf { it.isNotBlank() },
+            device.productName?.trim()?.takeIf { it.isNotBlank() },
+        ).joinToString(" ").trim()
+        return label.takeIf { it.isNotBlank() }?.take(22) ?: "Móvil Android"
+    }
+
+    private fun handleUsbConnectTap(view: View) {
+        if (app.commManager.isConnected && !app.commManager.isWirelessSession) {
+            openProjection()
+            return
+        }
+        if (app.commManager.isConnected && app.commManager.isWirelessSession) {
+            showUsbSwitchDialog("Cable USB")
+            return
+        }
+        app.settings.usbModeEnabled = true
+        app.settings.listenForUsbDevices = true
+        com.andrerinas.openheadunit.utils.Settings.setUsbAttachedActivityEnabled(requireContext(), true)
+        updateConnectionModeButtons(view)
+
+        val usbPhone = findConnectedUsbPhone()
+        if (usbPhone != null && usbPhone.second) {
+            launchCarPlay(view, "iPhone por USB", usbDevice = usbPhone.first)
+            return
+        }
+
+        stopCarPlayForAndroidAuto()
+        if (usbPhone == null) {
+            ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
+                action = AapService.ACTION_CHECK_USB
+            })
+            Toast.makeText(
+                requireContext(),
+                "Enchufa el móvil en el puerto USB de datos del coche.",
+                Toast.LENGTH_LONG,
+            ).show()
+            refreshHeroState(view)
+            return
+        }
+
+        val label = shortUsbDeviceLabel(usbPhone.first, isApple = false)
+        beginConnectingUi(
+            view = view,
+            targetName = label,
+            protocol = "Android Auto",
+            transportLabel = "🔌 Conectando por Cable USB",
+        )
+        ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
+            action = AapService.ACTION_CHECK_USB
+        })
     }
 
     private fun updateClusterToggleButton(view: View) {
@@ -495,6 +584,7 @@ class HomeFragment : Fragment() {
         val s = app.settings
         val wirelessAaEnabled = s.wifi5gEnabled || s.hotspotModeEnabled
         pill?.setTextColor(ACCENT)
+        badge?.setTextColor(0xFFEAF2F7.toInt())
 
         when {
             app.commManager.isConnected -> {
@@ -553,34 +643,53 @@ class HomeFragment : Fragment() {
                 }
             }
             else -> {
+                val usbPhone = findConnectedUsbPhone()
                 pill?.text = "●  LISTO"
                 val liveStatus = AapService.wirelessStatusText.value
+                badge?.setTextColor(if (usbPhone != null) ACCENT else 0xFFEAF2F7.toInt())
                 badge?.text = when {
+                    usbPhone != null -> "🔌 USB listo · ${shortUsbDeviceLabel(usbPhone.first, usbPhone.second)}"
                     s.wifi5gEnabled -> "📡 Wi-Fi 5 GHz activo"
                     s.hotspotModeEnabled -> "📲 Hotspot Móvil activo"
                     s.usbModeEnabled -> "🔌 Cable USB listo"
                     else -> "⏸ Selecciona un modo abajo"
                 }
                 title?.text = "Conecta tu móvil"
-                sub?.text = if (s.wifi5gEnabled && !liveStatus.isNullOrBlank()) {
-                    liveStatus
-                } else {
-                    "Elige Android Auto, Apple CarPlay o toca tu móvil vinculado."
+                sub?.text = when {
+                    usbPhone != null && usbPhone.second ->
+                        "iPhone detectado por USB. Toca «CarPlay USB» para abrir Apple CarPlay."
+                    usbPhone != null ->
+                        "${shortUsbDeviceLabel(usbPhone.first, false)} detectado en USB. Toca «Conectar USB» o espera la conexión."
+                    s.wifi5gEnabled && !liveStatus.isNullOrBlank() -> liveStatus
+                    else -> "Elige Android Auto, Apple CarPlay o toca tu móvil vinculado."
                 }
                 wifiBtn?.visibility = View.VISIBLE
                 wifiBtn?.text = if (wirelessAaEnabled) "Conectar Android Auto" else "Conectar por USB"
                 cpBtn?.visibility = View.VISIBLE
-                usbBtn?.visibility = if (s.usbModeEnabled && wirelessAaEnabled) View.VISIBLE else View.GONE
+                val showUsbBtn = (s.usbModeEnabled && wirelessAaEnabled) || usbPhone != null
+                usbBtn?.visibility = if (showUsbBtn) View.VISIBLE else View.GONE
+                if (usbPhone != null) {
+                    usbBtn?.text = if (usbPhone.second) "CarPlay USB" else "Conectar USB"
+                    usbBtn?.backgroundTintList = ColorStateList.valueOf(0xFF10282C.toInt())
+                    usbBtn?.strokeColor = ColorStateList.valueOf(ACCENT)
+                    usbBtn?.setTextColor(ACCENT)
+                } else {
+                    usbBtn?.text = "Cable USB"
+                    usbBtn?.backgroundTintList = ColorStateList.valueOf(0xFF1E2935.toInt())
+                    usbBtn?.strokeColor = ColorStateList.valueOf(0xFF2E4256.toInt())
+                    usbBtn?.setTextColor(0xFFEAF2F7.toInt())
+                }
                 cancelBtn?.visibility = View.GONE
 
                 ring?.state = ConnectionRingView.State.IDLE
                 ring?.protocolTitle = when {
+                    usbPhone != null -> if (usbPhone.second) "CarPlay USB" else "Cable USB"
                     s.wifi5gEnabled -> "Wi-Fi 5 GHz"
                     s.hotspotModeEnabled -> "Hotspot Móvil"
                     s.usbModeEnabled -> "Cable USB"
                     else -> "En espera"
                 }
-                ring?.subtitleText = "Toca para conectar"
+                ring?.subtitleText = if (usbPhone != null) "Móvil USB listo" else "Toca para conectar"
             }
         }
     }
@@ -730,15 +839,7 @@ class HomeFragment : Fragment() {
 
         if (!wirelessAaEnabled) {
             if (s.usbModeEnabled) {
-                beginConnectingUi(
-                    view = root,
-                    targetName = "móvil por Cable USB",
-                    protocol = "Android Auto",
-                    transportLabel = "🔌 Conectando por cable USB",
-                )
-                ContextCompat.startForegroundService(requireContext(), Intent(requireContext(), AapService::class.java).apply {
-                    action = AapService.ACTION_CHECK_USB
-                })
+                handleUsbConnectTap(root)
             } else {
                 Toast.makeText(
                     requireContext(),

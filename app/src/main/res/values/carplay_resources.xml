@@ -3,12 +3,12 @@
     <bool name="config_advanced_audio_channel_mapping">true</bool>
 
     <style name="Theme.Xcertplay" parent="android:Theme.Material.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#A6C8FF</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#00E5C7</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:navigationBarColor">#0C111B</item>
-        <item name="android:statusBarColor">#0C111B</item>
-        <item name="android:windowBackground">#0C111B</item>
+        <item name="android:navigationBarColor">#0A0E14</item>
+        <item name="android:statusBarColor">#0A0E14</item>
+        <item name="android:windowBackground">#0A0E14</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
 

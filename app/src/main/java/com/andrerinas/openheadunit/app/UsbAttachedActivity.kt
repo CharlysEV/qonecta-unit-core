@@ -200,6 +200,12 @@ class UsbAttachedActivity : Activity() {
             return
         }
 
+        // Ensure AapService (and its UsbReceiver) is running before AOA switch so the
+        // re-enumerated 18D1:2D00/2D01 USB_DEVICE_ATTACHED broadcast is caught immediately.
+        runCatching {
+            ContextCompat.startForegroundService(this, Intent(this, AapService::class.java))
+        }
+
         val usbMode = UsbAccessoryMode(usbManager)
         AppLog.i("Switching USB device to accessory mode " + deviceCompat.uniqueName)
         ToastUtils.showToast(this, getString(R.string.switching_usb_accessory_mode, deviceCompat.uniqueName), Toast.LENGTH_SHORT)

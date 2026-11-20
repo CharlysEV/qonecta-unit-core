@@ -5,6 +5,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbManager
 import android.os.SystemClock
+import com.andrerinas.openheadunit.aap.UsbAttachPolicy
 import com.andrerinas.openheadunit.aap.Utils
 import com.andrerinas.openheadunit.utils.AppLog
 
@@ -141,9 +142,14 @@ class UsbAccessoryMode(private val usbMgr: UsbManager) {
         } finally {
             connection.close()
         }
-        if (rc != 0) {
-            AppLog.w("resetUsbPort: USBDEVFS_RESET on $deviceName failed (rc=$rc)")
+        val stillPresent = usbMgr.deviceList.containsKey(deviceName)
+        if (!UsbAttachPolicy.isUsbPortResetSuccessful(rc, stillPresent)) {
+            AppLog.w("resetUsbPort: USBDEVFS_RESET on $deviceName failed (rc=$rc, stillPresent=$stillPresent)")
             return false
+        }
+        if (rc == -19 || !stillPresent) {
+            AppLog.i("resetUsbPort: USBDEVFS_RESET on $deviceName triggered immediate re-enumeration (rc=$rc, stillPresent=$stillPresent)")
+            return true
         }
         val gone = waitForReEnumeration(deviceName, 3000L)
         AppLog.i("resetUsbPort: USBDEVFS_RESET on $deviceName ok (re-enumerated=$gone)")

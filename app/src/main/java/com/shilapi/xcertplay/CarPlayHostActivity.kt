@@ -705,7 +705,13 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun buildContentView(): View {
-        val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(12, 17, 27)) }
+        val bgColor = 0xFF0A0E14.toInt()
+        val accentColor = 0xFF00E5C7.toInt()
+        val onAccentColor = 0xFF06131A.toInt()
+        val textColor = 0xFFEAF2F7.toInt()
+        val mutedColor = 0xFF98ACC0.toInt()
+
+        val root = FrameLayout(this).apply { setBackgroundColor(bgColor) }
         val video = TextureView(this).apply {
             isOpaque = false
             surfaceTextureListener = textureListener
@@ -720,43 +726,55 @@ class CarPlayHostActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(dp(32), dp(32), dp(32), dp(32))
-            setBackgroundColor(Color.rgb(12, 17, 27))
+            setBackgroundColor(bgColor)
             isClickable = true
         }
         panel.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_carplay); contentDescription = "CarPlay"
-        }, LinearLayout.LayoutParams(dp(88), dp(88)))
+        }, LinearLayout.LayoutParams(dp(92), dp(92)))
         panel.addView(TextView(this).apply {
-            text = "LeapCarPlay"; textSize = 34f; setTextColor(Color.rgb(241, 245, 252))
-            gravity = Gravity.CENTER; setPadding(0, dp(18), 0, dp(14))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            text = "Qonecta Unit Core · CarPlay"; textSize = 34f; setTextColor(textColor)
+            gravity = Gravity.CENTER; setPadding(0, dp(18), 0, dp(12))
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         })
         val stage = TextView(this).apply {
-            text = "Getting CarPlay ready…"; textSize = 22f; gravity = Gravity.CENTER
-            setTextColor(Color.rgb(241, 245, 252))
+            text = "Preparando Apple CarPlay…"; textSize = 22f; gravity = Gravity.CENTER
+            setTextColor(accentColor)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }
         panel.addView(stage)
         panel.addView(TextView(this).apply {
-            text = if (wirelessEnabled) "Keep your iPhone nearby with Bluetooth and Wi-Fi on.\nAllow CarPlay if your iPhone asks."
-                else "Use a USB data cable and unlock your iPhone.\nAllow Trust and CarPlay if your iPhone asks."
-            textSize = 17f; gravity = Gravity.CENTER; setTextColor(Color.rgb(168, 182, 202))
+            text = if (wirelessEnabled) "Mantén tu iPhone cerca con Bluetooth y Wi-Fi activos.\nPermite CarPlay si aparece el aviso en tu iPhone."
+                else "Usa un cable USB de datos y desbloquea tu iPhone.\nAcepta «Confiar» y «CarPlay» si tu iPhone lo solicita."
+            textSize = 17f; gravity = Gravity.CENTER; setTextColor(mutedColor)
             setPadding(0, dp(14), 0, dp(24))
         })
         panel.addView(Button(this).apply {
-            text = "Reset CarPlay Wi-Fi"; isAllCaps = false; textSize = 18f
+            text = "Reiniciar Wi-Fi CarPlay"; isAllCaps = false; textSize = 18f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setTextColor(textColor)
+            background = GradientDrawable().apply {
+                setColor(0xFF1E2935.toInt())
+                cornerRadius = dp(32).toFloat()
+                setStroke(dp(2), 0xFF2E4256.toInt())
+            }
             visibility = View.GONE
             setOnClickListener { showLeapCarPlayHome("wireless-recovery") }
             wifiRecoveryButton = this
-        }, LinearLayout.LayoutParams(dp(300), dp(64)).apply { bottomMargin = dp(12) })
+        }, LinearLayout.LayoutParams(dp(320), dp(64)).apply { bottomMargin = dp(12) })
         panel.addView(Button(this).apply {
-            text = "Back to LeapCarPlay"; isAllCaps = false; textSize = 18f
-            setTextColor(Color.rgb(12, 17, 27))
-            background = GradientDrawable().apply { setColor(Color.rgb(166, 200, 255)); cornerRadius = dp(20).toFloat() }
+            text = "Volver a CarPlay"; isAllCaps = false; textSize = 19f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            setTextColor(onAccentColor)
+            background = GradientDrawable().apply {
+                setColor(accentColor)
+                cornerRadius = dp(32).toFloat()
+            }
             setOnClickListener { showLeapCarPlayHome() }
-        }, LinearLayout.LayoutParams(dp(300), dp(64)))
+        }, LinearLayout.LayoutParams(dp(320), dp(64)))
         panel.addView(TextView(this).apply {
-            text = "In CarPlay, swipe down with three fingers to open LeapCarPlay settings."
-            textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.rgb(168, 182, 202)); setPadding(0, dp(20), 0, 0)
+            text = "Dentro de CarPlay, desliza hacia abajo con tres dedos para abrir ajustes."
+            textSize = 14f; gravity = Gravity.CENTER; setTextColor(mutedColor); setPadding(0, dp(20), 0, 0)
         })
         root.addView(panel, FrameLayout.LayoutParams(-1, -1))
         videoView = video
@@ -3547,21 +3565,21 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun friendlyStage(message: String): String = when {
-        message.contains("Turn on Wi-Fi", true) -> "Turn on Wi-Fi in the head unit’s settings to connect."
-        message.contains("Allow precise Location", true) -> "Allow precise Location for LeapCarPlay in the head unit’s app permissions."
-        message.contains("Allow Nearby devices", true) -> "Allow Nearby devices for LeapCarPlay in the head unit’s app permissions."
-        message.contains("createGroup failed", true) -> "The head unit couldn’t start CarPlay Wi-Fi. Check Wi-Fi and close other projection apps. Retrying…"
-        message.contains("needs a reset", true) -> "A previous Wi-Fi Direct connection is still running. Reset it to connect."
-        message.contains("socket", true) || message.contains("RFCOMM", true) -> "Your iPhone isn’t available. Unlock it and check Bluetooth."
-        message.contains("unsupported", true) || message.contains("not supported", true) -> "This head unit may not support wireless CarPlay. Try a USB connection."
-        message.contains("denied", true) || message.contains("permission", true) -> "Allow the connection permission to continue"
-        message.contains("Failed", true) || message.contains("error", true) -> "Connection interrupted. Retrying…"
-        message.contains("Waiting for iPhone", true) || message.contains("Discovering iPhone", true) -> "Connect your iPhone with a USB cable"
-        message.contains("paired", true) -> "Looking for your paired iPhone…"
-        message.contains("Bluetooth", true) -> "Connecting to your iPhone…"
-        message.contains("reconnect", true) || message.contains("ended", true) -> "Reconnecting to your iPhone…"
-        message.contains("active", true) || message.contains("running", true) -> "Opening CarPlay…"
-        else -> "Getting CarPlay ready…"
+        message.contains("Turn on Wi-Fi", true) -> "Enciende el Wi-Fi en los ajustes del coche para conectar."
+        message.contains("Allow precise Location", true) -> "Concede permiso de Ubicación precisa en los ajustes de la app."
+        message.contains("Allow Nearby devices", true) -> "Concede permiso de Dispositivos cercanos en los ajustes de la app."
+        message.contains("createGroup failed", true) -> "No se pudo iniciar el Wi-Fi de CarPlay. Reintentando…"
+        message.contains("needs a reset", true) -> "Hay un enlace Wi-Fi Direct anterior activo. Reinícialo para conectar."
+        message.contains("socket", true) || message.contains("RFCOMM", true) -> "Tu iPhone no responde. Desbloquéalo y revisa el Bluetooth."
+        message.contains("unsupported", true) || message.contains("not supported", true) -> "Esta unidad no admite CarPlay inalámbrico aquí. Prueba con Cable USB."
+        message.contains("denied", true) || message.contains("permission", true) -> "Acepta el permiso de conexión para continuar."
+        message.contains("Failed", true) || message.contains("error", true) -> "Conexión interrumpida. Reintentando…"
+        message.contains("Waiting for iPhone", true) || message.contains("Discovering iPhone", true) -> "Conecta tu iPhone con un cable USB de datos"
+        message.contains("paired", true) -> "Buscando tu iPhone vinculado…"
+        message.contains("Bluetooth", true) -> "Conectando con tu iPhone…"
+        message.contains("reconnect", true) || message.contains("ended", true) -> "Reconectando con tu iPhone…"
+        message.contains("active", true) || message.contains("running", true) -> "Abriendo Apple CarPlay…"
+        else -> "Preparando Apple CarPlay…"
     }
 
     private fun appendLog(message: String) {
