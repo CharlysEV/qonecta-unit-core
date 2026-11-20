@@ -134,11 +134,11 @@ class Settings(private val context: Context) {
         get() = prefs.getBoolean("byd-navigation-enabled", false)
         set(value) { prefs.edit().putBoolean("byd-navigation-enabled", value).apply() }
 
-    // Instrument-cluster ("dashboard") map from Android Auto / CarPlay. Enabled by default when a
-    // secondary cluster display (such as Display 2 on the Leapmotor C10) is present.
+    // Instrument-cluster ("dashboard") map from Android Auto / CarPlay on Display 2.
+    // Strictly opt-in (defaults to false) so Core starts with a single hardware H.264 decoder.
     var clusterMapEnabled: Boolean
-        get() = false
-        set(_) { prefs.edit().putBoolean("cluster-map-enabled", false).apply() }
+        get() = prefs.getBoolean("cluster-map-enabled", false)
+        set(value) { prefs.edit().putBoolean("cluster-map-enabled", value).apply() }
 
     var clusterMapSize: Int
         get() = prefs.getInt("cluster-map-size", 0)

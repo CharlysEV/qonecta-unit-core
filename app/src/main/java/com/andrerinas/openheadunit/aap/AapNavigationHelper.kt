@@ -68,6 +68,24 @@ class AapNavigationHelper(
     @Suppress("DEPRECATION") // Single bridge: legacy nextEventType/turnSide → NavigationUpdateIntent
     fun sendFullNavigationBroadcast(snapshot: NavigationSnapshot, navEventType: Int) {
         val prepared = prepareFullNavigationMessage(snapshot, navEventType)
+        if (com.andrerinas.openheadunit.cluster.ClusterMapController.isActive) {
+            if (navEventType == 2) {
+                com.andrerinas.openheadunit.cluster.ClusterMapController.clearNavigation()
+            } else if (prepared.distanceMeters != null || (prepared.road.isNotBlank() && prepared.road != "—")) {
+                com.andrerinas.openheadunit.cluster.ClusterMapController.updateNavigation(
+                    com.andrerinas.openheadunit.cluster.ClusterMapController.ClusterNavState(
+                        isNavigating = true,
+                        distanceMeters = prepared.distanceMeters,
+                        road = prepared.road,
+                        actionText = prepared.actionText,
+                        turnSide = prepared.turnSide,
+                        nextEventType = prepared.nextEventType,
+                        totalDistanceMeters = prepared.totalDistanceMeters,
+                        estimatedArrival = prepared.estimatedArrival,
+                    )
+                )
+            }
+        }
         val intent = NavigationUpdateIntent(
             distanceMeters = prepared.distanceMeters,
             timeSeconds = prepared.timeSeconds,

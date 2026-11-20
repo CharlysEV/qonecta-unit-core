@@ -10,7 +10,14 @@
             <action android:name="android.settings.WIFI_SETTINGS" />
         </intent>
         <package android:name="com.google.android.projection.gearhead" />
+        <package android:name="com.leapmotor.autosdk.server" />
+        <intent>
+            <action android:name="com.leapmotor.autosdk.server.action.AUTOSDK_SERVICE" />
+        </intent>
     </queries>
+
+    <!-- Minimal C10 Display 2 cover visibility bridge (Transaction 6 only, opt-in when Cluster is ON) -->
+    <uses-permission android:name="com.leapmotor.autosdk.server.USE_SERVICE" />
 
     <uses-feature
         android:name="android.hardware.usb.host"
@@ -76,6 +83,16 @@
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
             android:theme="@style/AppTheme" />
+
+        <activity
+            android:name=".cluster.ClusterMapActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
         <activity
             android:name=".app.UsbAttachedActivity"

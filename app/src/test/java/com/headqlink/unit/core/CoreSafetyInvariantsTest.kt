@@ -130,15 +130,26 @@ class CoreSafetyInvariantsTest {
             "BootCompleteReceiver",
             "AutoStartReceiver",
             "WifiAutoStartReceiver",
-            "ClusterMapActivity",
             "QUERY_ALL_PACKAGES",
             "REQUEST_INSTALL_PACKAGES",
             "PACKAGE_USAGE_STATS",
-            "com.leapmotor.",
+            "com.leapmotor.carcontrol",
+            "com.leapmotor.media",
         )
         for (token in forbidden) {
             assertFalse("Forbidden token '$token' found in AndroidManifest.xml", xml.contains(token))
         }
+    }
+
+    @Test
+    fun clusterDisplayIsStrictlyEventDrivenWithNoPollingOrOemTelemetry() {
+        val activitySource = locateAppFile("src/main/java/com/andrerinas/openheadunit/cluster/ClusterMapActivity.kt").readText()
+        val controllerSource = locateAppFile("src/main/java/com/andrerinas/openheadunit/cluster/ClusterMapController.kt").readText()
+        assertFalse("ClusterMapActivity must never run a 1 Hz tickRunnable", activitySource.contains("tickRunnable"))
+        assertFalse("ClusterMapActivity must never call removeAllViews()", activitySource.contains("removeAllViews"))
+        assertFalse("ClusterMapActivity must never start LeapVehicleDataSource", activitySource.contains("LeapVehicleDataSource"))
+        assertFalse("ClusterMapController must never send SMARTDOCKER broadcasts", controllerSource.contains("SMARTDOCKER"))
+        assertFalse("ClusterMapController must never touch QonectaMediaSessionManager", controllerSource.contains("QonectaMediaSessionManager"))
     }
 
     @Test

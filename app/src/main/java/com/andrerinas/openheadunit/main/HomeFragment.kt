@@ -38,6 +38,7 @@ import com.andrerinas.openheadunit.connection.CommManager
 import com.andrerinas.openheadunit.utils.BluetoothHelper
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.andrerinas.openheadunit.cluster.ClusterMapController
 import com.headqlink.unit.extended.ConnectionRingView
 import com.headqlink.unit.files.CarFiles
 import kotlinx.coroutines.Job
@@ -275,6 +276,20 @@ class HomeFragment : Fragment() {
             updateConnectionModeButtons(view)
         }
 
+        view.findViewById<View>(R.id.cluster_toggle_button)?.setOnClickListener {
+            val next = !app.settings.clusterMapEnabled
+            app.settings.clusterMapEnabled = next
+            if (!next) {
+                ClusterMapController.stop(context = requireContext())
+            }
+            updateClusterToggleButton(view)
+            Toast.makeText(
+                requireContext(),
+                getString(if (next) R.string.qu_cluster_toast_on else R.string.qu_cluster_toast_off),
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+
         view.findViewById<View>(R.id.files_button)?.setOnClickListener {
             val result = CarFiles.open(requireActivity()) { pickerIntent ->
                 runCatching { carFilesPickerLauncher.launch(pickerIntent) }.isSuccess
@@ -292,6 +307,7 @@ class HomeFragment : Fragment() {
         view.findViewById<View>(R.id.exit_button)?.setOnClickListener {
             stopConnectingUi()
             stopCarPlayForAndroidAuto()
+            runCatching { ClusterMapController.stop(context = requireContext()) }
             runCatching { app.commManager.disconnect(sendByeBye = true, isUserExit = true) }
             runCatching {
                 requireContext().startService(Intent(requireContext(), AapService::class.java).apply {
@@ -301,6 +317,7 @@ class HomeFragment : Fragment() {
             requireActivity().finishAffinity()
         }
 
+        updateClusterToggleButton(view)
         updateConnectionModeButtons(view)
         rebuildRecentDevicesRow(view)
         refreshHeroState(view)
@@ -354,10 +371,20 @@ class HomeFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         view?.let {
+            updateClusterToggleButton(it)
             updateConnectionModeButtons(it)
             rebuildRecentDevicesRow(it)
             refreshHeroState(it)
         }
+    }
+
+    private fun updateClusterToggleButton(view: View) {
+        val btn = view.findViewById<MaterialButton>(R.id.cluster_toggle_button) ?: return
+        val enabled = app.settings.clusterMapEnabled
+        btn.text = getString(if (enabled) R.string.qu_cluster_short_on else R.string.qu_cluster_short_off)
+        btn.backgroundTintList = ColorStateList.valueOf(if (enabled) 0xFF10282C.toInt() else 0xFF17202C.toInt())
+        btn.strokeColor = ColorStateList.valueOf(if (enabled) ACCENT else 0xFF243140.toInt())
+        btn.setTextColor(if (enabled) ACCENT else 0xFFEAF2F7.toInt())
     }
 
     private fun stopCarPlayForAndroidAuto() {

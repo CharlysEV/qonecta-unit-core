@@ -52,4 +52,13 @@
     <string name="qu_files_hint">Abre el explorador de archivos de la unidad, sin necesidad de Vivaldi. Al tocar un APK del pen, se instala o se actualiza. Si en vez del explorador se abre el selector de archivos, usa el icono ⤢ del APK.</string>
     <string name="qu_files_picker_tip">Para instalar o actualizar desde el selector, toca el icono ⤢ en la esquina del archivo .apk (no el centro).</string>
     <string name="qu_files_none">Este coche no deja abrir el explorador de archivos</string>
+
+    <!-- Segunda pantalla / Cuadro de instrumentos (Display 2, opt-in) -->
+    <string name="qu_cluster_short_off">Cuadro: OFF</string>
+    <string name="qu_cluster_short_on">Cuadro: ON</string>
+    <string name="qu_cluster_title">Segunda pantalla (Cuadro C10)</string>
+    <string name="qu_cluster_hint_off">Desactivada (modo seguro por defecto). Toca para mostrar el mapa y avisos discretos de canción/giro en la 2.ª pantalla (AA y CarPlay).</string>
+    <string name="qu_cluster_hint_on">Activada · Muestra el mapa y avisos discretos de canción/giro en la 2.ª pantalla. Se aplica al reconectar.</string>
+    <string name="qu_cluster_toast_on">Segunda pantalla activada (se aplica en la próxima conexión).</string>
+    <string name="qu_cluster_toast_off">Segunda pantalla desactivada.</string>
 </resources>

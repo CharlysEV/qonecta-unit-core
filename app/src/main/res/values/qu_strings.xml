@@ -57,4 +57,13 @@
     <string name="qu_files_hint">Opens the head unit\'s file browser, with no need for Vivaldi. Tapping an APK on the USB drive installs or updates it. If the file picker opens instead, use the ⤢ icon on the APK.</string>
     <string name="qu_files_picker_tip">To install or update from the file picker, tap the ⤢ icon in the corner of the .apk file (not the center).</string>
     <string name="qu_files_none">This car does not let us open the file browser</string>
+
+    <!-- Second screen / Instrument cluster (Display 2, opt-in) -->
+    <string name="qu_cluster_short_off">Cluster: OFF</string>
+    <string name="qu_cluster_short_on">Cluster: ON</string>
+    <string name="qu_cluster_title">Second screen (Instrument cluster)</string>
+    <string name="qu_cluster_hint_off">Disabled (default safe mode). Tap to show the live map and discrete track/turn cards on Display 2 (Android Auto &amp; CarPlay).</string>
+    <string name="qu_cluster_hint_on">Enabled · Shows the live map and discrete track/turn cards on Display 2. Reconnect to apply changes.</string>
+    <string name="qu_cluster_toast_on">Second screen enabled (applies on next connection).</string>
+    <string name="qu_cluster_toast_off">Second screen disabled.</string>
 </resources>

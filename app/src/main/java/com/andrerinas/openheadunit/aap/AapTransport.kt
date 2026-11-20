@@ -86,7 +86,9 @@ class AapTransport(
             send(VideoFocusEvent(gain = true, unsolicited = true, channel = Channel.ID_CLUSTER_VID))
         }
     }
-    private val clusterVideoUsed: Boolean get() = false
+    @Volatile
+    private var clusterVideoSessionOpened = false
+    private val clusterVideoUsed: Boolean get() = clusterVideoSessionOpened || settings.clusterMapEnabled
 
     /**
      * Dashboard focus is held until the main screen is streaming. Granted during the handshake, the
@@ -550,6 +552,17 @@ class AapTransport(
         sendThread?.quit()
         aapAudio.releaseAllFocus()
         aapVideo.release()
+        if (clusterVideoUsed) {
+            com.andrerinas.openheadunit.cluster.ClusterMapController.stop(
+                com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.ANDROID_AUTO,
+                context,
+            )
+            if (clusterVideoSessionOpened) {
+                clusterVideo.release()
+                com.andrerinas.openheadunit.App.provide(context).clusterVideoDecoder.stop("session ended")
+            }
+            clusterVideoSessionOpened = false
+        }
 
 
         // Never let a half-finished cycle outlive the transport that owed the regain: the claim is
@@ -872,6 +885,9 @@ class AapTransport(
     /** The phone set up the dashboard sink: grant it focus now, or once the main screen streams. */
     @Synchronized
     internal fun requestClusterFocus() {
+        if (!settings.clusterMapEnabled) return
+        clusterVideoSessionOpened = true
+        com.andrerinas.openheadunit.cluster.ClusterMapController.startForAndroidAuto(context)
 
         if (!mainVideoStreaming) {
             if (!clusterFocusPending) AppLog.i("Dashboard video focus held until the main screen streams")
@@ -898,7 +914,9 @@ class AapTransport(
         if (!clusterFocusPending) return
         clusterFocusPending = false
         AppLog.i("Granting dashboard video focus")
-
+        if (settings.clusterMapEnabled) {
+            com.andrerinas.openheadunit.cluster.ClusterMapController.startForAndroidAuto(context)
+        }
         send(VideoFocusEvent(gain = true, unsolicited = true, channel = Channel.ID_CLUSTER_VID))
     }
 

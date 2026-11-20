@@ -389,7 +389,11 @@ class AapService : Service(), UsbReceiver.Listener {
         val effectivePlaying = isPlayingFromStatus && !commManager.isExternalAudioFocusLost()
         lastAaPlaybackIsPlaying = effectivePlaying
         mediaSessionIsPlaying = effectivePlaying
-
+        if (com.andrerinas.openheadunit.cluster.ClusterMapController.isActive) {
+            com.andrerinas.openheadunit.cluster.ClusterMapController.updateMedia(
+                appName = status.mediaSource?.takeIf { it.isNotBlank() },
+            )
+        }
 
         if (!App.provide(this).settings.syncMediaSessionWithAaMetadata) return
         safeMediaSessionCall { it.isActive = effectivePlaying }
@@ -427,10 +431,14 @@ class AapService : Service(), UsbReceiver.Listener {
                 // Drop stale decode results if newer metadata arrived while we were decoding.
                 if (lastAaMediaMetadata !== meta) return@withContext
                 cachedAaAlbumArtBitmap = bitmap
-                val durMs = if (meta.hasDurationSeconds()) {
-                    meta.durationSeconds.protoUint32ToLong().coerceAtLeast(0L) * 1000L
-                } else {
-                    0L
+                if (com.andrerinas.openheadunit.cluster.ClusterMapController.isActive) {
+                    com.andrerinas.openheadunit.cluster.ClusterMapController.updateMedia(
+                        title = if (meta.hasSong()) meta.song else "",
+                        artist = if (meta.hasArtist()) meta.artist else "",
+                        album = if (meta.hasAlbum()) meta.album else "",
+                        albumArt = bitmap,
+                        keepExistingArtIfNull = false,
+                    )
                 }
 
                 if (!App.provide(this@AapService).settings.syncMediaSessionWithAaMetadata) return@withContext
@@ -1731,6 +1739,10 @@ class AapService : Service(), UsbReceiver.Listener {
         AppLog.i("AapService destroying... (wakeLock held=${bootWakeLock?.isHeld == true})")
         isDestroying = true
         wirelessStatusText.value = null
+        com.andrerinas.openheadunit.cluster.ClusterMapController.stop(
+            com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.ANDROID_AUTO,
+            this,
+        )
         mediaMetadataDecodeJob?.cancel()
         cachedAaAlbumArtBitmap = null
         mediaNotification.cancel()

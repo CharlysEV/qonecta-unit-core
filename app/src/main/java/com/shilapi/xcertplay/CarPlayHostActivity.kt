@@ -679,6 +679,12 @@ class CarPlayHostActivity : ComponentActivity() {
         val simToClose = simulator
         simulator = null
         val ownedByBackground = CarPlayBackgroundSession.hasSession() && CarPlayBackgroundSession.isOwner(this)
+        if (!ownedByBackground) {
+            com.andrerinas.openheadunit.cluster.ClusterMapController.stop(
+                com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.CARPLAY,
+                this,
+            )
+        }
         val sinkToClose = if (!ownedByBackground) sink.also { sink = null } else null
         if (simToClose != null || sinkToClose != null) {
             runCatching {
@@ -2697,8 +2703,28 @@ class CarPlayHostActivity : ComponentActivity() {
         appendLog(requestSummary)
         appendLog(support.details)
         appendLog(effectiveSummary)
-        // Core Phase 0: single main CarPlay display only (no secondary cluster hardware decoder).
-        val cluster: AirPlayDisplayConfig? = null
+        // Opt-in secondary cluster display (Display 2 on Leapmotor C10, off by default in Core).
+        val cluster: AirPlayDisplayConfig? = run {
+            val appSettings = runCatching { com.andrerinas.openheadunit.App.provide(this).settings }.getOrNull()
+            if (appSettings?.clusterMapEnabled == true &&
+                com.andrerinas.openheadunit.cluster.ClusterMapController.hasClusterDisplay(this)
+            ) {
+                appendLog("CarPlay instrument cluster display enabled (720x720 on Display 2)")
+                AirPlayDisplayConfig(
+                    widthPixels = 720,
+                    heightPixels = 720,
+                    widthPhysicalMm = 109,
+                    heightPhysicalMm = 109,
+                    fps = 30,
+                    features = 0,
+                    safeArea = com.shilapi.xcertplay.airplay.AirPlayInsets(top = 144, bottom = 72, left = 0, right = 0),
+                    safeAreaDrawOutside = true,
+                    initialUrl = "maps:/car/instrumentcluster/map",
+                )
+            } else {
+                null
+            }
+        }
         return AirPlayConfig(
             deviceName = "LeapCarPlay",
             deviceId = LeapCarPlayBootstrap.deviceId(airPlayIdentity),
@@ -3358,6 +3384,10 @@ class CarPlayHostActivity : ComponentActivity() {
         val oldSimulator = simulator
         val oldSink = sink
         CarPlayBackgroundSession.clear(oldController)
+        com.andrerinas.openheadunit.cluster.ClusterMapController.stop(
+            com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.CARPLAY,
+            this,
+        )
         controller = null
         simulator = null
         sink = null
@@ -3477,6 +3507,18 @@ class CarPlayHostActivity : ComponentActivity() {
                 activeScreenStreamTypes.add(type)
             } else {
                 activeScreenStreamTypes.remove(type)
+            }
+            if (type == SCREEN_TYPE_ALT && clusterPresentation == null) {
+                if (active) {
+                    com.andrerinas.openheadunit.cluster.ClusterMapController.startForCarPlay(this) { surface ->
+                        onClusterSurfaceChanged(surface)
+                    }
+                } else {
+                    com.andrerinas.openheadunit.cluster.ClusterMapController.stop(
+                        com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.CARPLAY,
+                        this,
+                    )
+                }
             }
             appendLog(
                 "CarPlay ${if (type == SCREEN_TYPE_ALT) "secondary" else "main"} " +
