@@ -310,14 +310,17 @@ class AapTransport(
      *   gate on.
      */
     @Synchronized
-    private fun triggerFocusCycleRecovery(escalatable: Boolean) {
+    private fun triggerFocusCycleRecovery(
+        escalatable: Boolean,
+        isWireCorruption: Boolean = false,
+    ) {
         AppLog.w("AapTransport: Requesting recovery keyframe (unsolicited focus gain).")
         send(VideoFocusEvent(gain = true, unsolicited = true))
 
         // Stamped before the returns below, and deliberately on the path that returns early: a
         // stream that is still losing frames is exactly the case where the clock is already running,
         // and that is the case the stamp exists to let the escalation see.
-        if (!escalatable) lastWireCorruptionMs = SystemClock.elapsedRealtime()
+        if (isWireCorruption) lastWireCorruptionMs = SystemClock.elapsedRealtime()
 
         if (!escalatable || unrepairedSinceMs != 0L) return
         // Stamped only once the check is actually armed. Setting it without a handler to run the
@@ -462,7 +465,10 @@ class AapTransport(
             }
         }
         aapVideo = AapVideo(videoDecoder, settings) {
-            triggerFocusCycleRecovery(escalatable = false)
+            triggerFocusCycleRecovery(
+                escalatable = videoDecoder.hasRenderedThisSession,
+                isWireCorruption = true,
+            )
         }
 
         // A rebuilt codec resumes on a P-frame and can render nothing until an IDR arrives, which

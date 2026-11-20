@@ -1899,6 +1899,16 @@ class VideoDecoder(
                         }
                         AppLog.i("VideoDecoder: keyframe decoded - the picture is repaired")
                         onKeyframeObserved?.invoke()
+                    } else if (keyframeRepair.isRenderingWithoutKeyframe()) {
+                        // Qualcomm c2.qti.avc.decoder renders P-frames against an uninitialized
+                        // flat-grey (Y=128,U=128,V=128) buffer before the first IDR arrives,
+                        // resetting lastOutputMs every frame so the stall branch never fires.
+                        val askNow = SystemClock.elapsedRealtime()
+                        if (VideoRecoveryPolicy.canRequestKeyframe(askNow, lastKeyframeStarvedAskMs)) {
+                            lastKeyframeStarvedAskMs = askNow
+                            AppLog.w("VideoDecoder: rendering P-frames without an IDR keyframe yet — requesting keyframe repair")
+                            onKeyframeStarved?.invoke()
+                        }
                     }
                     framesRenderedThisSession += totalRenderedThisPass
                     consecutiveErrors = 0

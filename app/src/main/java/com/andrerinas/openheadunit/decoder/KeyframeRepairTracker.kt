@@ -70,6 +70,18 @@ class KeyframeRepairTracker {
         @Synchronized get() = pendingPtsUs != NONE
 
     /**
+     * True when the codec is actively rendering output frames even though NO keyframe has ever
+     * been fed or decoded since the last [reset] (e.g. Qualcomm `c2.qti.avc.decoder` decoding
+     * P-frames against an uninitialized flat-grey `Y=128,U=128,V=128` reference buffer after a
+     * surface swap or dropped initial IDR).
+     *
+     * Because those corrupt frames keep resetting `lastOutputMs`, the stall watchdog never trips;
+     * callers check this on the render path so `onKeyframeStarved` triggers a clean focus cycle.
+     */
+    @Synchronized
+    fun isRenderingWithoutKeyframe(): Boolean = !decoded && pendingPtsUs == NONE
+
+    /**
      * Whether a keyframe has been confirmed by frame count rather than by timestamp.
      *
      * True means this component's output timestamps cannot be used, so every repair from here is

@@ -108,4 +108,25 @@ class KeyframeRepairTrackerTest {
         assertFalse(tracker.awaitingOutput)
         assertFalse(tracker.onFrameRendered(0))
     }
+
+    @Test
+    fun `rendering P-frames before any keyframe is flagged as rendering without keyframe`() {
+        // Fresh codec (or post-reset) with zero keyframes fed: Qualcomm c2.qti.avc.decoder still
+        // emits grey P-frames, so isRenderingWithoutKeyframe() must catch it immediately.
+        assertTrue(tracker.isRenderingWithoutKeyframe())
+        assertFalse(tracker.onFrameRendered(1_000))
+        assertTrue(tracker.isRenderingWithoutKeyframe())
+
+        // Once a keyframe is fed (pending output), stop flagging as starved while it decodes.
+        tracker.onKeyframeFed(2_000)
+        assertFalse(tracker.isRenderingWithoutKeyframe())
+
+        // Once the keyframe produces output, it remains healthy for the rest of the codec instance.
+        assertTrue(tracker.onFrameRendered(2_000))
+        assertFalse(tracker.isRenderingWithoutKeyframe())
+
+        // After reset (e.g. surface swap), rendering without a fresh IDR flags again.
+        tracker.reset()
+        assertTrue(tracker.isRenderingWithoutKeyframe())
+    }
 }
