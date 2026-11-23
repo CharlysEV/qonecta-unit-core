@@ -1,74 +1,147 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true"
-    android:background="@color/da_background">
+    android:orientation="vertical"
+    android:background="@color/hql_bg">
 
-    <LinearLayout
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="32dp">
+        android:layout_height="68dp"
+        android:background="@color/hql_bg"
+        app:title="@string/da_diagnostics"
+        app:titleTextColor="@color/hql_text"
+        app:navigationIcon="@drawable/ic_arrow_back_white"
+        app:navigationIconTint="@color/hql_text" />
 
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="64dp"
-            app:title="@string/da_diagnostics"
-            app:titleTextColor="@color/da_text"
-            app:navigationIcon="@drawable/ic_arrow_back_white"
-            app:navigationIconTint="@color/da_text" />
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/hql_outline" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/diagnostic_report_instructions"
-            android:textColor="@color/da_muted"
-            android:textSize="18sp"
-            android:layout_marginVertical="24dp" />
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/save_diagnostic_report"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minHeight="64dp"
-            android:text="@string/save_diagnostic_report"
-            android:textAllCaps="false"
-            android:textSize="18sp"
-            app:icon="@drawable/ic_da_diagnostics"
-            app:cornerRadius="18dp" />
+            android:orientation="vertical"
+            android:paddingHorizontal="32dp"
+            android:paddingVertical="24dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/choose_diagnostic_location"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="64dp"
-            android:text="@string/choose_report_location"
-            android:textAllCaps="false"
-            android:textSize="18sp"
-            android:layout_marginTop="12dp"
-            app:cornerRadius="18dp" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="24dp"
+                android:background="@drawable/da_card">
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/qu_files_hint"
-            android:textColor="@color/da_muted"
-            android:textSize="18sp"
-            android:layout_marginTop="36dp"
-            android:layout_marginBottom="16dp" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/da_diagnostics"
+                    android:textColor="@color/hql_accent"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.06"
+                    android:textAllCaps="true" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/car_files"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="64dp"
-            android:text="@string/qu_files"
-            android:textAllCaps="false"
-            android:textSize="18sp"
-            app:icon="@drawable/ic_folder_white"
-            app:cornerRadius="18dp" />
-    </LinearLayout>
-</ScrollView>
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/diagnostic_report_instructions"
+                    android:textColor="@color/hql_text_dim"
+                    android:textSize="16sp"
+                    android:lineSpacingExtra="3dp"
+                    android:layout_marginTop="10dp"
+                    android:layout_marginBottom="20dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/save_diagnostic_report"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="60dp"
+                    android:text="@string/save_diagnostic_report"
+                    android:textAllCaps="false"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/hql_on_accent"
+                    app:backgroundTint="@color/hql_accent"
+                    app:icon="@drawable/ic_da_diagnostics"
+                    app:iconTint="@color/hql_on_accent"
+                    app:iconGravity="textStart"
+                    app:iconPadding="10dp"
+                    app:cornerRadius="16dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/choose_diagnostic_location"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="58dp"
+                    android:text="@string/choose_report_location"
+                    android:textAllCaps="false"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/hql_text"
+                    android:layout_marginTop="12dp"
+                    app:backgroundTint="@color/hql_surface_top"
+                    app:strokeColor="@color/hql_outline_strong"
+                    app:strokeWidth="1dp"
+                    app:cornerRadius="16dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:orientation="vertical"
+                android:padding="24dp"
+                android:background="@drawable/da_card">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/qu_files"
+                    android:textColor="@color/hql_accent"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.06"
+                    android:textAllCaps="true" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/qu_files_hint"
+                    android:textColor="@color/hql_text_dim"
+                    android:textSize="16sp"
+                    android:lineSpacingExtra="3dp"
+                    android:layout_marginTop="10dp"
+                    android:layout_marginBottom="18dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/car_files"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="58dp"
+                    android:text="@string/qu_files"
+                    android:textAllCaps="false"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/hql_text"
+                    app:backgroundTint="@color/hql_surface_top"
+                    app:strokeColor="@color/hql_outline_strong"
+                    app:strokeWidth="1dp"
+                    app:icon="@drawable/ic_folder_white"
+                    app:iconTint="@color/hql_accent"
+                    app:iconGravity="textStart"
+                    app:iconPadding="10dp"
+                    app:cornerRadius="16dp" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

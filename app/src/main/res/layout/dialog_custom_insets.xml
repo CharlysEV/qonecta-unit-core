@@ -8,7 +8,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="20dp">
 
         <!-- Top -->
         <LinearLayout
@@ -16,35 +16,42 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="12dp">
+            android:layout_marginBottom="14dp">
             <TextView
-                android:layout_width="100dp"
+                android:layout_width="110dp"
                 android:layout_height="wrap_content"
                 android:text="@string/inset_top"
                 android:textSize="16sp"
                 android:textStyle="bold"
-                android:textColor="?attr/colorOnSurface"/>
+                android:textColor="@color/hql_text"/>
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_top_minus"
                 style="@style/Widget.Material3.Button.IconButton"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:text="-"
-                android:textSize="24sp"
-                android:textColor="@android:color/white"
+                android:text="−"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/hql_on_accent"
                 android:padding="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                app:backgroundTint="@color/brand_teal"
+                app:cornerRadius="14dp"
+                app:backgroundTint="@color/hql_accent"
                 app:iconPadding="0dp" />
             <EditText
                 android:id="@+id/input_top"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="48dp"
                 android:layout_weight="1"
+                android:layout_marginHorizontal="10dp"
                 android:gravity="center"
                 android:inputType="number"
-                android:textColor="?attr/colorOnSurface"
+                android:textColor="@color/hql_text"
+                android:textColorHint="@color/hql_text_faint"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:background="@drawable/bg_pill_translucent"
                 android:text="0"/>
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_top_plus"
@@ -52,12 +59,14 @@
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:text="+"
-                android:textSize="24sp"
-                android:textColor="@android:color/white"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/hql_on_accent"
                 android:padding="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                app:backgroundTint="@color/brand_teal"
+                app:cornerRadius="14dp"
+                app:backgroundTint="@color/hql_accent"
                 app:iconPadding="0dp" />
         </LinearLayout>
 
@@ -67,34 +76,40 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="12dp">
+            android:layout_marginBottom="14dp">
             <TextView
-                android:layout_width="100dp"
+                android:layout_width="110dp"
                 android:layout_height="wrap_content"
                 android:text="@string/inset_bottom"
                 android:textSize="16sp"
                 android:textStyle="bold"
-                android:textColor="?attr/colorOnSurface"/>
+                android:textColor="@color/hql_text"/>
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_bottom_minus"
                 style="@style/Widget.Material3.Button.IconButton"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:text="-"
-                android:textSize="24sp"
-                android:textColor="@android:color/white"
+                android:text="−"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/hql_on_accent"
                 android:padding="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                app:backgroundTint="@color/brand_teal" />
+                app:cornerRadius="14dp"
+                app:backgroundTint="@color/hql_accent" />
             <EditText
                 android:id="@+id/input_bottom"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="48dp"
                 android:layout_weight="1"
+                android:layout_marginHorizontal="10dp"
                 android:gravity="center"
                 android:inputType="number"
-                android:textColor="?attr/colorOnSurface"
+                android:textColor="@color/hql_text"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:background="@drawable/bg_pill_translucent"
                 android:text="0"/>
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_bottom_plus"
@@ -102,12 +117,14 @@
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:text="+"
-                android:textSize="24sp"
-                android:textColor="@android:color/white"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/hql_on_accent"
                 android:padding="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                app:backgroundTint="@color/brand_teal" />
+                app:cornerRadius="14dp"
+                app:backgroundTint="@color/hql_accent" />
         </LinearLayout>
 
         <!-- Left -->
@@ -116,34 +133,40 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="12dp">
+            android:layout_marginBottom="14dp">
             <TextView
-                android:layout_width="100dp"
+                android:layout_width="110dp"
                 android:layout_height="wrap_content"
                 android:text="@string/inset_left"
                 android:textSize="16sp"
                 android:textStyle="bold"
-                android:textColor="?attr/colorOnSurface"/>
+                android:textColor="@color/hql_text"/>
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_left_minus"
                 style="@style/Widget.Material3.Button.IconButton"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:text="-"
-                android:textSize="24sp"
-                android:textColor="@android:color/white"
+                android:text="−"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/hql_on_accent"
                 android:padding="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                app:backgroundTint="@color/brand_teal" />
+                app:cornerRadius="14dp"
+                app:backgroundTint="@color/hql_accent" />
             <EditText
                 android:id="@+id/input_left"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="48dp"
                 android:layout_weight="1"
+                android:layout_marginHorizontal="10dp"
                 android:gravity="center"
                 android:inputType="number"
-                android:textColor="?attr/colorOnSurface"
+                android:textColor="@color/hql_text"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:background="@drawable/bg_pill_translucent"
                 android:text="0"/>
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_left_plus"
@@ -151,12 +174,14 @@
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:text="+"
-                android:textSize="24sp"
-                android:textColor="@android:color/white"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/hql_on_accent"
                 android:padding="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                app:backgroundTint="@color/brand_teal" />
+                app:cornerRadius="14dp"
+                app:backgroundTint="@color/hql_accent" />
         </LinearLayout>
 
         <!-- Right -->
@@ -165,34 +190,40 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="12dp">
+            android:layout_marginBottom="4dp">
             <TextView
-                android:layout_width="100dp"
+                android:layout_width="110dp"
                 android:layout_height="wrap_content"
                 android:text="@string/inset_right"
                 android:textSize="16sp"
                 android:textStyle="bold"
-                android:textColor="?attr/colorOnSurface"/>
+                android:textColor="@color/hql_text"/>
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_right_minus"
                 style="@style/Widget.Material3.Button.IconButton"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:text="-"
-                android:textSize="24sp"
-                android:textColor="@android:color/white"
+                android:text="−"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/hql_on_accent"
                 android:padding="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                app:backgroundTint="@color/brand_teal" />
+                app:cornerRadius="14dp"
+                app:backgroundTint="@color/hql_accent" />
             <EditText
                 android:id="@+id/input_right"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="48dp"
                 android:layout_weight="1"
+                android:layout_marginHorizontal="10dp"
                 android:gravity="center"
                 android:inputType="number"
-                android:textColor="?attr/colorOnSurface"
+                android:textColor="@color/hql_text"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:background="@drawable/bg_pill_translucent"
                 android:text="0"/>
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_right_plus"
@@ -200,12 +231,14 @@
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:text="+"
-                android:textSize="24sp"
-                android:textColor="@android:color/white"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@color/hql_on_accent"
                 android:padding="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                app:backgroundTint="@color/brand_teal" />
+                app:cornerRadius="14dp"
+                app:backgroundTint="@color/hql_accent" />
         </LinearLayout>
 
     </LinearLayout>

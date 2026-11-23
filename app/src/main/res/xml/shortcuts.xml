@@ -12,17 +12,6 @@
             android:targetPackage="com.tencent.qqmusiccar"
             android:targetClass="com.andrerinas.openheadunit.main.AutomationActivity" />
     </shortcut>
-    <shortcut
-        android:shortcutId="self_mode"
-        android:enabled="true"
-        android:icon="@drawable/ic_stat_aa"
-        android:shortcutShortLabel="@string/shortcut_selfmode_title"
-        android:shortcutLongLabel="@string/shortcut_selfmode_desc">
-        <intent
-            android:action="com.andrerinas.openheadunit.ACTION_START_SELF_MODE"
-            android:targetPackage="com.tencent.qqmusiccar"
-            android:targetClass="com.andrerinas.openheadunit.main.AutomationActivity" />
-    </shortcut>
 
     <shortcut
         android:shortcutId="disconnect"

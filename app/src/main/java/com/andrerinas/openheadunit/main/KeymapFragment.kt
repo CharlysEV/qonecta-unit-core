@@ -189,10 +189,18 @@ class KeymapFragment : Fragment(), MainActivity.KeyListener {
             it.setDefaultKeyMode(Activity.DEFAULT_KEYS_DISABLE)
             it.keyListener = this
         }
+        (activity as? SettingsActivity)?.let {
+            it.setDefaultKeyMode(Activity.DEFAULT_KEYS_DISABLE)
+            it.keyListener = this
+        }
     }
 
     override fun onDetach() {
         (activity as? MainActivity)?.let {
+            it.setDefaultKeyMode(Activity.DEFAULT_KEYS_SHORTCUT)
+            it.keyListener = null
+        }
+        (activity as? SettingsActivity)?.let {
             it.setDefaultKeyMode(Activity.DEFAULT_KEYS_SHORTCUT)
             it.keyListener = null
         }

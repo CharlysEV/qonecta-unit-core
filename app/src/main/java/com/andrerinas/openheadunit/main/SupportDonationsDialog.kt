@@ -21,8 +21,9 @@ import kotlin.math.roundToInt
  */
 object SupportDonationsDialog {
 
-    const val KOFI_URL = "https://ko-fi.com/charlysev"
     const val PAYPAL_URL = "https://www.paypal.me/CharlysEV"
+    const val KOFI_URL = "https://ko-fi.com/charlysev"
+    const val HUB_URL = "https://qonecta-hub.qonecta.workers.dev"
 
     private const val CARD_BG = 0xFF101924.toInt()
     private const val INNER_CARD_BG = 0xFF152231.toInt()
@@ -116,19 +117,28 @@ object SupportDonationsDialog {
 
         cardsRow.addView(
             buildQrCard(
+                context.getString(com.andrerinas.openheadunit.R.string.core_donate_paypal_card),
+                "paypal.me/CharlysEV",
+                PAYPAL_URL,
+                PAYPAL_TEAL
+            ),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(12) }
+        )
+        cardsRow.addView(
+            buildQrCard(
                 context.getString(com.andrerinas.openheadunit.R.string.core_donate_kofi_card),
                 "ko-fi.com/charlysev",
                 KOFI_URL,
                 KOFI_AMBER
             ),
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(14) }
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(12) }
         )
         cardsRow.addView(
             buildQrCard(
-                context.getString(com.andrerinas.openheadunit.R.string.core_donate_paypal_card),
-                "paypal.me/CharlysEV",
-                PAYPAL_URL,
-                PAYPAL_TEAL
+                "Qonecta Hub",
+                "qonecta-hub.qonecta.workers.dev",
+                HUB_URL,
+                0xFF4CFF9F.toInt()
             ),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
@@ -137,8 +147,12 @@ object SupportDonationsDialog {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
 
+        val scroll = android.widget.ScrollView(context).apply {
+            isFillViewport = false
+            addView(root)
+        }
         val dialog = AlertDialog.Builder(context, android.R.style.Theme_Material_Dialog_Alert)
-            .setView(root)
+            .setView(scroll)
             .create()
 
         val footerRow = LinearLayout(context).apply {

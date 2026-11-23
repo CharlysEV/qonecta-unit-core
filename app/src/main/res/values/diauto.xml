@@ -1,11 +1,11 @@
 <?xml version="1.0" ?>
 <resources>
-    <color name="da_background">#0C111B</color>
-    <color name="da_surface">#151E2C</color>
-    <color name="da_border">#2A384B</color>
-    <color name="da_accent">#A6C8FF</color>
-    <color name="da_text">#F1F5FC</color>
-    <color name="da_muted">#A8B6CA</color>
+    <color name="da_background">#070B11</color>
+    <color name="da_surface">#101824</color>
+    <color name="da_border">#223246</color>
+    <color name="da_accent">#00E5C7</color>
+    <color name="da_text">#F0F6FC</color>
+    <color name="da_muted">#9DB0C5</color>
     <string name="da_brand">Qonecta Unit</string>
     <string name="da_tagline">YOUR PHONE. YOUR DRIVE.</string>
     <string name="da_headline">A familiar drive.</string>
@@ -34,7 +34,7 @@
     <string name="da_display">Display and performance</string>
     <string name="da_display_hint">Picture size, frame rate and audio settings.</string>
     <string name="da_permissions">Permissions</string>
-    <string name="da_permissions_hint">Check Bluetooth, microphone and location access.</string>
+    <string name="da_permissions_hint">Check Bluetooth and location access.</string>
     <string name="da_about">About Qonecta Unit</string>
     <string name="da_about_hint">Version, licenses and open-source credits.</string>
     <string name="da_saved_hint">Changes to video settings apply on your next connection.</string>

@@ -118,6 +118,7 @@ class UsbAccessoryConnection(private val usbMgr: UsbManager, private val device:
 
         for (i in 0 until usbInterface!!.endpointCount) {
             val ep = usbInterface!!.getEndpoint(i)
+            if (ep.type != UsbConstants.USB_ENDPOINT_XFER_BULK) continue
             if (ep.direction == UsbConstants.USB_DIR_IN) {
                 if (endpointIn == null) endpointIn = ep
             } else {
@@ -271,17 +272,38 @@ class UsbAccessoryConnection(private val usbMgr: UsbManager, private val device:
                 val totalBudgetMs = timeout.coerceAtLeast(1)
                 val readDeadline = SystemClock.elapsedRealtime() + totalBudgetMs
                 var read: Int
+                var fastImmediateErrors = 0
                 while (true) {
                     val remainingMs = (readDeadline - SystemClock.elapsedRealtime()).toInt()
                     val sliceTimeout = remainingMs.coerceIn(1, 1000)
+                    val sliceStart = SystemClock.elapsedRealtime()
                     read = try {
                         connection.bulkTransfer(ep, internalBuffer, internalBuffer.size, sliceTimeout)
                     } catch (e: Exception) {
                         AppLog.e("USB Read Error: ${e.message}")
                         -1
                     }
+                    val sliceElapsed = SystemClock.elapsedRealtime() - sliceStart
                     if (read >= 0 || SystemClock.elapsedRealtime() >= readDeadline || usbDeviceConnection == null) {
                         break
+                    }
+                    // Detect ENODEV / cable-yank: a genuine timeout takes ~sliceTimeout ms, whereas
+                    // an unplugged USB device returns -1 in <20 ms. Never busy-spin 100% CPU for 60s.
+                    if (sliceTimeout >= 50 && sliceElapsed < 20L) {
+                        fastImmediateErrors++
+                        if (fastImmediateErrors >= 3) {
+                            val currentDev = usbDeviceConnected
+                            val stillAttached = currentDev != null && runCatching {
+                                usbMgr.deviceList.containsKey(currentDev.deviceName)
+                            }.getOrDefault(true)
+                            if (!stillAttached) {
+                                AppLog.w("USB device ${currentDev?.deviceName} vanished (cable unplugged) — disconnecting immediately")
+                                disconnect()
+                                return -1
+                            }
+                            try { Thread.sleep(25) } catch (_: InterruptedException) { break }
+                            break
+                        }
                     }
                 }
 

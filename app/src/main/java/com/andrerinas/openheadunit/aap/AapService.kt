@@ -742,8 +742,12 @@ class AapService : Service(), UsbReceiver.Listener {
     // Lifecycle
     // -------------------------------------------------------------------------
 
+    @Volatile private var suppressAutoRestart = false
+    private var p2pHotspotFallbackCount = 0
+
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         AppLog.i("AapService creating...")
 
         try {
@@ -799,8 +803,12 @@ class AapService : Service(), UsbReceiver.Listener {
             provider.setCredentialsListener { ssid, psk, ip, bssid -> onNativeCredentials(ssid, psk, ip, bssid) }
             provider.setInvalidatedListener {
                 nativeAaHandshakeManager?.invalidateCredentials()
-                if (Build.MODEL.contains("Leapmotor", ignoreCase = true)) {
-                    AppLog.w("AapService: LocalOnlyHotspot invalidated on Leapmotor; starting WifiDirect fallback on p2p0")
+                if (!suppressAutoRestart && !isDestroying &&
+                    Build.MODEL.contains("Leapmotor", ignoreCase = true) &&
+                    p2pHotspotFallbackCount < 2
+                ) {
+                    p2pHotspotFallbackCount++
+                    AppLog.w("AapService: LocalOnlyHotspot invalidated; starting WifiDirect fallback ($p2pHotspotFallbackCount/2)")
                     wifiDirectManager?.startNativeAaQuietHost()
                 }
             }
@@ -833,8 +841,13 @@ class AapService : Service(), UsbReceiver.Listener {
         wifiDirectManager?.setNativeSessionConnectedProvider { commManager.isConnected }
         wifiDirectManager?.setNativeGroupInvalidatedListener { nativeAaHandshakeManager?.invalidateCredentials() }
         wifiDirectManager?.setNativeGroupCreationFailedListener {
-            AppLog.w("AapService: WiFi Direct group creation failed; falling back to LocalOnlyHotspot (p2p0)...")
-            localHotspotCredentialsProvider?.start()
+            if (!suppressAutoRestart && !isDestroying && p2pHotspotFallbackCount < 2) {
+                p2pHotspotFallbackCount++
+                AppLog.w("AapService: WiFi Direct group creation failed; falling back to LocalOnlyHotspot ($p2pHotspotFallbackCount/2)...")
+                localHotspotCredentialsProvider?.start()
+            } else {
+                AppLog.w("AapService: WiFi Direct ↔ LocalOnlyHotspot fallback cap reached; staying idle until user retries.")
+            }
         }
         softApCredentialsProvider?.setCredentialsListener { ssid, psk, ip, bssid ->
             onNativeCredentials(ssid, psk, ip, bssid)
@@ -939,8 +952,15 @@ class AapService : Service(), UsbReceiver.Listener {
      */
     private fun onConnected() {
         hasEverConnected = true
+        suppressAutoRestart = false
+        p2pHotspotFallbackCount = 0
         isSwitchingToAccessory.set(false)
         wirelessStatusText.value = null
+        wifiDirectManager?.lastConfirmedGroupFrequencyMhz?.let { freq ->
+            if (AaP2pChannelMemory.isValidNonDfs5Ghz(freq)) {
+                AaP2pChannelMemory.remember(this, freq)
+            }
+        }
         updateNotification()
         acquireWifiLock()
         nativeAaHandshakeManager?.pauseForActiveSession()
@@ -1109,6 +1129,7 @@ class AapService : Service(), UsbReceiver.Listener {
      * 4. Scheduling a reconnect attempt if applicable (see [scheduleReconnectIfNeeded])
      */
     private fun onDisconnected(state: CommManager.ConnectionState.Disconnected) {
+        if (isDestroying) return
         isSwitchingToAccessory.set(false)
         releaseWifiLock()
 
@@ -1145,8 +1166,8 @@ class AapService : Service(), UsbReceiver.Listener {
             val strategy = settings.helperConnectionStrategy
 
             if (mode == 3) {
-                if (state.isUserExit) {
-                    AppLog.i("AapService: Native AA user exit. Stopping handshake manager.")
+                if (state.isUserExit || suppressAutoRestart || isDestroying) {
+                    AppLog.i("AapService: Native AA stopped without auto-restart (userExit=${state.isUserExit}, suppress=$suppressAutoRestart).")
                     nativeAaHandshakeManager?.stop()
                 } else {
                     // Unexpected disconnect — reset and re-initialize for auto-reconnect.
@@ -1154,7 +1175,9 @@ class AapService : Service(), UsbReceiver.Listener {
                     nativeAaHandshakeManager?.stop()
                     serviceScope.launch {
                         delay(1500) // Give hardware time to settle before re-initializing P2P
-                        initWifiMode(force = true)
+                        if (!suppressAutoRestart && !isDestroying) {
+                            initWifiMode(force = true)
+                        }
                     }
                 }
             }
@@ -1738,7 +1761,11 @@ class AapService : Service(), UsbReceiver.Listener {
     override fun onDestroy() {
         AppLog.i("AapService destroying... (wakeLock held=${bootWakeLock?.isHeld == true})")
         isDestroying = true
+        suppressAutoRestart = true
+        if (activeInstance === this) activeInstance = null
         wirelessStatusText.value = null
+        wifiDirectChannelInfo.value = null
+        wifiCoexistenceWarning.value = null
         com.andrerinas.openheadunit.cluster.ClusterMapController.stop(
             com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.ANDROID_AUTO,
             this,
@@ -1824,15 +1851,22 @@ class AapService : Service(), UsbReceiver.Listener {
      * LocalOnlyHotspot, SoftAP watcher, Nearby, BT RFCOMM handshake) and yields any active AA
      * session so Apple CarPlay can claim Wi-Fi/P2P/BT cleanly without radio collisions.
      */
-    private fun stopAllWirelessForHandoff() {
-        AppLog.i("AapService: ACTION_STOP_WIRELESS — stopping all AA wireless transports for clean handoff")
+    private fun stopAllWirelessForHandoff(awaitP2pRemoval: Boolean = false, timeoutMs: Long = 1500L) {
+        AppLog.i("AapService: ACTION_STOP_WIRELESS — stopping all AA wireless transports for clean handoff (await=$awaitP2pRemoval)")
+        suppressAutoRestart = true
         wirelessStatusText.value = null
+        wifiDirectChannelInfo.value = null
+        wifiCoexistenceWarning.value = null
         stopWirelessServer()
         nearbyManager?.stop()
         nativeAaHandshakeManager?.stop()
         softApCredentialsProvider?.stop()
         localHotspotCredentialsProvider?.stop()
-        wifiDirectManager?.stop()
+        if (awaitP2pRemoval) {
+            wifiDirectManager?.stopAndAwaitRemoval(timeoutMs)
+        } else {
+            wifiDirectManager?.stop()
+        }
         releaseWifiLock()
         if (commManager.isBusy) {
             commManager.disconnect(sendByeBye = true, isUserExit = false)
@@ -1905,6 +1939,7 @@ class AapService : Service(), UsbReceiver.Listener {
             ACTION_START_SELF_MODE       -> startSelfMode()
             ACTION_SWITCH_TO_USB         -> {
                 AppLog.i("AapService: Switching from active Wireless session to USB by user confirmation")
+                suppressAutoRestart = true
                 usbSwitchPrompt.value = null
                 userExitedAA = false
                 userExitCooldownUntil = 0L
@@ -1926,10 +1961,14 @@ class AapService : Service(), UsbReceiver.Listener {
             ACTION_START_WIRELESS        -> {
                 // Asked for from the UI, so the user is present: release the boot-loop pause
                 // rather than silently ignoring them.
+                suppressAutoRestart = false
+                p2pHotspotFallbackCount = 0
                 Settings.clearBootLoopState(this)
                 initWifiMode()
             }
             ACTION_START_WIRELESS_SCAN   -> {
+                suppressAutoRestart = false
+                p2pHotspotFallbackCount = 0
                 val settings = App.provide(this).settings
                 val mode = settings.wifiConnectionMode
                 val strategy = settings.helperConnectionStrategy
@@ -1956,7 +1995,15 @@ class AapService : Service(), UsbReceiver.Listener {
                 }
             }
             ACTION_STOP_WIRELESS         -> stopAllWirelessForHandoff()
+            ACTION_RESTART_WIFI_DIRECT   -> {
+                AppLog.i("AapService: ACTION_RESTART_WIFI_DIRECT — resetting Wi-Fi Direct 5 GHz group")
+                suppressAutoRestart = false
+                p2pHotspotFallbackCount = 0
+                wifiDirectManager?.forceResetNativeGroup()
+            }
             ACTION_NATIVE_AA_POKE        -> {
+                suppressAutoRestart = false
+                p2pHotspotFallbackCount = 0
                 val mac = intent?.getStringExtra(EXTRA_MAC)
                 if (mac != null) {
                     AppLog.i("AapService: Received manual Native-AA poke request for $mac")
@@ -3503,6 +3550,28 @@ class AapService : Service(), UsbReceiver.Listener {
         /** Live human-readable wireless AA handshake / Wi-Fi Direct status for HomeFragment UI. */
         val wirelessStatusText = MutableStateFlow<String?>(null)
 
+        /** Active Wi-Fi Direct band & channel (e.g. "5 GHz · ch 36 (5180 MHz)"). */
+        val wifiDirectChannelInfo = MutableStateFlow<String?>(null)
+
+        /** Live coexistence warning if car STA Wi-Fi is on a different channel than P2P. */
+        val wifiCoexistenceWarning = MutableStateFlow<String?>(null)
+
+        @Volatile
+        private var activeInstance: AapService? = null
+
+        /**
+         * Cleanly releases all Android Auto wireless transports (and awaits P2P group teardown)
+         * WITHOUT cold-starting [AapService] when it is not running. Safe to call from background threads
+         * before launching CarPlay.
+         */
+        fun releaseWirelessForHandoff(timeoutMs: Long = 1500L) {
+            val svc = activeInstance ?: return
+            if (svc.isDestroying) return
+            svc.stopAllWirelessForHandoff(awaitP2pRemoval = true, timeoutMs = timeoutMs)
+        }
+
+        fun isServiceRunning(): Boolean = activeInstance != null && activeInstance?.isDestroying != true
+
         data class UsbSwitchPrompt(
             val deviceName: String,
             val timestampMs: Long = System.currentTimeMillis(),
@@ -3528,6 +3597,7 @@ class AapService : Service(), UsbReceiver.Listener {
         const val ACTION_BT_AUTO_START              = "com.andrerinas.openheadunit.ACTION_BT_AUTO_START"
         const val ACTION_START_WIRELESS_SCAN       = "com.andrerinas.openheadunit.ACTION_START_WIRELESS_SCAN"
         const val ACTION_STOP_WIRELESS             = "com.andrerinas.openheadunit.ACTION_STOP_WIRELESS"
+        const val ACTION_RESTART_WIFI_DIRECT       = "com.andrerinas.openheadunit.ACTION_RESTART_WIFI_DIRECT"
         const val ACTION_NATIVE_AA_POKE            = "com.andrerinas.openheadunit.ACTION_NATIVE_AA_POKE"
         const val ACTION_NEARBY_CONNECT             = "com.andrerinas.openheadunit.ACTION_NEARBY_CONNECT"
         const val ACTION_CHECK_USB                 = "com.andrerinas.openheadunit.ACTION_CHECK_USB"

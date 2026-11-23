@@ -89,7 +89,7 @@ class DiagnosticsFragment : Fragment(R.layout.fragment_diagnostics) {
             result.onSuccess { uri ->
                 MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
                     .setTitle(getString(R.string.diagnostic_report_saved))
-                    .setMessage(if (destination == null) "Downloads/DiAuto/$fileName" else getString(R.string.diagnostic_saved_to_your_selected_location))
+                    .setMessage(if (destination == null) "Downloads/QonectaUnit/$fileName" else getString(R.string.diagnostic_saved_to_your_selected_location))
                     .setPositiveButton(R.string.share) { _, _ ->
                         runCatching {
                             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {

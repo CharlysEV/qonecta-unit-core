@@ -17,9 +17,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/media_volume_offset"
-            android:textSize="12sp"
+            android:textSize="13sp"
+            android:textStyle="bold"
             android:gravity="center"
-            android:textColor="?attr/colorOnSurface"/>
+            android:textColor="@color/hql_text_dim"/>
         <FrameLayout
             android:layout_width="wrap_content"
             android:layout_height="0dp"
@@ -32,6 +33,9 @@
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
                 android:rotation="270"
+                android:progressTint="@color/hql_accent"
+                android:thumbTint="@color/hql_accent"
+                android:progressBackgroundTint="@color/hql_outline_strong"
                 android:max="100"/>
         </FrameLayout>
         <TextView
@@ -39,9 +43,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="100%"
-            android:textSize="16sp"
+            android:textSize="17sp"
             android:textStyle="bold"
-            android:textColor="?attr/colorOnSurface"/>
+            android:textColor="@color/hql_accent"/>
     </LinearLayout>
 
     <!-- Assistant -->
@@ -55,9 +59,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/assistant_volume_offset"
-            android:textSize="12sp"
+            android:textSize="13sp"
+            android:textStyle="bold"
             android:gravity="center"
-            android:textColor="?attr/colorOnSurface"/>
+            android:textColor="@color/hql_text_dim"/>
         <FrameLayout
             android:layout_width="wrap_content"
             android:layout_height="0dp"
@@ -70,6 +75,9 @@
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
                 android:rotation="270"
+                android:progressTint="@color/hql_accent"
+                android:thumbTint="@color/hql_accent"
+                android:progressBackgroundTint="@color/hql_outline_strong"
                 android:max="100"/>
         </FrameLayout>
         <TextView
@@ -77,9 +85,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="100%"
-            android:textSize="16sp"
+            android:textSize="17sp"
             android:textStyle="bold"
-            android:textColor="?attr/colorOnSurface"/>
+            android:textColor="@color/hql_accent"/>
     </LinearLayout>
 
     <!-- Navigation -->
@@ -93,9 +101,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/navigation_volume_offset"
-            android:textSize="12sp"
+            android:textSize="13sp"
+            android:textStyle="bold"
             android:gravity="center"
-            android:textColor="?attr/colorOnSurface"/>
+            android:textColor="@color/hql_text_dim"/>
         <FrameLayout
             android:layout_width="wrap_content"
             android:layout_height="0dp"
@@ -108,6 +117,9 @@
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
                 android:rotation="270"
+                android:progressTint="@color/hql_accent"
+                android:thumbTint="@color/hql_accent"
+                android:progressBackgroundTint="@color/hql_outline_strong"
                 android:max="100"/>
         </FrameLayout>
         <TextView
@@ -115,9 +127,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="100%"
-            android:textSize="16sp"
+            android:textSize="17sp"
             android:textStyle="bold"
-            android:textColor="?attr/colorOnSurface"/>
+            android:textColor="@color/hql_accent"/>
     </LinearLayout>
 
 </LinearLayout>

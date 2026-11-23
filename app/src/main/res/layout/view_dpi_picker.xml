@@ -11,11 +11,15 @@
         android:id="@+id/dpi_slider"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="12dp"
         android:valueFrom="110"
         android:valueTo="640"
         android:stepSize="1"
-        android:value="160" />
+        android:value="160"
+        app:trackColorActive="@color/hql_accent"
+        app:trackColorInactive="@color/hql_outline_strong"
+        app:thumbColor="@color/hql_accent"
+        app:haloColor="@color/hql_ripple" />
 
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/dpi_input_layout"
@@ -23,16 +27,24 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
-        android:layout_marginTop="4dp"
-        android:hint="@string/dpi_input_hint">
+        android:layout_marginTop="6dp"
+        android:hint="@string/dpi_input_hint"
+        app:boxStrokeColor="@color/hql_accent"
+        app:hintTextColor="@color/hql_accent"
+        app:boxCornerRadiusTopStart="14dp"
+        app:boxCornerRadiusTopEnd="14dp"
+        app:boxCornerRadiusBottomStart="14dp"
+        app:boxCornerRadiusBottomEnd="14dp">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/dpi_input"
-            android:layout_width="130dp"
+            android:layout_width="140dp"
             android:layout_height="wrap_content"
             android:gravity="center"
             android:imeOptions="actionDone"
             android:inputType="number"
+            android:textColor="@color/hql_text"
+            android:textStyle="bold"
             android:maxLength="3" />
 
     </com.google.android.material.textfield.TextInputLayout>
@@ -41,7 +53,7 @@
         android:id="@+id/dpi_tabs"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="10dp"
         app:singleSelection="true"
         app:selectionRequired="true">
 
@@ -50,11 +62,13 @@
             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:insetLeft="0dp"
             android:insetRight="0dp"
             android:paddingStart="0dp"
             android:paddingEnd="0dp"
+            android:textColor="@color/hql_text"
+            app:strokeColor="@color/hql_outline_strong"
             android:contentDescription="@string/onb_dpi_small"
             android:text="@string/dpi_size_s" />
 
@@ -63,11 +77,13 @@
             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:insetLeft="0dp"
             android:insetRight="0dp"
             android:paddingStart="0dp"
             android:paddingEnd="0dp"
+            android:textColor="@color/hql_text"
+            app:strokeColor="@color/hql_outline_strong"
             android:contentDescription="@string/onb_dpi_medium"
             android:text="@string/dpi_size_m" />
 
@@ -76,11 +92,13 @@
             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:insetLeft="0dp"
             android:insetRight="0dp"
             android:paddingStart="0dp"
             android:paddingEnd="0dp"
+            android:textColor="@color/hql_text"
+            app:strokeColor="@color/hql_outline_strong"
             android:contentDescription="@string/onb_dpi_large"
             android:text="@string/dpi_size_l" />
 
@@ -89,11 +107,13 @@
             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:insetLeft="0dp"
             android:insetRight="0dp"
             android:paddingStart="0dp"
             android:paddingEnd="0dp"
+            android:textColor="@color/hql_text"
+            app:strokeColor="@color/hql_outline_strong"
             android:contentDescription="@string/onb_dpi_huge"
             android:text="@string/dpi_size_xl" />
 

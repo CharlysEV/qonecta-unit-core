@@ -722,6 +722,7 @@ class MainActivity : BaseActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleLaunchIntent(intent)
     }
 

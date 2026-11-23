@@ -19,24 +19,15 @@ object LocaleHelper {
      *
      * English is always included as it's the default language in the base "values/" folder.
      */
+    /** Official 5 fully-localized Qonecta Unit CORE languages (ES, EN, DE, IT, PT). */
     fun getAvailableLocales(context: Context): List<Locale> {
-        return try {
-            val localesFromBuildConfig = BuildConfig.AVAILABLE_LOCALES
-                .takeIf { it.isNotBlank() }
-                ?.split(",")
-                ?.mapNotNull { parseLocale(it.trim()) }
-                ?: emptyList()
-
-            // Always include English as it's the default language (in values/ folder)
-            val allLocales = localesFromBuildConfig + Locale.ENGLISH
-
-            allLocales
-                .distinctBy { it.language + "_" + it.country }
-                .sortedBy { it.getDisplayName(it).lowercase() }
-        } catch (e: Exception) {
-            // Fallback: at minimum return English
-            listOf(Locale.ENGLISH)
-        }
+        return listOf(
+            Locale("es"),
+            Locale.ENGLISH,
+            Locale.GERMAN,
+            Locale.ITALIAN,
+            Locale("pt"),
+        )
     }
 
     /**

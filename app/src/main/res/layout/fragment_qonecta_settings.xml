@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/hql_bg">
+
+    <!-- FIXED QONECTA COCKPIT TOP BAR -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="68dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="24dp"
+        android:background="#080D14">
+
+        <ImageButton
+            android:id="@+id/qset_back_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_arrow_back_white"
+            android:tint="@color/hql_text"
+            android:contentDescription="@string/cp_btn_back" />
+
+        <ImageView
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_marginStart="6dp"
+            android:src="@drawable/hql_logo"
+            android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/qu_set_title"
+                android:textSize="22sp"
+                android:textColor="@color/hql_text"
+                android:fontFamily="sans-serif-medium"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/qu_set_subtitle"
+                android:textSize="13sp"
+                android:textColor="@color/hql_text_dim"
+                android:maxLines="1"
+                android:ellipsize="end" />
+        </LinearLayout>
+
+        <!-- Auto-save feedback badge -->
+        <TextView
+            android:id="@+id/qset_saved_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="6dp"
+            android:background="@drawable/bg_pill_translucent"
+            android:text="@string/qu_set_saved_toast"
+            android:textSize="13.5sp"
+            android:textStyle="bold"
+            android:textColor="@color/hql_accent"
+            android:visibility="invisible" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/hql_outline" />
+
+    <!-- Narrow-screen horizontal tab strip (visible only when screenWidthDp < 720) -->
+    <HorizontalScrollView
+        android:id="@+id/qset_top_tabs_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:background="#090E16"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/qset_top_tabs_container"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="10dp" />
+    </HorizontalScrollView>
+
+    <!-- 2-PANE COCKPIT BODY -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <!-- Left Category Rail (280dp on wide displays) -->
+        <ScrollView
+            android:id="@+id/qset_side_rail_scroll"
+            android:layout_width="276dp"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:background="#090F17">
+
+            <LinearLayout
+                android:id="@+id/qset_side_rail_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="16dp" />
+        </ScrollView>
+
+        <View
+            android:id="@+id/qset_rail_divider"
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="@color/hql_outline" />
+
+        <!-- Right Qonecta Cards Content Pane -->
+        <ScrollView
+            android:id="@+id/qset_content_scroll"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:background="@color/hql_bg">
+
+            <LinearLayout
+                android:id="@+id/qset_content_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="32dp"
+                android:paddingTop="22dp"
+                android:paddingBottom="36dp" />
+        </ScrollView>
+    </LinearLayout>
+
+</LinearLayout>

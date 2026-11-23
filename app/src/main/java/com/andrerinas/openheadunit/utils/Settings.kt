@@ -1701,4 +1701,9 @@ class Settings(private val context: Context) {
         get() = prefs.getBoolean("use-libusb", false)
         set(value) = prefs.edit().putBoolean("use-libusb", value).apply()
 
+    /** Last active protocol tab on the unified Home screen: "aa" or "carplay". */
+    var lastHomeProtocol: String
+        get() = prefs.getString("qu-last-home-protocol", "aa") ?: "aa"
+        set(value) = prefs.edit().putString("qu-last-home-protocol", if (value == "carplay") "carplay" else "aa").apply()
+
 }

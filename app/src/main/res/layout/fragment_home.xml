@@ -10,12 +10,12 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingStart="30dp"
-        android:paddingEnd="30dp"
-        android:paddingTop="18dp"
-        android:paddingBottom="18dp">
+        android:paddingStart="28dp"
+        android:paddingEnd="28dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp">
 
-        <!-- Cabecera limpia: Qonecta Unit Core (AA + CarPlay) -->
+        <!-- FIXED UNIFIED QONECTA HEADER (never changes or jumps between AA & CarPlay) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -23,8 +23,8 @@
             android:orientation="horizontal">
 
             <ImageView
-                android:layout_width="54dp"
-                android:layout_height="54dp"
+                android:layout_width="50dp"
+                android:layout_height="50dp"
                 android:src="@drawable/hql_logo"
                 android:importantForAccessibility="no" />
 
@@ -45,152 +45,161 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/core_app_name"
-                        android:textSize="34sp"
+                        android:textSize="28sp"
                         android:textColor="@color/hql_text"
                         android:fontFamily="sans-serif-medium"
-                        android:textStyle="bold" />
+                        android:textStyle="bold"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
 
                     <TextView
                         android:id="@+id/home_version_badge"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="12dp"
-                        android:paddingHorizontal="12dp"
-                        android:paddingVertical="5dp"
+                        android:paddingHorizontal="11dp"
+                        android:paddingVertical="4dp"
                         android:background="@drawable/bg_pill_translucent"
                         android:text="v1.0.0-core · AA + CarPlay"
                         android:singleLine="true"
-                        android:textSize="14.5sp"
+                        android:textSize="13sp"
                         android:textColor="@color/hql_accent"
                         android:fontFamily="sans-serif-medium"
                         android:textStyle="bold"
-                        android:letterSpacing="0.04" />
+                        android:letterSpacing="0.03" />
                 </LinearLayout>
 
-                <TextView
-                    android:id="@+id/home_subtitle_banner"
+                <!-- Subtle live hardware readiness strip: BT · Wi-Fi · USB -->
+                <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:singleLine="true"
-                    android:ellipsize="end"
-                    android:text="@string/core_home_subtitle"
-                    android:textSize="15sp"
-                    android:textColor="@color/hql_text_dim"
-                    android:fontFamily="sans-serif-medium" />
+                    android:layout_marginTop="3dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/hw_dot_bt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="● BT"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/hql_text_faint" />
+
+                    <TextView
+                        android:id="@+id/hw_dot_wifi"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:text="● Wi-Fi"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/hql_text_faint" />
+
+                    <TextView
+                        android:id="@+id/hw_dot_usb"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:text="● USB"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/hql_text_faint" />
+                </LinearLayout>
             </LinearLayout>
 
+            <!-- Car system bar quick toggle (instant AA + CarPlay sync) -->
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/home_support_button"
+                android:id="@+id/car_bar_toggle_button"
                 android:layout_width="wrap_content"
-                android:layout_height="54dp"
+                android:layout_height="50dp"
                 android:layout_marginEnd="10dp"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:text="@string/qu_support_donate_button"
-                android:textSize="16sp"
+                android:text="@string/qu_home_bar_off"
+                android:textSize="15sp"
                 android:textStyle="bold"
                 android:textAllCaps="false"
-                android:textColor="#FFB547"
-                app:backgroundTint="@color/hql_surface_top"
-                app:strokeColor="#FFB547"
-                app:strokeWidth="2dp"
-                app:cornerRadius="18dp" />
+                android:textColor="@color/hql_text"
+                app:backgroundTint="@color/hql_surface_hi"
+                app:strokeColor="@color/hql_outline_strong"
+                app:strokeWidth="1.5dp"
+                app:cornerRadius="16dp" />
 
+            <!-- Conditional 2nd screen cluster toggle (hidden if only 1 display & disabled) -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/cluster_toggle_button"
                 android:layout_width="wrap_content"
-                android:layout_height="54dp"
+                android:layout_height="50dp"
                 android:layout_marginEnd="10dp"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
                 android:text="@string/qu_cluster_short_off"
-                android:textSize="16sp"
+                android:textSize="15sp"
                 android:textStyle="bold"
                 android:textAllCaps="false"
                 android:textColor="@color/hql_text"
-                app:backgroundTint="@color/hql_surface_top"
-                app:strokeColor="@color/hql_outline"
-                app:strokeWidth="2dp"
-                app:cornerRadius="18dp"
+                app:backgroundTint="@color/hql_surface_hi"
+                app:strokeColor="@color/hql_outline_strong"
+                app:strokeWidth="1.5dp"
+                app:cornerRadius="16dp"
                 app:icon="@drawable/ic_da_display"
-                app:iconSize="20dp"
+                app:iconSize="18dp"
                 app:iconTint="@color/hql_accent"
                 app:iconGravity="textStart"
-                app:iconPadding="6dp" />
+                app:iconPadding="6dp"
+                android:visibility="gone" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/files_button"
-                android:layout_width="wrap_content"
-                android:layout_height="54dp"
-                android:layout_marginEnd="10dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="@string/qu_files_short"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textAllCaps="false"
-                android:textColor="@color/hql_text"
-                app:backgroundTint="@color/hql_surface_top"
-                app:strokeColor="@color/hql_outline"
-                app:strokeWidth="2dp"
-                app:cornerRadius="18dp"
-                app:icon="@drawable/ic_folder_white"
-                app:iconSize="20dp"
-                app:iconTint="@color/hql_accent"
-                app:iconGravity="textStart"
-                app:iconPadding="6dp" />
-
+            <!-- Unified Qonecta Settings -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/settings_button"
                 android:layout_width="wrap_content"
-                android:layout_height="54dp"
+                android:layout_height="50dp"
                 android:layout_marginEnd="10dp"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
                 android:text="@string/core_btn_settings"
-                android:textSize="16sp"
+                android:textSize="15sp"
                 android:textStyle="bold"
                 android:textAllCaps="false"
                 android:textColor="@color/hql_text"
-                app:backgroundTint="@color/hql_surface_top"
-                app:strokeColor="@color/hql_outline"
-                app:strokeWidth="2dp"
-                app:cornerRadius="18dp"
+                app:backgroundTint="@color/hql_surface_hi"
+                app:strokeColor="@color/hql_outline_strong"
+                app:strokeWidth="1.5dp"
+                app:cornerRadius="16dp"
                 app:icon="@drawable/ic_settings_white"
-                app:iconSize="20dp"
+                app:iconSize="19dp"
                 app:iconTint="@color/hql_accent"
                 app:iconGravity="textStart"
                 app:iconPadding="6dp" />
 
+            <!-- Clean Exit -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/exit_button"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="wrap_content"
-                android:layout_height="54dp"
+                android:layout_height="50dp"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:textSize="16sp"
+                android:textSize="15sp"
                 android:textStyle="bold"
                 android:textAllCaps="false"
-                android:text="@string/da_close"
-                android:textColor="@color/hql_text"
+                android:text="@string/qu_home_exit"
+                android:textColor="@color/hql_text_dim"
+                app:backgroundTint="@color/hql_surface"
                 app:strokeColor="@color/hql_outline"
-                app:strokeWidth="2dp"
-                app:cornerRadius="18dp" />
+                app:strokeWidth="1.5dp"
+                app:cornerRadius="16dp" />
         </LinearLayout>
 
-        <!-- Aviso si se elige un modo Wi-Fi y el Wi-Fi del coche está apagado -->
+        <!-- Contextual Warning Banner (Wi-Fi off / Hotspot off / 2.4 GHz coexistence) -->
         <LinearLayout
             android:id="@+id/wifi_conflict_banner"
             android:layout_width="match_parent"
@@ -198,7 +207,8 @@
             android:layout_marginTop="10dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:padding="12dp"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
             android:background="@drawable/da_card"
             android:visibility="gone">
 
@@ -210,13 +220,13 @@
                 android:layout_marginEnd="14dp"
                 android:text="@string/core_wifi_off_banner"
                 android:textSize="14sp"
-                android:textColor="#FFB547"
+                android:textColor="@color/hql_warn"
                 android:fontFamily="sans-serif-medium" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/wifi_conflict_action"
                 android:layout_width="wrap_content"
-                android:layout_height="44dp"
+                android:layout_height="42dp"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:insetTop="0dp"
@@ -225,12 +235,12 @@
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:textAllCaps="false"
-                android:textColor="@color/hql_bg"
-                app:backgroundTint="#FFB547"
+                android:textColor="@color/hql_on_accent"
+                app:backgroundTint="@color/hql_warn"
                 app:cornerRadius="12dp" />
         </LinearLayout>
 
-        <!-- Tarjeta principal de conexión -->
+        <!-- UNIFIED HERO CONNECTION CARD -->
         <LinearLayout
             android:id="@+id/hero_connection_card"
             android:layout_width="match_parent"
@@ -247,13 +257,71 @@
 
             <LinearLayout
                 android:layout_width="0dp"
-                android:layout_weight="1.45"
+                android:layout_weight="1.5"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
+                <!-- SYMMETRIC PROTOCOL SWITCHER: [ Android Auto | Apple CarPlay ] -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:padding="4dp"
+                    android:background="@drawable/bg_segmented_rail">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/proto_tab_aa"
+                        android:layout_width="wrap_content"
+                        android:layout_height="46dp"
+                        android:paddingStart="20dp"
+                        android:paddingEnd="20dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="@string/qu_home_proto_aa"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hql_accent"
+                        app:backgroundTint="@color/hql_accent_container"
+                        app:strokeColor="@color/hql_accent"
+                        app:strokeWidth="1.5dp"
+                        app:cornerRadius="16dp"
+                        app:icon="@drawable/ic_android_auto"
+                        app:iconSize="20dp"
+                        app:iconTint="@color/hql_accent"
+                        app:iconGravity="textStart"
+                        app:iconPadding="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/proto_tab_cp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="46dp"
+                        android:layout_marginStart="4dp"
+                        android:paddingStart="20dp"
+                        android:paddingEnd="20dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="@string/qu_home_proto_cp"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hql_text_dim"
+                        app:backgroundTint="@android:color/transparent"
+                        app:strokeColor="@android:color/transparent"
+                        app:strokeWidth="1.5dp"
+                        app:cornerRadius="16dp"
+                        app:icon="@drawable/ic_carplay"
+                        app:iconSize="20dp"
+                        app:iconTint="@null"
+                        app:iconGravity="textStart"
+                        app:iconPadding="8dp" />
+                </LinearLayout>
+
+                <!-- Live status pill + 5 GHz channel chip + 1-tap Wi-Fi Direct reset -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical">
 
@@ -261,11 +329,11 @@
                         android:id="@+id/hero_status_pill"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:paddingHorizontal="16dp"
-                        android:paddingVertical="6dp"
+                        android:paddingHorizontal="14dp"
+                        android:paddingVertical="5dp"
                         android:background="@drawable/bg_pill_translucent"
                         android:text="@string/core_status_ready"
-                        android:textSize="17sp"
+                        android:textSize="15sp"
                         android:textColor="@color/hql_accent"
                         android:fontFamily="sans-serif-medium"
                         android:textStyle="bold"
@@ -276,14 +344,38 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="10dp"
-                        android:paddingHorizontal="16dp"
-                        android:paddingVertical="6dp"
+                        android:paddingHorizontal="14dp"
+                        android:paddingVertical="5dp"
                         android:background="@drawable/bg_pill_translucent"
                         android:text="@string/core_badge_wifi5g_ready"
-                        android:textSize="17sp"
+                        android:textSize="15sp"
                         android:textColor="@color/hql_text"
                         android:fontFamily="sans-serif-medium"
                         android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/hero_reset_wifi_btn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:layout_marginStart="10dp"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="@string/qu_home_reset_wifi"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:textColor="@color/hql_text_dim"
+                        app:backgroundTint="@color/hql_surface_hi"
+                        app:strokeColor="@color/hql_outline_strong"
+                        app:strokeWidth="1dp"
+                        app:cornerRadius="18dp"
+                        app:icon="@drawable/ic_refresh_white"
+                        app:iconSize="15dp"
+                        app:iconTint="@color/hql_accent"
+                        app:iconGravity="textStart"
+                        app:iconPadding="5dp" />
                 </LinearLayout>
 
                 <TextView
@@ -292,10 +384,12 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
                     android:text="@string/core_hero_title_idle"
-                    android:textSize="44sp"
+                    android:textSize="38sp"
                     android:textColor="@color/hql_text"
                     android:fontFamily="sans-serif-medium"
                     android:textStyle="bold"
+                    android:maxLines="1"
+                    android:ellipsize="end"
                     android:accessibilityLiveRegion="polite" />
 
                 <TextView
@@ -304,10 +398,12 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="@string/core_hero_sub_idle"
-                    android:textSize="19sp"
-                    android:textColor="@color/hql_text_dim" />
+                    android:textSize="17sp"
+                    android:textColor="@color/hql_text_dim"
+                    android:maxLines="2"
+                    android:ellipsize="end" />
 
-                <!-- Botones principales -->
+                <!-- SINGLE GLOWING PRIMARY CTA + contextual USB + Cancel/Disconnect -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -318,68 +414,45 @@
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/wifi_button"
                         android:layout_width="wrap_content"
-                        android:layout_height="68dp"
+                        android:layout_height="62dp"
                         android:layout_marginEnd="12dp"
                         android:paddingStart="26dp"
                         android:paddingEnd="26dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
                         android:text="@string/core_btn_connect_aa"
-                        android:textSize="20sp"
+                        android:textSize="19sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
-                        android:textColor="@color/hql_bg"
+                        android:textColor="@color/hql_on_accent"
                         app:backgroundTint="@color/hql_accent"
-                        app:cornerRadius="34dp"
+                        app:cornerRadius="31dp"
                         app:icon="@drawable/ic_android_auto"
-                        app:iconSize="26dp"
-                        app:iconTint="@color/hql_bg"
+                        app:iconSize="24dp"
+                        app:iconTint="@color/hql_on_accent"
                         app:iconGravity="textStart"
-                        app:iconPadding="8dp" />
+                        app:iconPadding="10dp" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/carplay_button"
+                        android:id="@+id/usb_button"
                         android:layout_width="wrap_content"
-                        android:layout_height="68dp"
+                        android:layout_height="62dp"
                         android:layout_marginEnd="12dp"
                         android:paddingStart="22dp"
                         android:paddingEnd="22dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        android:text="@string/core_btn_carplay"
-                        android:textSize="19.5sp"
-                        android:textStyle="bold"
-                        android:textAllCaps="false"
-                        android:textColor="@color/hql_text"
-                        app:backgroundTint="@color/hql_surface_top"
-                        app:strokeColor="@color/hql_edge"
-                        app:strokeWidth="2dp"
-                        app:cornerRadius="34dp"
-                        app:icon="@drawable/ic_carplay"
-                        app:iconSize="26dp"
-                        app:iconTint="@null"
-                        app:iconGravity="textStart"
-                        app:iconPadding="8dp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/usb_button"
-                        android:layout_width="wrap_content"
-                        android:layout_height="68dp"
-                        android:paddingStart="22dp"
-                        android:paddingEnd="22dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
                         android:text="@string/core_btn_usb_cable"
-                        android:textSize="19.5sp"
+                        android:textSize="17.5sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
                         android:textColor="@color/hql_text"
                         app:backgroundTint="@color/hql_surface_top"
-                        app:strokeColor="@color/hql_edge"
-                        app:strokeWidth="2dp"
-                        app:cornerRadius="34dp"
+                        app:strokeColor="@color/hql_outline_strong"
+                        app:strokeWidth="1.5dp"
+                        app:cornerRadius="31dp"
                         app:icon="@drawable/ic_usb_white"
-                        app:iconSize="24dp"
+                        app:iconSize="22dp"
                         app:iconTint="@color/hql_accent"
                         app:iconGravity="textStart"
                         app:iconPadding="8dp" />
@@ -387,34 +460,34 @@
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/hero_cancel_button"
                         android:layout_width="wrap_content"
-                        android:layout_height="68dp"
-                        android:paddingStart="28dp"
-                        android:paddingEnd="28dp"
+                        android:layout_height="62dp"
+                        android:paddingStart="24dp"
+                        android:paddingEnd="24dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
                         android:text="@string/core_btn_cancel_conn"
-                        android:textSize="20sp"
+                        android:textSize="18sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
-                        android:textColor="@color/hql_text"
-                        app:backgroundTint="@color/hql_surface_top"
-                        app:strokeColor="@color/hql_outline"
-                        app:strokeWidth="2dp"
-                        app:cornerRadius="34dp"
+                        android:textColor="@color/hql_error"
+                        app:backgroundTint="@color/hql_error_container"
+                        app:strokeColor="@color/hql_error"
+                        app:strokeWidth="1.5dp"
+                        app:cornerRadius="31dp"
                         android:visibility="gone" />
                 </LinearLayout>
 
-                <!-- 3 modos limpios de transporte para Android Auto -->
+                <!-- SLEEK UNIFIED TRANSPORT RAIL (non-blinding dark cards with active mint border) -->
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="18dp"
-                    android:text="@string/core_modes_header"
-                    android:textSize="15sp"
-                    android:textColor="@color/hql_accent"
+                    android:text="@string/qu_home_transport_label"
+                    android:textSize="12.5sp"
+                    android:textColor="@color/hql_text_faint"
                     android:fontFamily="sans-serif-medium"
                     android:textStyle="bold"
-                    android:letterSpacing="0.04" />
+                    android:letterSpacing="0.08" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -426,57 +499,57 @@
                         android:id="@+id/mode_btn_wifi_direct"
                         android:layout_width="0dp"
                         android:layout_weight="1"
-                        android:layout_height="74dp"
+                        android:layout_height="62dp"
                         android:layout_marginEnd="10dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
                         android:paddingHorizontal="12dp"
-                        android:text="@string/core_mode_wifi_on"
-                        android:textSize="16sp"
+                        android:text="@string/qu_home_mode_p2p"
+                        android:textSize="15sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
-                        android:textColor="@color/hql_bg"
-                        app:backgroundTint="@color/hql_accent"
+                        android:textColor="@color/hql_accent"
+                        app:backgroundTint="@color/hql_accent_container"
                         app:strokeColor="@color/hql_accent"
                         app:strokeWidth="2dp"
-                        app:cornerRadius="18dp" />
+                        app:cornerRadius="16dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/mode_btn_hotspot"
                         android:layout_width="0dp"
                         android:layout_weight="1"
-                        android:layout_height="74dp"
+                        android:layout_height="62dp"
                         android:layout_marginEnd="10dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
                         android:paddingHorizontal="12dp"
-                        android:text="@string/core_mode_hotspot_off"
-                        android:textSize="16sp"
+                        android:text="@string/qu_home_mode_hotspot"
+                        android:textSize="15sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
-                        android:textColor="@color/hql_text"
-                        app:backgroundTint="@color/hql_surface_top"
+                        android:textColor="@color/hql_text_dim"
+                        app:backgroundTint="@color/hql_surface_hi"
                         app:strokeColor="@color/hql_outline"
-                        app:strokeWidth="2dp"
-                        app:cornerRadius="18dp" />
+                        app:strokeWidth="1.5dp"
+                        app:cornerRadius="16dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/mode_btn_usb"
                         android:layout_width="0dp"
                         android:layout_weight="1"
-                        android:layout_height="74dp"
+                        android:layout_height="62dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
                         android:paddingHorizontal="12dp"
-                        android:text="@string/core_mode_usb_on"
-                        android:textSize="16sp"
+                        android:text="@string/qu_home_mode_usb_only"
+                        android:textSize="15sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
-                        android:textColor="@color/hql_text"
-                        app:backgroundTint="@color/hql_surface_top"
+                        android:textColor="@color/hql_text_dim"
+                        app:backgroundTint="@color/hql_surface_hi"
                         app:strokeColor="@color/hql_outline"
-                        app:strokeWidth="2dp"
-                        app:cornerRadius="18dp" />
+                        app:strokeWidth="1.5dp"
+                        app:cornerRadius="16dp" />
                 </LinearLayout>
 
                 <TextView
@@ -484,30 +557,29 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="@string/core_hero_sub_idle"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/hql_text" />
+                    android:text="@string/qu_home_usb_always_ready"
+                    android:textSize="13.5sp"
+                    android:textColor="@color/hql_text_faint" />
             </LinearLayout>
 
-            <!-- Anillo visual de estado / contador (solo anima cuando está conectando) -->
+            <!-- Connection Status Ring -->
             <FrameLayout
                 android:layout_width="0dp"
-                android:layout_weight="0.62"
+                android:layout_weight="0.56"
                 android:layout_height="match_parent"
                 android:gravity="center">
 
                 <com.headqlink.unit.extended.ConnectionRingView
                     android:id="@+id/connection_ring_view"
-                    android:layout_width="275dp"
-                    android:layout_height="275dp"
+                    android:layout_width="256dp"
+                    android:layout_height="256dp"
                     android:layout_gravity="center"
                     android:clickable="true"
                     android:focusable="true" />
             </FrameLayout>
         </LinearLayout>
 
-        <!-- Móviles vinculados por Bluetooth -->
+        <!-- UNIFIED PAIRED PHONES DOCK -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -515,14 +587,15 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/paired_section_header"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/core_paired_header"
-                android:textSize="16sp"
+                android:textSize="13sp"
                 android:textColor="@color/hql_accent"
                 android:fontFamily="sans-serif-medium"
                 android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:letterSpacing="0.08" />
 
             <LinearLayout
                 android:id="@+id/recent_devices_container"

@@ -227,7 +227,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:text="LEAPMOTOR C10  ·  QONECTA+"
+                android:text="ANDROID AUTO  ·  APPLE CARPLAY"
                 android:textAllCaps="true"
                 android:textColor="@color/hql_accent"
                 android:textSize="15sp"

@@ -1342,14 +1342,23 @@ class CarPlayController(
 
     private fun onIphoneDetached(device: UsbDevice) {
         if (closed || config.transport != CarPlayTransport.WIRED) return
+        val currentPhase = phase
         debugLog(
             "wired iPhone detached vid=0x${device.vendorId.toString(16)} " +
-                "pid=0x${device.productId.toString(16)} phase=$phase",
+                "pid=0x${device.productId.toString(16)} phase=$currentPhase",
         )
-        if (phase == Phase.DATAPATHS || phase == Phase.CONTROL) {
-            closeBestEffort("detached CSM") { csm?.close() }
-            closeBestEffort("detached USBMUX") { mux?.close() }
-            closeBestEffort("detached VPN/NCM") { vpnService?.detach() }
+        // Offload blocking socket/VPN/NCM teardown off the Main thread (BroadcastReceiver) to prevent ANR.
+        if (currentPhase == Phase.DATAPATHS || currentPhase == Phase.CONTROL) {
+            val activeCsm = csm
+            val activeMux = mux
+            val activeVpn = vpnService
+            Thread({
+                closeBestEffort("detached CSM") { activeCsm?.close() }
+                closeBestEffort("detached USBMUX") { activeMux?.close() }
+                closeBestEffort("detached VPN/NCM") { activeVpn?.detach() }
+            }, "CarPlay-UsbDetach").start()
+        } else if (currentPhase == Phase.IPHONE) {
+            onStatus(CarPlayStatus.WaitingForIphone)
         }
     }
 

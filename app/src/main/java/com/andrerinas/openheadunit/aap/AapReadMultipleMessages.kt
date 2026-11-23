@@ -46,8 +46,9 @@ internal class AapReadMultipleMessages(
 
         try {
             if (fifo.remaining() < size) {
-                AppLog.w("AapRead: FIFO overflow! Size: $size, Remaining: ${fifo.remaining()}. Clearing buffer.")
+                AppLog.e("AapRead: FIFO overflow! Size: $size, Remaining: ${fifo.remaining()}. Aborting read loop for clean resync.")
                 fifo.clear()
+                return -1
             }
             fifo.put(recvBuffer, 0, size)
             if (!processBulk()) {

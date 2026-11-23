@@ -4,13 +4,13 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="?attr/colorSurface">
+    android:background="@color/da_background">
 
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         app:elevation="0dp"
-        android:background="?attr/colorSurface">
+        android:background="@color/da_background">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
@@ -18,8 +18,8 @@
             android:layout_height="72dp"
             app:title="@string/keymap"
             app:navigationIcon="@drawable/ic_arrow_back_white"
-            app:titleTextColor="?android:attr/textColorPrimary"
-            app:navigationIconTint="?android:attr/textColorPrimary" />
+            app:titleTextColor="@color/hql_text"
+            app:navigationIconTint="@color/hql_accent" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -28,18 +28,22 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="12dp"
         app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
     <TextView
         android:id="@+id/keypress_debugger_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="20dp"
+        android:layout_margin="16dp"
+        android:padding="18dp"
         android:gravity="center"
         android:text="@string/keymap_test_hint"
-        android:textSize="18sp"
+        android:textSize="17sp"
         android:textStyle="bold"
-        android:textColor="?android:attr/textColorSecondary"
-        android:background="?attr/colorSurface" />
+        android:textColor="@color/hql_accent"
+        android:background="@drawable/bg_info_banner" />
 
 </LinearLayout>

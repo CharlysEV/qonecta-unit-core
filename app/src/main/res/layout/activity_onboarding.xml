@@ -77,41 +77,53 @@
             </LinearLayout>
         </ScrollView>
 
-        <!-- Step 1: Safety -->
-        <ScrollView
+        <!-- Step 1: Safety (checkbox always pinned visible, never clipped behind scroll) -->
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent">
-            <LinearLayout
-                android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/onb_safety_title"
-                    android:textAppearance="?attr/textAppearanceHeadline5"
-                    android:textSize="32sp"
-                    android:textStyle="bold" />
+                android:text="@string/onb_safety_title"
+                android:textColor="@color/hql_text"
+                android:textSize="30sp"
+                android:textStyle="bold" />
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:layout_marginTop="12dp"
+                android:fadeScrollbars="false">
                 <TextView
                     android:id="@+id/onb_safety_text"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:textAppearance="?attr/textAppearanceBody2"
-                    android:textSize="20sp"
-                    android:lineSpacingExtra="6dp" />
+                    android:padding="18dp"
+                    android:background="@drawable/da_card"
+                    android:textColor="@color/hql_text_dim"
+                    android:textSize="18sp"
+                    android:lineSpacingExtra="5dp" />
+            </ScrollView>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="4dp"
+                android:background="@drawable/bg_info_banner">
                 <com.google.android.material.checkbox.MaterialCheckBox
                     android:id="@+id/onb_safety_accept"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:minHeight="64dp"
-                    android:layout_marginTop="24dp"
-                    android:paddingStart="12dp"
-                    android:textSize="22sp"
+                    android:minHeight="58dp"
+                    android:paddingStart="10dp"
+                    android:textColor="@color/hql_text"
+                    android:textSize="20sp"
                     android:textStyle="bold"
                     android:text="@string/onb_safety_accept" />
             </LinearLayout>
-        </ScrollView>
+        </LinearLayout>
 
         <!-- Step 2: Connection (USB / WiFi) -->
         <ScrollView
@@ -947,58 +959,58 @@
 
     </ViewFlipper>
 
-    <!-- Bottom navigation -->
+    <!-- Bottom navigation: single compact row so maximum height stays available on car displays -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:paddingStart="24dp"
         android:paddingEnd="24dp"
         android:paddingTop="8dp"
         android:paddingBottom="16dp">
 
-        <!-- Secondary action on its own row so it never crowds Back/Next -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/onb_back"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            app:iconSize="30dp"
+            app:iconTint="@color/hql_text"
+            android:contentDescription="@string/back"
+            app:icon="@drawable/ic_arrow_back" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/onb_skip"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minHeight="56dp"
-            android:paddingHorizontal="24dp"
-            android:textSize="18sp"
+            android:paddingHorizontal="20dp"
+            android:layout_marginEnd="12dp"
+            android:textColor="@color/hql_text_dim"
+            android:textSize="17sp"
             android:textStyle="bold"
-            android:layout_gravity="center_horizontal"
             android:text="@string/onb_do_it_later" />
 
-        <!-- Primary navigation: compact back arrow + Next/Finish -->
-        <LinearLayout
-            android:layout_width="match_parent"
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/onb_next"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/onb_back"
-                style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="60dp"
-                android:layout_height="60dp"
-                app:iconSize="30dp"
-                android:contentDescription="@string/back"
-                app:icon="@drawable/ic_arrow_back" />
-            <View
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/onb_next"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minHeight="60dp"
-                android:paddingHorizontal="32dp"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                app:cornerRadius="16dp"
-                android:text="@string/onb_next" />
-        </LinearLayout>
+            android:minHeight="60dp"
+            android:paddingHorizontal="34dp"
+            android:textColor="@color/hql_on_accent"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textAllCaps="false"
+            app:backgroundTint="@color/hql_accent"
+            app:cornerRadius="18dp"
+            android:text="@string/onb_next" />
 
     </LinearLayout>
 

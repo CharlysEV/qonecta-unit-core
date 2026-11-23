@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="setting_background_color">#2C2C2C</color>
-    <color name="primary_dark">#000000</color>
-    <color name="divider_color">#1FFFFFFF</color>
-    <color name="adaptive_text_color">#FFFFFF</color>
-    <color name="text_primary">#f7f7f7</color>
+    <color name="setting_background_color">#101824</color>
+    <color name="primary_dark">#070B11</color>
+    <color name="divider_color">#223246</color>
+    <color name="adaptive_text_color">#F0F6FC</color>
+    <color name="text_primary">#F0F6FC</color>
     <color name="text_shadow">#00000000</color>
-    <color name="segmented_button_stroke">#CCCCCC</color>
+    <color name="segmented_button_stroke">#26374B</color>
 </resources>

@@ -30,6 +30,8 @@
 
     <fragment android:id="@+id/driveSettingsFragment" android:name="com.andrerinas.openheadunit.main.DriveSettingsFragment" android:label="@string/settings" />
 
+    <fragment android:id="@+id/qonectaSettingsFragment" android:name="com.andrerinas.openheadunit.main.QonectaSettingsFragment" android:label="@string/qu_set_title" />
+
     <fragment
         android:id="@+id/settingsFragment"
         android:name="com.andrerinas.openheadunit.main.SettingsFragment"

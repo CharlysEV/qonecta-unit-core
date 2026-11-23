@@ -102,15 +102,14 @@ class OnboardingActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Match the app theme overlays used by MainActivity/SettingsActivity so the wizard
-        // honours Extreme Dark (pure black) and the gradient background.
-        val isNightActive = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-            Configuration.UI_MODE_NIGHT_YES
-        if (settings.appTheme == Settings.AppTheme.EXTREME_DARK ||
-            (settings.useExtremeDarkMode && isNightActive)) {
-            theme.applyStyle(R.style.ThemeOverlay_ExtremeDark, true)
-        } else if (settings.useGradientBackground) {
-            theme.applyStyle(R.style.ThemeOverlay_GradientBackground, true)
+        // Always use Qonecta's unified dark cockpit palette for Onboarding so the head unit
+        // never flashes blinding white in the car.
+        theme.applyStyle(R.style.ThemeOverlay_DiAutoSettings, true)
+        window.statusBarColor = 0xFF070B11.toInt()
+        window.navigationBarColor = 0xFF070B11.toInt()
+        androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
         }
 
         setContentView(R.layout.activity_onboarding)
@@ -142,8 +141,9 @@ class OnboardingActivity : BaseActivity() {
         findViewById<View>(R.id.onb_extra_keymap).setOnClickListener {
             finishOnboardingInto(R.id.keymapFragment)
         }
+        findViewById<View>(R.id.onb_extra_mic).visibility = View.GONE
         findViewById<View>(R.id.onb_extra_mic).setOnClickListener {
-            finishOnboardingInto(R.id.micSettingsFragment)
+            finishOnboardingInto(R.id.keymapFragment)
         }
 
         backBtn.setOnClickListener { if (step > 0) goBack() }

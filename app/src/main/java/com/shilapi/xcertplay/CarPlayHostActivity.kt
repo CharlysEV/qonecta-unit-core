@@ -398,15 +398,12 @@ class CarPlayHostActivity : ComponentActivity() {
         if (intent.action == "android.hardware.usb.action.USB_DEVICE_ATTACHED") {
             AirPlayPersistence.saveWirelessEnabled(this, false)
         }
-        // Yield Android Auto wireless P2P/BT/active session before CarPlay claims the radios or USB.
-        if (!simulateIphone) {
-            runCatching {
-                startService(
-                    Intent(this, com.andrerinas.openheadunit.aap.AapService::class.java).apply {
-                        action = com.andrerinas.openheadunit.aap.AapService.ACTION_STOP_WIRELESS
-                    },
-                )
-            }
+        // Yield Android Auto wireless P2P/BT/active session before CarPlay claims the radios or USB,
+        // without cold-starting AapService if it is not running.
+        if (!simulateIphone && com.andrerinas.openheadunit.aap.AapService.isServiceRunning()) {
+            Thread({
+                com.andrerinas.openheadunit.aap.AapService.releaseWirelessForHandoff(1200L)
+            }, "CarPlay-AaHandoff").start()
         }
         if (runCatching { LeapCarPlayBootstrap.ensure(this) }.isFailure) {
             startActivity(Intent(this, LeapCarPlayActivity::class.java))
@@ -3349,8 +3346,23 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun showLeapCarPlayHome(page: String = "home") {
         controller?.sendTouch(emptyList())
-        startActivity(Intent(this, LeapCarPlayActivity::class.java)
-            .putExtra("page", page).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        if (page == "settings") {
+            startActivity(
+                Intent(this, com.andrerinas.openheadunit.main.SettingsActivity::class.java)
+                    .putExtra(com.andrerinas.openheadunit.main.SettingsActivity.EXTRA_INITIAL_TAB, 1)
+                    .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            )
+            return
+        }
+        runCatching {
+            com.andrerinas.openheadunit.App.provide(this).settings.lastHomeProtocol = "carplay"
+        }
+        startActivity(
+            Intent(this, com.andrerinas.openheadunit.main.MainActivity::class.java)
+                .putExtra("extra_home_protocol", "carplay")
+                .putExtra("extra_carplay_recovery", page == "wireless-recovery")
+                .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        )
     }
 
     private fun openSettingsMenu() = showLeapCarPlayHome("settings")

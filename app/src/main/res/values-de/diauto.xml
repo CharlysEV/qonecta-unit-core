@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="da_brand">Qonecta Unit</string>
+    <string name="da_tagline">DEIN SMARTPHONE. DEINE FAHRT.</string>
+    <string name="da_headline">Eine vertraute Fahrt.</string>
+    <string name="da_description">Karten, Musik und Anrufe.\nAndroid Auto direkt auf dem Fahrzeugdisplay.</string>
+    <string name="da_connect">Smartphone verbinden</string>
+    <string name="da_open">Android Auto öffnen</string>
+    <string name="da_ready">Bereit</string>
+    <string name="da_connecting">Verbindung wird hergestellt…</string>
+    <string name="da_connected">Android Auto ist verbunden</string>
+    <string name="da_hint">Kopple dein Smartphone per Bluetooth mit dem Fahrzeug und tippe auf Verbinden. Bluetooth und WLAN eingeschaltet lassen.</string>
+    <string name="da_wireless">KABELLOSES ANDROID AUTO</string>
+    <string name="da_usb">Per USB verbinden</string>
+    <string name="da_usb_hint">Lieber per Kabel? Smartphone einfach anstecken.</string>
+    <string name="da_settings">Einstellungen</string>
+    <string name="da_settings_hint">Alles an einem Ort.</string>
+    <string name="da_close">Beenden</string>
+    <string name="da_pair">Smartphone koppeln</string>
+    <string name="da_no_paired">Kopple dein Android-Smartphone zuerst per Bluetooth mit dem Fahrzeug und kehre dann zurück.</string>
+    <string name="da_bluetooth_off">Aktiviere Bluetooth in den Fahrzeugeinstellungen, um dein Smartphone zu verbinden.</string>
+    <string name="da_system_settings">Bluetooth-Einstellungen</string>
+    <string name="da_device">Android-Smartphone</string>
+    <string name="da_preferences">Deine Fahrt, dein Stil.</string>
+    <string name="da_preferences_hint">Verbindung, Anzeige und Audio an einem Ort.</string>
+    <string name="da_automation">Automatische Verbindung</string>
+    <string name="da_automation_hint">Automatisch wieder mit dem Smartphone verbinden.</string>
+    <string name="da_display">Anzeige und Leistung</string>
+    <string name="da_display_hint">Auflösung, Bildrate und Audio-Optionen.</string>
+    <string name="da_permissions">Berechtigungen</string>
+    <string name="da_permissions_hint">Bluetooth- und Standortzugriff prüfen.</string>
+    <string name="da_about">Über Qonecta Unit</string>
+    <string name="da_about_hint">Version, Lizenzen und Open-Source-Hinweise.</string>
+    <string name="da_saved_hint">Änderungen an den Videoeinstellungen gelten ab der nächsten Verbindung.</string>
+    <string name="da_settings_subtitle">Anzeige, Audio und Verbindung anpassen.</string>
+    <string name="da_bluetooth_music">Musik über Fahrzeug-Bluetooth</string>
+    <string name="da_bluetooth_music_hint">Musik weiterhin über das Fahrzeug-Bluetooth abspielen; Navigation und Assistent bleiben aktiv. Nach Änderung neu verbinden.</string>
+</resources>

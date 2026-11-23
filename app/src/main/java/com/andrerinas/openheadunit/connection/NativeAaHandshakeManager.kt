@@ -191,8 +191,14 @@ class NativeAaHandshakeManager(
                 @Suppress("DEPRECATION")
                 intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
             }
+            val configuredMacs = settings.autoStartBluetoothDeviceMacs
+            val devAddr = device?.address
+            if (configuredMacs.isNotEmpty() && !devAddr.isNullOrBlank() && devAddr !in configuredMacs) {
+                AppLog.d("NativeAA: Ignoring BT drop from non-configured device $devAddr")
+                return
+            }
             AppLog.i(
-                "NativeAA: Bluetooth hands-free/ACL drop observed ($action, ${device?.address ?: "?"}) " +
+                "NativeAA: Bluetooth hands-free/ACL drop observed ($action, ${devAddr ?: "?"}) " +
                     "while waiting for phone — triggering immediate wake poke."
             )
             lastPokeTriggerCredentials = null
@@ -200,7 +206,34 @@ class NativeAaHandshakeManager(
         }
     }
 
+    private val btAdapterStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context?, intent: Intent?) {
+            if (intent?.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
+            val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
+            if (state == BluetoothAdapter.STATE_ON && isRunning && !aaListenersClosedForSession && !isRfcommListening) {
+                AppLog.i("NativeAA: Bluetooth adapter turned back ON — restarting RFCOMM handshake server.")
+                stop()
+                start()
+            } else if (state == BluetoothAdapter.STATE_TURNING_OFF || state == BluetoothAdapter.STATE_OFF) {
+                isRfcommListening = false
+            }
+        }
+    }
+    @Volatile private var isRfcommListening = false
+    @Volatile private var btStateReceiverRegistered = false
+
     private fun registerHfpDropWakeReceiver() {
+        if (!btStateReceiverRegistered) {
+            runCatching {
+                ContextCompat.registerReceiver(
+                    context.applicationContext,
+                    btAdapterStateReceiver,
+                    IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+                    ContextCompat.RECEIVER_EXPORTED,
+                )
+                btStateReceiverRegistered = true
+            }
+        }
         if (hfpDropReceiverRegistered) return
         runCatching {
             val filter = IntentFilter().apply {
@@ -220,6 +253,10 @@ class NativeAaHandshakeManager(
     }
 
     private fun unregisterHfpDropWakeReceiver() {
+        if (btStateReceiverRegistered) {
+            btStateReceiverRegistered = false
+            runCatching { context.applicationContext.unregisterReceiver(btAdapterStateReceiver) }
+        }
         if (!hfpDropReceiverRegistered) return
         hfpDropReceiverRegistered = false
         runCatching { context.applicationContext.unregisterReceiver(hfpDropWakeReceiver) }
@@ -327,7 +364,7 @@ class NativeAaHandshakeManager(
     // not just whether the manager was start()ed. See the "Re-arm on Bluetooth reconnect" fix
     // this restores the invariant for: isActive() must mean "genuinely able to accept," not
     // "believed to be running."
-    fun isActive(): Boolean = isRunning && !aaListenersClosedForSession
+    fun isActive(): Boolean = isRunning && !aaListenersClosedForSession && isRfcommListening
 
     fun hasCredentials(): Boolean = credentials != null
 
@@ -401,6 +438,7 @@ class NativeAaHandshakeManager(
         val primaryAaJob = scope.launch(Dispatchers.IO + CoroutineName("NativeAa-RfcommServer")) {
             try {
                 aaServerSocket = adapter.listenUsingRfcommWithServiceRecord("AA BT Listener", AA_UUID)
+                isRfcommListening = true
                 AppLog.i("NativeAA: ACTIVELY LISTENING on Android Auto UUID ($AA_UUID) on radio [$localRadioName]... Waiting for phone to connect back!")
                 while (isRunning && isActive) {
                     val socket = aaServerSocket?.accept()
@@ -421,6 +459,8 @@ class NativeAaHandshakeManager(
                 } else {
                     AppLog.d("NativeAA: AA Server socket closed cleanly.")
                 }
+            } finally {
+                isRfcommListening = false
             }
         }
         serverJobs.add(primaryAaJob)
@@ -915,8 +955,9 @@ class NativeAaHandshakeManager(
 
         pokeJob?.cancel()
         pokeJob = scope.launch(Dispatchers.IO + CoroutineName("NativeAa-Wakeup")) {
-            AppLog.d("NativeAA: triggerPoke() delay starting (2s)...")
-            delay(2000) // Small safety delay before connecting
+            val initialDelayMs = if (credentials != null) 350L else 1200L
+            AppLog.d("NativeAA: triggerPoke() delay starting (${initialDelayMs}ms)...")
+            delay(initialDelayMs) // Fast start when credentials are already warm
 
             while (isRunning && isActive) {
                 val settling = isHandoffSettling()
@@ -1025,6 +1066,11 @@ class NativeAaHandshakeManager(
             }
         }
         val adapter = BluetoothHelper.getBluetoothAdapter(context) ?: return
+        if (!isActive()) {
+            AppLog.i("NativeAA: RFCOMM listener not active during manualPoke — restarting listener first.")
+            stop()
+            start()
+        }
         try {
             val device = adapter.getRemoteDevice(address)
             AppLog.i("NativeAA: Manual poke requested for ${device.name} ($address)")
@@ -1050,7 +1096,7 @@ class NativeAaHandshakeManager(
                 val woke = pokeDevice(device, holdMs = 20000, isManualUserRequest = true)
                 AppLog.i("NativeAA: Manual poke to ${device.name} finished (woke=$woke).")
                 if (isRunning && !isHandshakeInFlight() && !isHandoffSettling() && !commManager.isConnected) {
-                    val radioHint = localRadioName.takeIf { it.isNotBlank() && it != "?" } ?: "Bluetooth del coche"
+                    val radioHint = localRadioName.takeIf { it.isNotBlank() && it != "?" } ?: "Bluetooth"
                     AapService.wirelessStatusText.value = context.getString(
                         com.andrerinas.openheadunit.R.string.core_live_bt_busy_hint,
                         radioHint
@@ -1664,7 +1710,11 @@ class NativeAaHandshakeManager(
         val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
         cos.writeString(1, ssid)
         cos.writeString(2, key)
-        cos.writeString(3, bssid.orEmpty())
+        // Proto2 optional field 3: MUST omit when BSSID is null/blank so Gearhead WifiNetworkSpecifier
+        // does not reject an empty string MAC address (e.g. on Hotspot/LocalHotspot transports).
+        if (!bssid.isNullOrBlank()) {
+            cos.writeString(3, bssid)
+        }
         cos.writeEnum(4, securityMode)
         cos.writeEnum(5, apType)
         for (ch in channels) {
@@ -1681,7 +1731,7 @@ class NativeAaHandshakeManager(
         ssid: String,
         key: String,
         bssid: String?,
-        @Suppress("UNUSED_PARAMETER") transport: NativeTransport
+        transport: NativeTransport
     ) {
         val baos = java.io.ByteArrayOutputStream()
         val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
@@ -1689,6 +1739,11 @@ class NativeAaHandshakeManager(
         cos.writeInt32(2, port)
         cos.writeInt32(3, 0)
         cos.writeByteArray(4, encodeWppInfo(ip, port))
+        val apType = if (transport == NativeTransport.HOTSPOT) {
+            Wireless.AccessPointType.STATIC_VALUE
+        } else {
+            Wireless.AccessPointType.DYNAMIC_VALUE
+        }
         if (ssid.isNotEmpty()) {
             cos.writeByteArray(
                 5,
@@ -1697,7 +1752,7 @@ class NativeAaHandshakeManager(
                     key = key,
                     bssid = bssid,
                     securityMode = Wireless.SecurityMode.WPA2_PERSONAL_VALUE,
-                    apType = Wireless.AccessPointType.DYNAMIC_VALUE,
+                    apType = apType,
                     channels = DEFAULT_5GHZ_CHANNELS_MHZ
                 )
             )
@@ -1724,15 +1779,22 @@ class NativeAaHandshakeManager(
         ssid: String,
         key: String,
         bssid: String?,
-        @Suppress("UNUSED_PARAMETER") transport: NativeTransport
+        transport: NativeTransport
     ) {
         val baos = java.io.ByteArrayOutputStream()
         val cos = com.google.protobuf.CodedOutputStream.newInstance(baos)
         cos.writeString(1, ssid)
         cos.writeString(2, key)
-        cos.writeString(3, bssid.orEmpty())
+        if (!bssid.isNullOrBlank()) {
+            cos.writeString(3, bssid)
+        }
         cos.writeEnum(4, Wireless.SecurityMode.WPA2_PERSONAL_VALUE)
-        cos.writeEnum(5, Wireless.AccessPointType.DYNAMIC_VALUE)
+        val apType = if (transport == NativeTransport.HOTSPOT) {
+            Wireless.AccessPointType.STATIC_VALUE
+        } else {
+            Wireless.AccessPointType.DYNAMIC_VALUE
+        }
+        cos.writeEnum(5, apType)
         for (ch in DEFAULT_5GHZ_CHANNELS_MHZ) {
             cos.writeInt32(6, ch)
         }

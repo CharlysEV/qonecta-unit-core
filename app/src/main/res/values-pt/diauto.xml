@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="da_brand">Qonecta Unit</string>
+    <string name="da_tagline">O TEU TELEMÓVEL. A TUA VIAGEM.</string>
+    <string name="da_headline">Uma condução familiar.</string>
+    <string name="da_description">Mapas, música e chamadas.\nAndroid Auto diretamente no ecrã do carro.</string>
+    <string name="da_connect">Ligar telemóvel</string>
+    <string name="da_open">Abrir Android Auto</string>
+    <string name="da_ready">Pronto</string>
+    <string name="da_connecting">A ligar ao telemóvel…</string>
+    <string name="da_connected">Android Auto está ligado</string>
+    <string name="da_hint">Emparelha o telemóvel nas definições Bluetooth do carro e toca em Ligar. Mantém Bluetooth e Wi-Fi ativos.</string>
+    <string name="da_wireless">ANDROID AUTO SEM FIOS</string>
+    <string name="da_usb">Ligar por USB</string>
+    <string name="da_usb_hint">Prefere cabo? Liga o telemóvel à porta USB.</string>
+    <string name="da_settings">Definições</string>
+    <string name="da_settings_hint">Tudo num só lugar.</string>
+    <string name="da_close">Sair</string>
+    <string name="da_pair">Emparelhar telemóvel</string>
+    <string name="da_no_paired">Emparelha primeiro o teu telemóvel Android com o carro por Bluetooth e regressa aqui.</string>
+    <string name="da_bluetooth_off">Ativa o Bluetooth nas definições do carro para ligar o telemóvel.</string>
+    <string name="da_system_settings">Definições Bluetooth</string>
+    <string name="da_device">Telemóvel Android</string>
+    <string name="da_preferences">A tua viagem, à tua maneira.</string>
+    <string name="da_preferences_hint">Ligação, ecrã e som num só lugar.</string>
+    <string name="da_automation">Ligação automática</string>
+    <string name="da_automation_hint">Volta a ligar automaticamente ao teu telemóvel.</string>
+    <string name="da_display">Ecrã e desempenho</string>
+    <string name="da_display_hint">Resolução, FPS e definições de áudio.</string>
+    <string name="da_permissions">Permissões</string>
+    <string name="da_permissions_hint">Verifica o acesso a Bluetooth e localização.</string>
+    <string name="da_about">Acerca de Qonecta Unit</string>
+    <string name="da_about_hint">Versão, licenças e créditos open source.</string>
+    <string name="da_saved_hint">As alterações de vídeo aplicam-se na próxima ligação.</string>
+    <string name="da_settings_subtitle">Ajusta o ecrã, som e ligação.</string>
+    <string name="da_bluetooth_music">Música por Bluetooth do carro</string>
+    <string name="da_bluetooth_music_hint">Mantém a música no leitor Bluetooth do carro; a navegação e o assistente continuam ativos. Volta a ligar o Android Auto após alterar.</string>
+</resources>

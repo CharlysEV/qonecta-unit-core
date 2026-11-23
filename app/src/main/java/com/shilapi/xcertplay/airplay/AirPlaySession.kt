@@ -251,6 +251,8 @@ class AirPlaySession(
         )
 
     private fun runControl() {
+        // Guard pre-RECORD pairing/SETUP phases against silent Wi-Fi drops (avoid 2h TCP keepalive hangs).
+        runCatching { socket.soTimeout = HANDSHAKE_SOCKET_TIMEOUT_MILLIS }
         val input = BufferedInputStream(socket.getInputStream())
         val output = BufferedOutputStream(socket.getOutputStream())
         var accumulated = ByteArray(0)
@@ -743,7 +745,8 @@ class AirPlaySession(
 
         const val READ_CHUNK_BYTES = 16 * 1024
         const val MAX_CONTROL_BUFFER_BYTES = 4 * 1024 * 1024
-        const val CONTROL_SOCKET_TIMEOUT_MILLIS = 30_000
+        const val HANDSHAKE_SOCKET_TIMEOUT_MILLIS = 15_000
+        const val CONTROL_SOCKET_TIMEOUT_MILLIS = 15_000
         const val EVENT_READY_POLL_MILLIS = 25L
         const val NANOS_PER_MILLISECOND = 1_000_000L
     }

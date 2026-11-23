@@ -15,8 +15,8 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 
 class SocketAccessoryConnection(private val ip: String, private val port: Int, private val context: Context) : AccessoryConnection {
-    private var output: OutputStream? = null
-    private var input: DataInputStream? = null
+    @Volatile private var output: OutputStream? = null
+    @Volatile private var input: DataInputStream? = null
     private var transport: Socket
     // Only true for genuine Nearby tunnels, where the handshake's AA-16.4+ settle delay
     // and stale-byte drain must be skipped because every byte from the start matters.
@@ -89,7 +89,8 @@ class SocketAccessoryConnection(private val ip: String, private val port: Int, p
             if (!transport.isConnected) {
                 val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val isLocalP2pOrApTarget = ip.startsWith("192.168.49.") || ip.startsWith("192.168.43.")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !isLocalP2pOrApTarget) {
                     var netToBind: android.net.Network? = null
                     try {
                         var wifiNetwork: android.net.Network? = null

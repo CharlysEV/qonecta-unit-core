@@ -4,13 +4,13 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="?android:attr/colorBackground">
+    android:background="@color/da_background">
 
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         app:elevation="0dp"
-        android:background="?android:attr/colorBackground">
+        android:background="@color/da_background">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
@@ -18,8 +18,8 @@
             android:layout_height="72dp"
             app:title="@string/dpi"
             app:navigationIcon="@drawable/ic_arrow_back_white"
-            app:titleTextColor="?android:attr/textColorPrimary"
-            app:navigationIconTint="?android:attr/textColorPrimary" />
+            app:titleTextColor="@color/hql_text"
+            app:navigationIconTint="@color/hql_accent" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -32,29 +32,37 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="24dp">
+            android:paddingHorizontal="32dp"
+            android:paddingVertical="18dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:gravity="center_vertical"
+                android:padding="20dp"
+                android:background="@drawable/da_card">
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:layout_marginEnd="16dp"
                     android:orientation="vertical">
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/dpi_automatic"
-                        android:textAppearance="?attr/textAppearanceSubtitle1" />
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/hql_text" />
                     <TextView
                         android:id="@+id/dpi_auto_desc"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
                         android:text="@string/dpi_automatic_desc"
-                        android:textAppearance="?attr/textAppearanceCaption" />
+                        android:textSize="15sp"
+                        android:textColor="@color/hql_text_dim" />
                 </LinearLayout>
                 <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/dpi_auto_switch"
@@ -62,27 +70,37 @@
                     android:layout_height="wrap_content" />
             </LinearLayout>
 
-            <com.andrerinas.openheadunit.view.DpiPickerView
-                android:id="@+id/dpi_picker"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp" />
+                android:layout_marginTop="14dp"
+                android:orientation="vertical"
+                android:padding="20dp"
+                android:background="@drawable/da_card">
 
-            <TextView
-                android:id="@+id/dpi_over_panel_warning"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:textColor="?attr/colorError"
-                android:textAppearance="?attr/textAppearanceCaption"
-                android:visibility="gone" />
+                <com.andrerinas.openheadunit.view.DpiPickerView
+                    android:id="@+id/dpi_picker"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="@string/onb_dpi_help"
-                android:textAppearance="?attr/textAppearanceCaption" />
+                <TextView
+                    android:id="@+id/dpi_over_panel_warning"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:textColor="@color/hql_warn"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="@string/onb_dpi_help"
+                    android:textColor="@color/hql_text_dim"
+                    android:textSize="15sp" />
+            </LinearLayout>
 
         </LinearLayout>
     </ScrollView>

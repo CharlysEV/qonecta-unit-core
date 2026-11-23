@@ -108,7 +108,11 @@ object PhonePickerDialog {
         header.addView(titleCol, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         val countBadge = TextView(context).apply {
-            text = "${items.size} ${if (items.size == 1) "dispositivo" else "dispositivos"}"
+            text = if (items.size == 1) {
+                context.getString(R.string.qu_picker_device_one)
+            } else {
+                context.getString(R.string.qu_picker_device_many, items.size)
+            }
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setTextColor(Palette.ACCENT)
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
@@ -269,7 +273,11 @@ object PhonePickerDialog {
                 gravity = Gravity.CENTER_VERTICAL
             }
             val iconDot = TextView(context).apply {
-                text = if (item.highlighted) "★ RECIENTE" else "● BLUETOOTH + WI-FI"
+                text = if (item.highlighted) {
+                    context.getString(R.string.qu_picker_recent)
+                } else {
+                    context.getString(R.string.qu_picker_bt_wifi)
+                }
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                 setTextColor(if (item.highlighted) Palette.ACCENT else Palette.FAINT)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
@@ -319,7 +327,7 @@ object PhonePickerDialog {
                 typeface = Typeface.MONOSPACE
             }
             val connectHint = TextView(context).apply {
-                text = "Conectar →"
+                text = context.getString(R.string.qu_picker_connect)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
                 setTextColor(Palette.ACCENT)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)

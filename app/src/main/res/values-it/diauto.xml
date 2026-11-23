@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="da_brand">Qonecta Unit</string>
+    <string name="da_tagline">IL TUO TELEFONO. IL TUO VIAGGIO.</string>
+    <string name="da_headline">Una guida familiare.</string>
+    <string name="da_description">Mappe, musica e chiamate.\nAndroid Auto direttamente sullo schermo dell’auto.</string>
+    <string name="da_connect">Connetti telefono</string>
+    <string name="da_open">Apri Android Auto</string>
+    <string name="da_ready">Pronto</string>
+    <string name="da_connecting">Connessione al telefono…</string>
+    <string name="da_connected">Android Auto è connesso</string>
+    <string name="da_hint">Associa il telefono nelle impostazioni Bluetooth dell’auto e tocca Connetti. Tieni attivi Bluetooth e Wi-Fi.</string>
+    <string name="da_wireless">ANDROID AUTO WIRELESS</string>
+    <string name="da_usb">Connetti via USB</string>
+    <string name="da_usb_hint">Preferisci il cavo? Collega il telefono.</string>
+    <string name="da_settings">Impostazioni</string>
+    <string name="da_settings_hint">Tutto in un unico posto.</string>
+    <string name="da_close">Esci</string>
+    <string name="da_pair">Associa telefono</string>
+    <string name="da_no_paired">Associa prima il tuo telefono Android all’auto tramite Bluetooth, poi torna qui.</string>
+    <string name="da_bluetooth_off">Attiva il Bluetooth nelle impostazioni dell’auto per connettere il telefono.</string>
+    <string name="da_system_settings">Impostazioni Bluetooth</string>
+    <string name="da_device">Telefono Android</string>
+    <string name="da_preferences">La tua guida, a modo tuo.</string>
+    <string name="da_preferences_hint">Connessione, schermo e audio in un solo posto.</string>
+    <string name="da_automation">Connessione automatica</string>
+    <string name="da_automation_hint">Riconnessione automatica al tuo telefono.</string>
+    <string name="da_display">Schermo e prestazioni</string>
+    <string name="da_display_hint">Risoluzione, FPS e impostazioni audio.</string>
+    <string name="da_permissions">Autorizzazioni</string>
+    <string name="da_permissions_hint">Controlla l’accesso a Bluetooth e posizione.</string>
+    <string name="da_about">Info su Qonecta Unit</string>
+    <string name="da_about_hint">Versione, licenze e crediti open source.</string>
+    <string name="da_saved_hint">Le modifiche video si applicano alla prossima connessione.</string>
+    <string name="da_settings_subtitle">Regola schermo, audio e connessione.</string>
+    <string name="da_bluetooth_music">Musica via Bluetooth dell’auto</string>
+    <string name="da_bluetooth_music_hint">Mantieni la musica sul lettore Bluetooth dell’auto; navigazione e assistente restano attivi. Riconnetti Android Auto dopo la modifica.</string>
+</resources>

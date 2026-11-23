@@ -49,10 +49,12 @@ class UsbAttachedActivity : Activity() {
     private fun forwardAppleUsbToCarPlay(device: UsbDevice): Boolean {
         return try {
             AppLog.i("Apple USB device attached (${UsbDeviceCompat(device).uniqueName}); stopping AA wireless and forwarding to CarPlayHostActivity")
-            runCatching {
-                ContextCompat.startForegroundService(this, Intent(this, AapService::class.java).apply {
-                    action = AapService.ACTION_STOP_WIRELESS
-                })
+            if (AapService.isServiceRunning()) {
+                runCatching {
+                    ContextCompat.startForegroundService(this, Intent(this, AapService::class.java).apply {
+                        action = AapService.ACTION_STOP_WIRELESS
+                    })
+                }
             }
             val carPlayIntent = Intent(UsbManager.ACTION_USB_DEVICE_ATTACHED).apply {
                 component = ComponentName(this@UsbAttachedActivity, "com.shilapi.xcertplay.CarPlayHostActivity")
@@ -100,7 +102,16 @@ class UsbAttachedActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleAttachIntent(intent)
+    }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAttachIntent(intent)
+    }
+
+    private fun handleAttachIntent(intent: Intent?) {
         AppLog.i("USB Intent: $intent")
 
         val isLocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
@@ -221,46 +232,5 @@ class UsbAttachedActivity : Activity() {
                 finish()
             }
         }.start()
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-
-        val isLocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
-            !(getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
-        if (!isLocked && !Settings(this).usbModeEnabled) {
-            finish()
-            return
-        }
-
-        resolveAppleDevice(intent)?.let { appleDevice ->
-            forwardAppleUsbToCarPlay(appleDevice)
-            finish()
-            return
-        }
-
-        val device = resolveUsbDevice(intent)
-        if (device == null || !UsbDeviceCompat.isAndroidDevice(device)) {
-            if (device != null) {
-                AppLog.i("Ignoring non-Android USB device in onNewIntent (VID: ${device.vendorId}): ${device.deviceName}")
-            }
-            finish()
-            return
-        }
-
-        AppLog.i(UsbDeviceCompat.getUniqueName(device))
-
-        if (!isLocked && App.provide(this).commManager.connectionState.value !is CommManager.ConnectionState.TransportStarted) {
-            if (UsbDeviceCompat.isInAccessoryMode(device)) {
-                AppLog.e("Usb in accessory mode")
-                ContextCompat.startForegroundService(this, Intent(this, AapService::class.java).apply {
-                    action = AapService.ACTION_CHECK_USB
-                })
-            }
-        } else {
-            AppLog.e("Thread already running")
-        }
-
-        finish()
     }
 }
