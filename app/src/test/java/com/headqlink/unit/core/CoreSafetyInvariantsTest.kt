@@ -288,4 +288,19 @@ class CoreSafetyInvariantsTest {
         assertTrue("start() after stop() must bump generation", ownership.generation > gen1)
         assertFalse("Pre-stop generation must stay fenced", ownership.current(gen1))
     }
+
+    @Test
+    fun diagnosticLogExportAlwaysPromptsUserForUsbAndNeverWritesInternalDownloads() {
+        val settingsFrag = locateAppFile("src/main/java/com/andrerinas/openheadunit/main/QonectaSettingsFragment.kt").readText()
+        assertTrue("QonectaSettingsFragment must use CarFiles.createDocumentIntent", settingsFrag.contains("CarFiles.createDocumentIntent"))
+        assertFalse("QonectaSettingsFragment must never auto-save logs to internal Downloads", settingsFrag.contains("saveToDownloads"))
+
+        val diagFrag = locateAppFile("src/main/java/com/andrerinas/openheadunit/main/DiagnosticsFragment.kt").readText()
+        assertTrue("DiagnosticsFragment must use CarFiles.createDocumentIntent", diagFrag.contains("CarFiles.createDocumentIntent"))
+        assertFalse("DiagnosticsFragment must never auto-save logs to internal Downloads", diagFrag.contains("saveToDownloads"))
+
+        val carPlayAct = locateAppFile("src/main/java/com/shilapi/xcertplay/LeapCarPlayActivity.kt").readText()
+        assertTrue("LeapCarPlayActivity must use CarFiles.createDocumentIntent", carPlayAct.contains("CarFiles.createDocumentIntent"))
+        assertFalse("LeapCarPlayActivity must never auto-save logs to internal Downloads", carPlayAct.contains("saveToDownloads"))
+    }
 }

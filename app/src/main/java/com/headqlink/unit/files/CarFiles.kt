@@ -34,6 +34,34 @@ object CarFiles {
     fun rootOrder(volumes: List<Volume>): List<String> =
         (volumes.filter { it.removable } + volumes.filterNot { it.removable }).map { it.rootId }.distinct()
 
+    /** Puro: identificador del primer pendrive USB extraíble montado, o null si no hay ninguno. */
+    fun preferredUsbRoot(volumes: List<Volume>): String? =
+        volumes.firstOrNull { it.removable }?.rootId
+
+    /**
+     * Intent `ACTION_CREATE_DOCUMENT` para que el usuario elija dónde guardar un archivo
+     * (por ejemplo un informe `.txt` de diagnóstico en su pendrive USB sin ocupar la memoria interna del coche).
+     * En Android 8+ (API 26+) fija `EXTRA_INITIAL_URI` directamente a la raíz del pendrive USB si está montado.
+     */
+    fun createDocumentIntent(
+        context: Context,
+        fileName: String,
+        mimeType: String = "text/plain",
+    ): Intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE)
+        type = mimeType
+        putExtra(Intent.EXTRA_TITLE, fileName)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val usbRoot = preferredUsbRoot(volumes(context))
+            if (usbRoot != null) {
+                putExtra(
+                    DocumentsContract.EXTRA_INITIAL_URI,
+                    DocumentsContract.buildRootUri(EXTERNAL_STORAGE, usbRoot),
+                )
+            }
+        }
+    }
+
     fun volumes(context: Context): List<Volume> {
         if (Build.VERSION.SDK_INT < 24) return emptyList()
         val sm = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager ?: return emptyList()

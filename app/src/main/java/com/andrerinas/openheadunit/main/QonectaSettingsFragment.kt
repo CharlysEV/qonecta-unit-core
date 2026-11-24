@@ -132,8 +132,9 @@ class QonectaSettingsFragment : Fragment() {
     }
 
     private val createDiagDocLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("text/plain")
-    ) { uri ->
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uri = if (result.resultCode == Activity.RESULT_OK) result.data?.data else null
         if (uri != null) exportUnifiedDiagnostics(uri)
     }
 
@@ -1153,11 +1154,10 @@ class QonectaSettingsFragment : Fragment() {
             val row = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
             row.addView(
                 pillActionButton(
-                    if (exportingDiag) getString(R.string.diagnostic_saving_report) else getString(R.string.qu_set_export_diag),
+                    if (exportingDiag) getString(R.string.diagnostic_saving_report) else "${getString(R.string.qu_set_export_diag)} (USB)",
                     primary = true,
                 ) {
-                    if (Build.VERSION.SDK_INT >= 29) exportUnifiedDiagnostics(null)
-                    else createDiagDocLauncher.launch(diagFileName())
+                    launchUsbDiagPicker()
                 },
                 LinearLayout.LayoutParams(0, dp(52), 1.3f).apply { marginEnd = dp(10) },
             )
@@ -1598,12 +1598,18 @@ class QonectaSettingsFragment : Fragment() {
 
     private fun diagFileName() = "QonectaUnit-core-report-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())}.txt"
 
-    private fun exportUnifiedDiagnostics(destination: Uri?) {
+    private fun launchUsbDiagPicker() {
+        val intent = CarFiles.createDocumentIntent(requireContext(), diagFileName(), "text/plain")
+        runCatching { createDiagDocLauncher.launch(intent) }.onFailure {
+            Toast.makeText(requireContext(), R.string.diagnostic_file_picker_unavailable, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun exportUnifiedDiagnostics(destination: Uri) {
         if (exportingDiag) return
         exportingDiag = true
         renderActiveTab(preserveScroll = true)
         val appCtx = requireContext().applicationContext
-        val fileName = diagFileName()
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
@@ -1613,14 +1619,21 @@ class QonectaSettingsFragment : Fragment() {
                         appendLine("--- Qonecta 5 GHz Accelerator ---")
                         appendLine("Channel: ${AapService.wifiDirectChannelInfo.value ?: "idle"}")
                         appendLine("Coexistence warning: ${AapService.wifiCoexistenceWarning.value ?: "none"}")
+                        for (name in com.shilapi.xcertplay.SessionLogFile.REPORT_NAMES) {
+                            val file = java.io.File(appCtx.filesDir, "logs/$name")
+                            if (file.isFile && file.length() > 0L) {
+                                appendLine()
+                                appendLine("--- CarPlay $name ---")
+                                file.useLines { lines ->
+                                    lines.forEach { line ->
+                                        com.shilapi.xcertplay.DiagnosticRedactor.redact(line)?.let { appendLine(it) }
+                                    }
+                                }
+                            }
+                        }
                     }
-                    if (destination != null) {
-                        DiagnosticExportStore.write(appCtx.contentResolver, destination, report)
-                        destination
-                    } else {
-                        check(Build.VERSION.SDK_INT >= 29)
-                        DiagnosticExportStore.saveToDownloads(appCtx.contentResolver, fileName, report)
-                    }
+                    DiagnosticExportStore.write(appCtx.contentResolver, destination, report)
+                    destination
                 }
             }
             exportingDiag = false
@@ -1629,7 +1642,7 @@ class QonectaSettingsFragment : Fragment() {
             result.onSuccess { uri ->
                 MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
                     .setTitle(R.string.diagnostic_report_saved)
-                    .setMessage(if (destination == null) "Downloads/QonectaUnit/$fileName" else getString(R.string.diagnostic_saved_to_your_selected_location))
+                    .setMessage(getString(R.string.diagnostic_saved_to_your_selected_location))
                     .setPositiveButton(R.string.share) { _, _ ->
                         runCatching {
                             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
@@ -1646,6 +1659,7 @@ class QonectaSettingsFragment : Fragment() {
                 MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
                     .setTitle(R.string.diagnostic_could_not_save_the_report)
                     .setMessage(R.string.diagnostic_save_failure_hint)
+                    .setPositiveButton(R.string.diagnostic_choose_location) { _, _ -> launchUsbDiagPicker() }
                     .setNegativeButton(R.string.close, null)
                     .show()
             }

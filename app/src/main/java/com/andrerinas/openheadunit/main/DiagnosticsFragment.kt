@@ -26,7 +26,8 @@ import java.util.Locale
 
 class DiagnosticsFragment : Fragment(R.layout.fragment_diagnostics) {
     private var exporting = false
-    private val destination = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+    private val destination = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = if (result.resultCode == android.app.Activity.RESULT_OK) result.data?.data else null
         if (uri != null) export(uri)
     }
     private val carFilesPickerLauncher = registerForActivityResult(
@@ -39,9 +40,7 @@ class DiagnosticsFragment : Fragment(R.layout.fragment_diagnostics) {
 
     override fun onViewCreated(view: View, state: Bundle?) {
         view.findViewById<MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { findNavController().popBackStack() }
-        view.findViewById<View>(R.id.save_diagnostic_report).setOnClickListener {
-            if (Build.VERSION.SDK_INT >= 29) export() else chooseLocation()
-        }
+        view.findViewById<View>(R.id.save_diagnostic_report).setOnClickListener { chooseLocation() }
         view.findViewById<View>(R.id.choose_diagnostic_location).setOnClickListener { chooseLocation() }
         view.findViewById<View>(R.id.car_files)?.setOnClickListener {
             val result = CarFiles.open(requireActivity()) { pickerIntent ->
@@ -56,16 +55,16 @@ class DiagnosticsFragment : Fragment(R.layout.fragment_diagnostics) {
     private fun fileName() = "QonectaUnit-core-report-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())}.txt"
 
     private fun chooseLocation() {
-        runCatching { destination.launch(fileName()) }.onFailure {
+        val intent = CarFiles.createDocumentIntent(requireContext(), fileName(), "text/plain")
+        runCatching { destination.launch(intent) }.onFailure {
             Toast.makeText(requireContext(), getString(R.string.diagnostic_file_picker_unavailable), Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun export(destination: Uri? = null) {
+    private fun export(destination: Uri) {
         if (exporting) return
         exporting = true
         val context = requireContext().applicationContext
-        val fileName = fileName()
         val button = view?.findViewById<MaterialButton>(R.id.save_diagnostic_report)
         button?.apply { isEnabled = false; text = getString(R.string.diagnostic_saving_report) }
         view?.findViewById<View>(R.id.choose_diagnostic_location)?.isEnabled = false
@@ -73,13 +72,8 @@ class DiagnosticsFragment : Fragment(R.layout.fragment_diagnostics) {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val report = DiagnosticReport.build(context)
-                    if (destination != null) {
-                        DiagnosticExportStore.write(context.contentResolver, destination, report)
-                        destination
-                    } else {
-                        check(Build.VERSION.SDK_INT >= 29)
-                        DiagnosticExportStore.saveToDownloads(context.contentResolver, fileName, report)
-                    }
+                    DiagnosticExportStore.write(context.contentResolver, destination, report)
+                    destination
                 }
             }
             exporting = false
@@ -89,7 +83,7 @@ class DiagnosticsFragment : Fragment(R.layout.fragment_diagnostics) {
             result.onSuccess { uri ->
                 MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
                     .setTitle(getString(R.string.diagnostic_report_saved))
-                    .setMessage(if (destination == null) "Downloads/QonectaUnit/$fileName" else getString(R.string.diagnostic_saved_to_your_selected_location))
+                    .setMessage(getString(R.string.diagnostic_saved_to_your_selected_location))
                     .setPositiveButton(R.string.share) { _, _ ->
                         runCatching {
                             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {

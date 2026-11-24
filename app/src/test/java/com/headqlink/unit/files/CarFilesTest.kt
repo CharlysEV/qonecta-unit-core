@@ -27,4 +27,16 @@ class CarFilesTest {
         assertEquals(listOf("primary"), CarFiles.rootOrder(listOf(CarFiles.Volume("primary", false))))
         assertEquals(emptyList<String>(), CarFiles.rootOrder(emptyList()))
     }
+
+    @Test
+    fun `preferredUsbRoot devuelve el primer pendrive extraible o null si no hay`() {
+        val withUsb = listOf(
+            CarFiles.Volume("primary", false),
+            CarFiles.Volume("9F42-1B0E", true),
+            CarFiles.Volume("ABCD-9999", true),
+        )
+        assertEquals("9F42-1B0E", CarFiles.preferredUsbRoot(withUsb))
+        assertEquals(null, CarFiles.preferredUsbRoot(listOf(CarFiles.Volume("primary", false))))
+        assertEquals(null, CarFiles.preferredUsbRoot(emptyList()))
+    }
 }

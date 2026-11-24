@@ -111,7 +111,8 @@ class LeapCarPlayActivity : ComponentActivity() {
         )
     }
 
-    private val export = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+    private val export = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = if (result.resultCode == android.app.Activity.RESULT_OK) result.data?.data else null
         if (uri != null) exportDiagnostics(uri)
     }
 
@@ -940,8 +941,7 @@ class LeapCarPlayActivity : ComponentActivity() {
             exportButton = settingsButton(
                 getString(if (exportInProgress) R.string.cp_btn_saving_report else R.string.cp_btn_save_report)
             ) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) exportDiagnostics()
-                else chooseReportDestination()
+                chooseReportDestination()
             }.apply { isEnabled = !exportInProgress }
             card.addView(exportButton, matchButton(10, 58))
             card.addView(
@@ -1435,22 +1435,17 @@ class LeapCarPlayActivity : ComponentActivity() {
         "QonectaCarPlay-${SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())}.txt"
 
     private fun chooseReportDestination() {
-        runCatching { export.launch(reportFileName()) }.onFailure {
-            toast(
-                getString(
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) R.string.cp_report_picker_fail_q
-                    else R.string.cp_report_picker_fail_legacy
-                )
-            )
+        val intent = com.headqlink.unit.files.CarFiles.createDocumentIntent(this, reportFileName(), "text/plain")
+        runCatching { export.launch(intent) }.onFailure {
+            toast(getString(R.string.cp_report_picker_fail_legacy))
         }
     }
 
-    private fun exportDiagnostics(uri: Uri? = null) {
+    private fun exportDiagnostics(uri: Uri) {
         if (exportInProgress) return
         exportInProgress = true
         exportButton?.apply { isEnabled = false; text = getString(R.string.cp_btn_saving_report) }
         val appContext = applicationContext
-        val fileName = reportFileName()
         Thread({
             val result = runCatching {
                 val report = buildString {
@@ -1476,10 +1471,7 @@ class LeapCarPlayActivity : ComponentActivity() {
                         }
                     }
                 }
-                if (uri != null) DiagnosticExportStore.write(appContext.contentResolver, uri, report)
-                else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    DiagnosticExportStore.saveToDownloads(appContext.contentResolver, fileName, report)
-                } else error("A save location is required")
+                DiagnosticExportStore.write(appContext.contentResolver, uri, report)
             }
             runOnUiThread {
                 exportInProgress = false
@@ -1488,7 +1480,7 @@ class LeapCarPlayActivity : ComponentActivity() {
                 if (result.isSuccess) {
                     darkDialog()
                         .setTitle(getString(R.string.cp_report_saved_title))
-                        .setMessage(if (uri == null) "Downloads/LeapCarPlay/$fileName" else getString(R.string.cp_report_saved_chosen))
+                        .setMessage(getString(R.string.cp_report_saved_chosen))
                         .setPositiveButton(getString(R.string.cp_btn_done), null)
                         .show()
                 } else {
