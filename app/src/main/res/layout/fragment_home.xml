@@ -154,6 +154,25 @@
                 app:iconPadding="6dp"
                 android:visibility="gone" />
 
+            <!-- Quick Support / Donations modal (QR PayPal & Ko-fi) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/home_coffee_button"
+                android:layout_width="50dp"
+                android:layout_height="50dp"
+                android:layout_marginEnd="8dp"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="☕"
+                android:textSize="18sp"
+                android:contentDescription="@string/core_donate_dialog_title"
+                android:textColor="#FFB547"
+                app:backgroundTint="@color/hql_surface_hi"
+                app:strokeColor="#66FFB547"
+                app:strokeWidth="1.5dp"
+                app:cornerRadius="16dp" />
+
             <!-- Unified Qonecta Settings -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/settings_button"

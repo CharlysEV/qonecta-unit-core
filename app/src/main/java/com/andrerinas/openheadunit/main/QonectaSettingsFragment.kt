@@ -59,6 +59,7 @@ import com.andrerinas.openheadunit.utils.SoftApStateReader
 import com.andrerinas.openheadunit.utils.SystemUI
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.headqlink.unit.files.CarFiles
+import com.headqlink.unit.files.CarReturnPillOverlay
 import com.shilapi.xcertplay.AirPlayPersistence
 import com.shilapi.xcertplay.CarPlayHostActivity
 import com.shilapi.xcertplay.CarPlayLoopbackSimulator
@@ -114,26 +115,55 @@ class QonectaSettingsFragment : Fragment() {
     private val carFilesPickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        CarReturnPillOverlay.dismiss()
         if (result.resultCode == Activity.RESULT_OK && result.data?.data != null) {
             Toast.makeText(requireContext(), getString(R.string.qu_files_picker_tip), Toast.LENGTH_LONG).show()
         }
     }
 
+    private val openUsbTreeLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        CarReturnPillOverlay.dismiss()
+        val uri = if (result.resultCode == Activity.RESULT_OK) result.data?.data else null
+        if (uri != null) {
+            runCatching {
+                requireContext().contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            settings.usbDiagTreeUri = uri.toString()
+            flashSaved()
+            exportUnifiedDiagnosticsToTree(uri)
+        }
+    }
+
+    private val overlayPermLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        CarReturnPillOverlay.dismiss()
+        if (isAdded) renderActiveTab(preserveScroll = true)
+    }
+
     private val exportBackupLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument(SettingsBackupManager.MIME_TYPE)
     ) { uri ->
+        CarReturnPillOverlay.dismiss()
         if (uri != null) exportBackupToUri(uri)
     }
 
     private val importBackupLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
+        CarReturnPillOverlay.dismiss()
         if (uri != null) importBackupFromUri(uri)
     }
 
     private val createDiagDocLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        CarReturnPillOverlay.dismiss()
         val uri = if (result.resultCode == Activity.RESULT_OK) result.data?.data else null
         if (uri != null) exportUnifiedDiagnostics(uri)
     }
@@ -1157,22 +1187,41 @@ class QonectaSettingsFragment : Fragment() {
                     if (exportingDiag) getString(R.string.diagnostic_saving_report) else "${getString(R.string.qu_set_export_diag)} (USB)",
                     primary = true,
                 ) {
-                    launchUsbDiagPicker()
+                    showUsbExportDialog()
                 },
                 LinearLayout.LayoutParams(0, dp(52), 1.3f).apply { marginEnd = dp(10) },
             )
             row.addView(
                 pillActionButton(getString(R.string.qu_files), primary = false) {
+                    CarReturnPillOverlay.showIfPermitted(requireContext(), requireActivity()::class.java)
                     val result = CarFiles.open(requireActivity()) { pickerIntent ->
                         runCatching { carFilesPickerLauncher.launch(pickerIntent) }.isSuccess
                     }
                     if (result == CarFiles.OpenResult.UNAVAILABLE) {
+                        CarReturnPillOverlay.dismiss()
                         Toast.makeText(requireContext(), getString(R.string.qu_files_none), Toast.LENGTH_LONG).show()
                     }
                 },
                 LinearLayout.LayoutParams(0, dp(52), 1f),
             )
             card.addView(row)
+            addDivider(card)
+            val overlayGranted = CarReturnPillOverlay.canShow(requireContext())
+            addActionRow(
+                card,
+                title = "Botón «← Volver a Qonecta» sobre el explorador",
+                subtitle = "Muestra un botón flotante arriba a la derecha al abrir el explorador de archivos del coche",
+                valueText = if (overlayGranted) "Activo ✓" else "Activar",
+            ) {
+                val intent = CarReturnPillOverlay.requestPermissionIntent(requireContext())
+                if (overlayGranted) {
+                    CarReturnPillOverlay.showIfPermitted(requireContext(), requireActivity()::class.java)
+                }
+                runCatching { overlayPermLauncher.launch(intent) }.onFailure {
+                    CarReturnPillOverlay.dismiss()
+                    Toast.makeText(requireContext(), R.string.diagnostic_file_picker_unavailable, Toast.LENGTH_LONG).show()
+                }
+            }
         }
 
         addCard(root, getString(R.string.qu_set_sec_backup)) { card ->
@@ -1598,14 +1647,86 @@ class QonectaSettingsFragment : Fragment() {
 
     private fun diagFileName() = "QonectaUnit-core-report-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())}.txt"
 
-    private fun launchUsbDiagPicker() {
-        val intent = CarFiles.createDocumentIntent(requireContext(), diagFileName(), "text/plain")
-        runCatching { createDiagDocLauncher.launch(intent) }.onFailure {
-            Toast.makeText(requireContext(), R.string.diagnostic_file_picker_unavailable, Toast.LENGTH_LONG).show()
+    private fun savedUsbTreeUriOrNull(): Uri? {
+        val raw = settings.usbDiagTreeUri
+        if (raw.isBlank()) return null
+        val parsed = runCatching { Uri.parse(raw) }.getOrNull() ?: return null
+        return parsed.takeIf { CarFiles.hasPersistedWriteAccess(requireContext(), it) }
+    }
+
+    private fun showUsbExportDialog() {
+        val ctx = requireContext()
+        val savedTree = savedUsbTreeUriOrNull()
+        if (savedTree != null) {
+            val folderLabel = CarFiles.friendlyTreeLabel(savedTree.toString())
+            MaterialAlertDialogBuilder(ctx, R.style.DarkAlertDialog)
+                .setTitle("Exportar diagnóstico al pendrive USB")
+                .setMessage("Carpeta USB guardada:\n$folderLabel\n\nSe guardará un informe .txt directo en el pendrive sin ocupar memoria interna del coche ni salir de Qonecta.")
+                .setPositiveButton("💾 Guardar en USB") { _, _ -> exportUnifiedDiagnosticsToTree(savedTree) }
+                .setNeutralButton("📂 Cambiar carpeta USB") { _, _ -> launchUsbTreePicker() }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        } else {
+            MaterialAlertDialogBuilder(ctx, R.style.DarkAlertDialog)
+                .setTitle("Exportar diagnóstico al pendrive USB")
+                .setMessage("Elige una carpeta de tu pendrive USB una sola vez: las próximas exportaciones se guardarán directo con 1 toque sin tener que abrir ni cerrar el explorador del coche.")
+                .setPositiveButton("📂 Elegir carpeta USB") { _, _ -> launchUsbTreePicker() }
+                .setNeutralButton("📄 Guardar 1 archivo") { _, _ -> launchUsbDiagPicker() }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
         }
     }
 
-    private fun exportUnifiedDiagnostics(destination: Uri) {
+    private fun launchUsbTreePicker() {
+        val ctx = requireContext()
+        val intent = CarFiles.openUsbTreeIntent(ctx)
+        CarReturnPillOverlay.showIfPermitted(ctx, requireActivity()::class.java)
+        runCatching { openUsbTreeLauncher.launch(intent) }.onFailure {
+            CarReturnPillOverlay.dismiss()
+            launchUsbDiagPicker()
+        }
+    }
+
+    private fun launchUsbDiagPicker() {
+        val ctx = requireContext()
+        val intent = CarFiles.createDocumentIntent(ctx, diagFileName(), "text/plain")
+        CarReturnPillOverlay.showIfPermitted(ctx, requireActivity()::class.java)
+        runCatching { createDiagDocLauncher.launch(intent) }.onFailure {
+            CarReturnPillOverlay.dismiss()
+            Toast.makeText(ctx, R.string.diagnostic_file_picker_unavailable, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun buildUnifiedDiagnosticReport(appCtx: Context): String = buildString {
+        append(DiagnosticReport.build(appCtx))
+        appendLine()
+        appendLine("--- Qonecta 5 GHz Accelerator ---")
+        appendLine("Channel: ${AapService.wifiDirectChannelInfo.value ?: "idle"}")
+        appendLine("Coexistence warning: ${AapService.wifiCoexistenceWarning.value ?: "none"}")
+        for (name in com.shilapi.xcertplay.SessionLogFile.REPORT_NAMES) {
+            val file = java.io.File(appCtx.filesDir, "logs/$name")
+            if (file.isFile && file.length() > 0L) {
+                appendLine()
+                appendLine("--- CarPlay $name ---")
+                file.useLines { lines ->
+                    lines.forEach { line ->
+                        com.shilapi.xcertplay.DiagnosticRedactor.redact(line)?.let { appendLine(it) }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun exportUnifiedDiagnostics(destination: Uri) =
+        writeUnifiedDiagnostics(fromTree = false) { destination }
+
+    private fun exportUnifiedDiagnosticsToTree(treeUri: Uri) =
+        writeUnifiedDiagnostics(fromTree = true) { appCtx ->
+            CarFiles.createFileInTree(appCtx, treeUri, diagFileName(), "text/plain")
+                ?: error("USB folder unavailable")
+        }
+
+    private fun writeUnifiedDiagnostics(fromTree: Boolean, resolveTargetUri: (Context) -> Uri) {
         if (exportingDiag) return
         exportingDiag = true
         renderActiveTab(preserveScroll = true)
@@ -1613,36 +1734,24 @@ class QonectaSettingsFragment : Fragment() {
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val report = buildString {
-                        append(DiagnosticReport.build(appCtx))
-                        appendLine()
-                        appendLine("--- Qonecta 5 GHz Accelerator ---")
-                        appendLine("Channel: ${AapService.wifiDirectChannelInfo.value ?: "idle"}")
-                        appendLine("Coexistence warning: ${AapService.wifiCoexistenceWarning.value ?: "none"}")
-                        for (name in com.shilapi.xcertplay.SessionLogFile.REPORT_NAMES) {
-                            val file = java.io.File(appCtx.filesDir, "logs/$name")
-                            if (file.isFile && file.length() > 0L) {
-                                appendLine()
-                                appendLine("--- CarPlay $name ---")
-                                file.useLines { lines ->
-                                    lines.forEach { line ->
-                                        com.shilapi.xcertplay.DiagnosticRedactor.redact(line)?.let { appendLine(it) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    DiagnosticExportStore.write(appCtx.contentResolver, destination, report)
-                    destination
+                    val report = buildUnifiedDiagnosticReport(appCtx)
+                    val target = resolveTargetUri(appCtx)
+                    DiagnosticExportStore.write(appCtx.contentResolver, target, report)
+                    target
                 }
             }
             exportingDiag = false
             if (!isAdded) return@launch
             renderActiveTab(preserveScroll = true)
             result.onSuccess { uri ->
+                val msg = if (fromTree) {
+                    "Guardado en la carpeta USB:\n${CarFiles.friendlyTreeLabel(settings.usbDiagTreeUri)}"
+                } else {
+                    getString(R.string.diagnostic_saved_to_your_selected_location)
+                }
                 MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
                     .setTitle(R.string.diagnostic_report_saved)
-                    .setMessage(getString(R.string.diagnostic_saved_to_your_selected_location))
+                    .setMessage(msg)
                     .setPositiveButton(R.string.share) { _, _ ->
                         runCatching {
                             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
@@ -1656,12 +1765,20 @@ class QonectaSettingsFragment : Fragment() {
                     .setNegativeButton(R.string.diagnostic_done, null)
                     .show()
             }.onFailure {
-                MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                val dlg = MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
                     .setTitle(R.string.diagnostic_could_not_save_the_report)
-                    .setMessage(R.string.diagnostic_save_failure_hint)
-                    .setPositiveButton(R.string.diagnostic_choose_location) { _, _ -> launchUsbDiagPicker() }
+                    .setMessage(
+                        if (fromTree) "No se pudo escribir en la carpeta USB guardada (comprueba que el pendrive está enchufado o elige otra carpeta USB)."
+                        else getString(R.string.diagnostic_save_failure_hint),
+                    )
                     .setNegativeButton(R.string.close, null)
-                    .show()
+                if (fromTree) {
+                    dlg.setPositiveButton("📂 Elegir carpeta USB") { _, _ -> launchUsbTreePicker() }
+                    dlg.setNeutralButton("📄 Guardar 1 archivo") { _, _ -> launchUsbDiagPicker() }
+                } else {
+                    dlg.setPositiveButton(R.string.diagnostic_choose_location) { _, _ -> launchUsbDiagPicker() }
+                }
+                dlg.show()
             }
         }
     }

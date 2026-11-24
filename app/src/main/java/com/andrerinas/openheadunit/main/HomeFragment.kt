@@ -206,6 +206,11 @@ class HomeFragment : Fragment() {
             ).show()
         }
 
+        view.findViewById<View>(R.id.home_coffee_button)?.setOnClickListener {
+            activeDialog?.dismiss()
+            activeDialog = SupportDonationsDialog.show(requireContext())
+        }
+
         view.findViewById<View>(R.id.settings_button)?.setOnClickListener {
             startActivity(Intent(requireContext(), SettingsActivity::class.java))
         }

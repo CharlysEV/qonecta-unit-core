@@ -85,7 +85,10 @@ class App : Application() {
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {}
             override fun onActivityStarted(activity: android.app.Activity) { topActivityRef = java.lang.ref.WeakReference(activity) }
-            override fun onActivityResumed(activity: android.app.Activity) { topActivityRef = java.lang.ref.WeakReference(activity) }
+            override fun onActivityResumed(activity: android.app.Activity) {
+                topActivityRef = java.lang.ref.WeakReference(activity)
+                com.headqlink.unit.files.CarReturnPillOverlay.dismiss()
+            }
             override fun onActivityPaused(activity: android.app.Activity) {}
             override fun onActivityStopped(activity: android.app.Activity) { if (topActivityRef?.get() === activity) topActivityRef = null }
             override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) {}

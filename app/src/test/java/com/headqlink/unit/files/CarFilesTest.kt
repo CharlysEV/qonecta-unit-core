@@ -39,4 +39,11 @@ class CarFilesTest {
         assertEquals(null, CarFiles.preferredUsbRoot(listOf(CarFiles.Volume("primary", false))))
         assertEquals(null, CarFiles.preferredUsbRoot(emptyList()))
     }
+
+    @Test
+    fun `friendlyTreeLabel formatea carpetas USB e internas de forma legible`() {
+        assertEquals("USB 9F42-1B0E", CarFiles.friendlyTreeLabel("content://com.android.externalstorage.documents/tree/9F42-1B0E%3A"))
+        assertEquals("USB 9F42-1B0E / QonectaLogs", CarFiles.friendlyTreeLabel("9F42-1B0E:QonectaLogs"))
+        assertEquals("Download", CarFiles.friendlyTreeLabel("primary:Download"))
+    }
 }

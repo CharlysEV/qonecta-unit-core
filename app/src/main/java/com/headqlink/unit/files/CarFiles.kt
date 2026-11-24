@@ -3,10 +3,12 @@ package com.headqlink.unit.files
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.DocumentsContract
+import java.net.URLDecoder
 
 /**
  * Abre el explorador de archivos nativo del coche (DocumentsUI de Android) para instalar o
@@ -34,14 +36,72 @@ object CarFiles {
     fun rootOrder(volumes: List<Volume>): List<String> =
         (volumes.filter { it.removable } + volumes.filterNot { it.removable }).map { it.rootId }.distinct()
 
-    /** Puro: identificador del primer pendrive USB extraíble montado, o null si no hay ninguno. */
+    /** Puro: devuelve la primera raíz de pendrive USB extraíble montado, o null si no hay ninguno. */
     fun preferredUsbRoot(volumes: List<Volume>): String? =
         volumes.firstOrNull { it.removable }?.rootId
 
+    /** Puro: convierte un tree URI o docId (`9F42-1B0E:Logs`) en una etiqueta corta y legible. */
+    fun friendlyTreeLabel(rawOrDocId: String): String {
+        val trimmed = rawOrDocId.trim()
+        if (trimmed.isEmpty()) return "USB"
+        val afterTree = trimmed.substringAfter("/tree/", trimmed).substringBefore("/document/")
+        val decoded = runCatching {
+            URLDecoder.decode(afterTree.replace("+", "%2B"), "UTF-8")
+        }.getOrDefault(afterTree).trim('/')
+        val vol = decoded.substringBefore(':', "")
+        val path = decoded.substringAfter(':', "").trim('/')
+        val isPrimary = vol.equals("primary", ignoreCase = true) || vol.isEmpty()
+        return when {
+            isPrimary && path.isEmpty() -> "Almacenamiento interno"
+            isPrimary -> path
+            path.isEmpty() -> "USB $vol"
+            else -> "USB $vol / $path"
+        }
+    }
+
     /**
-     * Intent `ACTION_CREATE_DOCUMENT` para que el usuario elija dónde guardar un archivo
-     * (por ejemplo un informe `.txt` de diagnóstico en su pendrive USB sin ocupar la memoria interna del coche).
-     * En Android 8+ (API 26+) fija `EXTRA_INITIAL_URI` directamente a la raíz del pendrive USB si está montado.
+     * Intent `ACTION_OPEN_DOCUMENT_TREE` para elegir una carpeta en el pendrive USB una sola vez
+     * (y recordarla para exportaciones futuras en 1 toque sin llenar la memoria interna del coche).
+     */
+    fun openUsbTreeIntent(context: Context): Intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+        addFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PREFIX_URI_PERMISSION,
+        )
+        if (Build.VERSION.SDK_INT >= 26) {
+            val usbRoot = preferredUsbRoot(volumes(context))
+            if (usbRoot != null) {
+                putExtra(
+                    DocumentsContract.EXTRA_INITIAL_URI,
+                    DocumentsContract.buildRootUri(EXTERNAL_STORAGE, usbRoot),
+                )
+            }
+        }
+    }
+
+    /** Comprueba si Android sigue conservando permiso persistente de escritura sobre la carpeta elegida. */
+    fun hasPersistedWriteAccess(context: Context, treeUri: Uri): Boolean = runCatching {
+        context.contentResolver.persistedUriPermissions.any { it.uri == treeUri && it.isWritePermission }
+    }.getOrDefault(false)
+
+    /** Crea un documento nuevo dentro de la carpeta USB recordada, o devuelve null si el USB no está montado. */
+    fun createFileInTree(
+        context: Context,
+        treeUri: Uri,
+        fileName: String,
+        mimeType: String = "text/plain",
+    ): Uri? = runCatching {
+        val resolver = context.contentResolver
+        val parentDocId = DocumentsContract.getTreeDocumentId(treeUri)
+        val parentDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId)
+        DocumentsContract.createDocument(resolver, parentDocUri, mimeType, fileName)
+    }.getOrNull()
+
+    /**
+     * Crea un `ACTION_CREATE_DOCUMENT` que abre el selector del sistema apuntando directamente
+     * al pendrive USB (cuando hay uno conectado) para guardar logs sin ocupar la memoria interna del coche.
      */
     fun createDocumentIntent(
         context: Context,
@@ -51,7 +111,7 @@ object CarFiles {
         addCategory(Intent.CATEGORY_OPENABLE)
         type = mimeType
         putExtra(Intent.EXTRA_TITLE, fileName)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= 26) {
             val usbRoot = preferredUsbRoot(volumes(context))
             if (usbRoot != null) {
                 putExtra(

@@ -89,6 +89,11 @@ class Settings(private val context: Context) {
         get() = prefs.getBoolean("use_measured_touch_surface", true)
         set(value) { prefs.edit().putBoolean("use_measured_touch_surface", value).apply() }
 
+    /** Tree URI persistente de la carpeta USB elegida para exportar diagnósticos en 1 toque. */
+    var usbDiagTreeUri: String
+        get() = prefs.getString("qu-usb-diag-tree-uri", "") ?: ""
+        set(value) { prefs.edit().putString("qu-usb-diag-tree-uri", value.trim()).apply() }
+
     private fun defaultUiScalePercent(defaultForStandardScreen: Int): Int {
         return try {
             val dm = context.resources.displayMetrics

@@ -17,6 +17,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.headqlink.unit.files.CarFiles
+import com.headqlink.unit.files.CarReturnPillOverlay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -27,12 +28,14 @@ import java.util.Locale
 class DiagnosticsFragment : Fragment(R.layout.fragment_diagnostics) {
     private var exporting = false
     private val destination = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        CarReturnPillOverlay.dismiss()
         val uri = if (result.resultCode == android.app.Activity.RESULT_OK) result.data?.data else null
         if (uri != null) export(uri)
     }
     private val carFilesPickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        CarReturnPillOverlay.dismiss()
         if (result.resultCode == android.app.Activity.RESULT_OK && result.data?.data != null) {
             Toast.makeText(requireContext(), getString(R.string.qu_files_picker_tip), Toast.LENGTH_LONG).show()
         }
@@ -43,10 +46,12 @@ class DiagnosticsFragment : Fragment(R.layout.fragment_diagnostics) {
         view.findViewById<View>(R.id.save_diagnostic_report).setOnClickListener { chooseLocation() }
         view.findViewById<View>(R.id.choose_diagnostic_location).setOnClickListener { chooseLocation() }
         view.findViewById<View>(R.id.car_files)?.setOnClickListener {
+            CarReturnPillOverlay.showIfPermitted(requireContext(), requireActivity()::class.java)
             val result = CarFiles.open(requireActivity()) { pickerIntent ->
                 runCatching { carFilesPickerLauncher.launch(pickerIntent) }.isSuccess
             }
             if (result == CarFiles.OpenResult.UNAVAILABLE) {
+                CarReturnPillOverlay.dismiss()
                 Toast.makeText(requireContext(), getString(R.string.qu_files_none), Toast.LENGTH_LONG).show()
             }
         }
@@ -56,7 +61,9 @@ class DiagnosticsFragment : Fragment(R.layout.fragment_diagnostics) {
 
     private fun chooseLocation() {
         val intent = CarFiles.createDocumentIntent(requireContext(), fileName(), "text/plain")
+        CarReturnPillOverlay.showIfPermitted(requireContext(), requireActivity()::class.java)
         runCatching { destination.launch(intent) }.onFailure {
+            CarReturnPillOverlay.dismiss()
             Toast.makeText(requireContext(), getString(R.string.diagnostic_file_picker_unavailable), Toast.LENGTH_LONG).show()
         }
     }

@@ -112,7 +112,8 @@ class LeapCarPlayActivity : ComponentActivity() {
     }
 
     private val export = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val uri = if (result.resultCode == android.app.Activity.RESULT_OK) result.data?.data else null
+        com.headqlink.unit.files.CarReturnPillOverlay.dismiss()
+        val uri = if (result.resultCode == RESULT_OK) result.data?.data else null
         if (uri != null) exportDiagnostics(uri)
     }
 
@@ -941,6 +942,7 @@ class LeapCarPlayActivity : ComponentActivity() {
             exportButton = settingsButton(
                 getString(if (exportInProgress) R.string.cp_btn_saving_report else R.string.cp_btn_save_report)
             ) {
+                // Siempre elegir destino (pendrive USB) para no ocupar espacio interno del coche.
                 chooseReportDestination()
             }.apply { isEnabled = !exportInProgress }
             card.addView(exportButton, matchButton(10, 58))
@@ -1436,8 +1438,15 @@ class LeapCarPlayActivity : ComponentActivity() {
 
     private fun chooseReportDestination() {
         val intent = com.headqlink.unit.files.CarFiles.createDocumentIntent(this, reportFileName(), "text/plain")
+        com.headqlink.unit.files.CarReturnPillOverlay.showIfPermitted(this, LeapCarPlayActivity::class.java)
         runCatching { export.launch(intent) }.onFailure {
-            toast(getString(R.string.cp_report_picker_fail_legacy))
+            com.headqlink.unit.files.CarReturnPillOverlay.dismiss()
+            toast(
+                getString(
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) R.string.cp_report_picker_fail_q
+                    else R.string.cp_report_picker_fail_legacy
+                )
+            )
         }
     }
 
