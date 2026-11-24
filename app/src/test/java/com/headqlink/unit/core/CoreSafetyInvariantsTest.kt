@@ -303,4 +303,12 @@ class CoreSafetyInvariantsTest {
         assertTrue("LeapCarPlayActivity must use CarFiles.createDocumentIntent", carPlayAct.contains("CarFiles.createDocumentIntent"))
         assertFalse("LeapCarPlayActivity must never auto-save logs to internal Downloads", carPlayAct.contains("saveToDownloads"))
     }
+
+    @Test
+    fun favoriteStartupScreenResolvesCleanlyInCoreMode() {
+        assertEquals("aa", Settings.resolveInitialHomeProtocol("last", "aa"))
+        assertEquals("carplay", Settings.resolveInitialHomeProtocol("last", "carplay"))
+        assertEquals("carplay", Settings.resolveInitialHomeProtocol("carplay", "aa"))
+        assertEquals("aa", Settings.resolveInitialHomeProtocol("aa", "carplay"))
+    }
 }

@@ -1376,6 +1376,7 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
 
         options.add(ExitOption(R.string.exit_dialog_background, R.drawable.ic_home, Color.LTGRAY))
         options.add(ExitOption(R.string.exit_dialog_settings, R.drawable.ic_settings_quick, Color.LTGRAY))
+        options.add(ExitOption(R.string.qu_exit_full_settings, R.drawable.ic_settings_white, Color.LTGRAY))
 
         val adapter = object : android.widget.BaseAdapter() {
             override fun getCount(): Int = options.size
@@ -1412,6 +1413,9 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
                     }
                     R.string.exit_dialog_settings -> {
                         showQuickSettings()
+                    }
+                    R.string.qu_exit_full_settings -> {
+                        startActivity(Intent(this, com.andrerinas.openheadunit.main.SettingsActivity::class.java))
                     }
                 }
             }

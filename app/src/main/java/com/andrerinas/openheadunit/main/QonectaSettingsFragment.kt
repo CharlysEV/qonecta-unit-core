@@ -486,6 +486,33 @@ class QonectaSettingsFragment : Fragment() {
 
             addDivider(card)
 
+            val startupKeys = listOf("last", "aa", "carplay")
+            val startupLabels = arrayOf(
+                getString(R.string.qu_startup_last),
+                getString(R.string.qu_startup_aa),
+                getString(R.string.qu_startup_carplay),
+            )
+            val curStartupIdx = startupKeys.indexOf(settings.homeStartupScreen).coerceAtLeast(0)
+            addActionRow(
+                card,
+                title = getString(R.string.qu_startup_screen_title),
+                subtitle = getString(R.string.qu_startup_screen_desc),
+                valueText = startupLabels[curStartupIdx],
+            ) {
+                MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                    .setTitle(R.string.qu_startup_screen_title)
+                    .setSingleChoiceItems(startupLabels, curStartupIdx) { dlg, which ->
+                        settings.homeStartupScreen = startupKeys[which]
+                        flashSaved()
+                        dlg.dismiss()
+                        renderActiveTab(preserveScroll = true)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+
+            addDivider(card)
+
             val curHomeScale = settings.uiScaleHomePercent
             val scaleIdx = when {
                 curHomeScale <= 105 -> 0

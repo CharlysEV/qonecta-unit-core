@@ -280,60 +280,86 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <!-- SYMMETRIC PROTOCOL SWITCHER: [ Android Auto | Apple CarPlay ] -->
+                <!-- SYMMETRIC PROTOCOL SWITCHER: [ Android Auto | Apple CarPlay ] + Favorite Startup Pin -->
                 <LinearLayout
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:padding="4dp"
-                    android:background="@drawable/bg_segmented_rail">
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:padding="4dp"
+                        android:background="@drawable/bg_segmented_rail">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/proto_tab_aa"
+                            android:layout_width="wrap_content"
+                            android:layout_height="46dp"
+                            android:paddingStart="20dp"
+                            android:paddingEnd="20dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:text="@string/qu_home_proto_aa"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="false"
+                            android:textColor="@color/hql_accent"
+                            app:backgroundTint="@color/hql_accent_container"
+                            app:strokeColor="@color/hql_accent"
+                            app:strokeWidth="1.5dp"
+                            app:cornerRadius="16dp"
+                            app:icon="@drawable/ic_android_auto"
+                            app:iconSize="20dp"
+                            app:iconTint="@color/hql_accent"
+                            app:iconGravity="textStart"
+                            app:iconPadding="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/proto_tab_cp"
+                            android:layout_width="wrap_content"
+                            android:layout_height="46dp"
+                            android:layout_marginStart="4dp"
+                            android:paddingStart="20dp"
+                            android:paddingEnd="20dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:text="@string/qu_home_proto_cp"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textAllCaps="false"
+                            android:textColor="@color/hql_text_dim"
+                            app:backgroundTint="@android:color/transparent"
+                            app:strokeColor="@android:color/transparent"
+                            app:strokeWidth="1.5dp"
+                            app:cornerRadius="16dp"
+                            app:icon="@drawable/ic_carplay"
+                            app:iconSize="20dp"
+                            app:iconTint="@null"
+                            app:iconGravity="textStart"
+                            app:iconPadding="8dp" />
+                    </LinearLayout>
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/proto_tab_aa"
+                        android:id="@+id/home_startup_pin_btn"
                         android:layout_width="wrap_content"
-                        android:layout_height="46dp"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
+                        android:layout_height="44dp"
+                        android:layout_marginStart="12dp"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        android:text="@string/qu_home_proto_aa"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textAllCaps="false"
-                        android:textColor="@color/hql_accent"
-                        app:backgroundTint="@color/hql_accent_container"
-                        app:strokeColor="@color/hql_accent"
-                        app:strokeWidth="1.5dp"
-                        app:cornerRadius="16dp"
-                        app:icon="@drawable/ic_android_auto"
-                        app:iconSize="20dp"
-                        app:iconTint="@color/hql_accent"
-                        app:iconGravity="textStart"
-                        app:iconPadding="8dp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/proto_tab_cp"
-                        android:layout_width="wrap_content"
-                        android:layout_height="46dp"
-                        android:layout_marginStart="4dp"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:text="@string/qu_home_proto_cp"
-                        android:textSize="16sp"
+                        android:text="@string/qu_startup_pin_last"
+                        android:textSize="13.5sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
                         android:textColor="@color/hql_text_dim"
-                        app:backgroundTint="@android:color/transparent"
-                        app:strokeColor="@android:color/transparent"
+                        app:backgroundTint="@color/hql_surface_hi"
+                        app:strokeColor="@color/hql_outline"
                         app:strokeWidth="1.5dp"
-                        app:cornerRadius="16dp"
-                        app:icon="@drawable/ic_carplay"
-                        app:iconSize="20dp"
-                        app:iconTint="@null"
-                        app:iconGravity="textStart"
-                        app:iconPadding="8dp" />
+                        app:cornerRadius="16dp" />
                 </LinearLayout>
 
                 <!-- Live status pill + 5 GHz channel chip + 1-tap Wi-Fi Direct reset -->

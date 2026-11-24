@@ -89,6 +89,14 @@ class ConnectionRingView @JvmOverloads constructor(
             invalidate()
         }
 
+    var accentColor: Int = ACCENT_COLOR
+        set(value) {
+            if (field != value) {
+                field = value
+                invalidate()
+            }
+        }
+
     private var sweepAngleDeg: Float = 0f
     private var pulsePhase: Float = 0f
 
@@ -140,6 +148,7 @@ class ConnectionRingView @JvmOverloads constructor(
     private var lastShaderW = 0f
     private var lastShaderH = 0f
     private var lastShaderState: State? = null
+    private var lastShaderAccent: Int = ACCENT_COLOR
 
     private fun dp(v: Float): Float = v * resources.displayMetrics.density
 
@@ -167,7 +176,7 @@ class ConnectionRingView @JvmOverloads constructor(
         val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
 
-        val accent = ACCENT_COLOR
+        val accent = accentColor
         val r = Color.red(accent)
         val g = Color.green(accent)
         val b = Color.blue(accent)
@@ -178,10 +187,11 @@ class ConnectionRingView @JvmOverloads constructor(
 
         // Cache shaders to avoid per-frame allocations during connection animation.
         val auraRadius = maxR * 1.38f
-        if (w != lastShaderW || h != lastShaderH || state != lastShaderState) {
+        if (w != lastShaderW || h != lastShaderH || state != lastShaderState || accent != lastShaderAccent) {
             lastShaderW = w
             lastShaderH = h
             lastShaderState = state
+            lastShaderAccent = accent
             glowPaint.shader = RadialGradient(
                 cx,
                 cy,

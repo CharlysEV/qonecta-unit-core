@@ -57,4 +57,14 @@
     <string name="qu_support_donate_button">☕ Unterstützen</string>
     <string name="qu_support_donate_title">☕ Projekt unterstützen</string>
     <string name="qu_support_donate_desc">Kaffee über Ko-fi ausgeben oder per PayPal spenden (QR-Codes)</string>
+    <string name="qu_startup_screen_title">Bevorzugter Startbildschirm</string>
+    <string name="qu_startup_screen_desc">Wähle den Bildschirm beim Start von Qonecta Unit</string>
+    <string name="qu_startup_last">Zuletzt verwendet</string>
+    <string name="qu_startup_aa">Android Auto</string>
+    <string name="qu_startup_carplay">Apple CarPlay</string>
+    <string name="qu_startup_pin_last">☆ Start: Zuletzt</string>
+    <string name="qu_startup_pin_aa">★ Start: Android Auto</string>
+    <string name="qu_startup_pin_carplay">★ Start: CarPlay</string>
+    <string name="qu_startup_saved_toast">Startbildschirm: %1$s</string>
+    <string name="qu_exit_full_settings">Qonecta-Einstellungen</string>
 </resources>

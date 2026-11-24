@@ -178,13 +178,13 @@
             android:name="com.shilapi.xcertplay.LeapCarPlaySessionService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|mediaPlayback"
-            android:stopWithTask="true" />
+            android:stopWithTask="false" />
 
         <service
             android:name=".aap.AapService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|mediaPlayback"
-            android:stopWithTask="true" />
+            android:stopWithTask="false" />
 
         <service android:name=".location.GpsLocationService" />
 

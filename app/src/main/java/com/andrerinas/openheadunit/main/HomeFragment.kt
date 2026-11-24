@@ -162,7 +162,11 @@ class HomeFragment : Fragment() {
         inflater.inflate(R.layout.fragment_home, container, false)
 
     override fun onViewCreated(view: View, state: Bundle?) {
-        activeProtocol = if (app.settings.lastHomeProtocol == "carplay") Protocol.CARPLAY else Protocol.ANDROID_AUTO
+        val resolvedProtocol = Settings.resolveInitialHomeProtocol(
+            app.settings.homeStartupScreen,
+            app.settings.lastHomeProtocol,
+        )
+        activeProtocol = if (resolvedProtocol == "carplay") Protocol.CARPLAY else Protocol.ANDROID_AUTO
         syncSharedHotspotCredentials()
 
         view.findViewById<TextView>(R.id.home_version_badge)?.apply {
@@ -228,12 +232,15 @@ class HomeFragment : Fragment() {
             requireActivity().finishAffinity()
         }
 
-        // Symmetric Protocol Switcher (100 % continuity inside the same Hero Card!)
+        // Symmetric Protocol Switcher (AA Mint vs CarPlay Sapphire Blue) + Favorite Startup Pin
         view.findViewById<View>(R.id.proto_tab_aa)?.setOnClickListener {
             selectProtocol(Protocol.ANDROID_AUTO, view)
         }
         view.findViewById<View>(R.id.proto_tab_cp)?.setOnClickListener {
             selectProtocol(Protocol.CARPLAY, view)
+        }
+        view.findViewById<View>(R.id.home_startup_pin_btn)?.setOnClickListener {
+            showStartupScreenPicker(view)
         }
 
         // Primary CTA button (adapts to AA vs CarPlay)
@@ -698,22 +705,78 @@ class HomeFragment : Fragment() {
         }
     }
 
+    private fun activeAccent(): Int = if (activeProtocol == Protocol.CARPLAY) CP_ACCENT else ACCENT
+    private fun activeDarkBg(): Int = if (activeProtocol == Protocol.CARPLAY) CP_DARK_BG else ACCENT_DARK_BG
+    private fun activeOnAccent(): Int = if (activeProtocol == Protocol.CARPLAY) CP_ON_ACCENT else ON_ACCENT
+
     private fun updateProtocolTabs(view: View) {
         val aaTab = view.findViewById<MaterialButton>(R.id.proto_tab_aa)
         val cpTab = view.findViewById<MaterialButton>(R.id.proto_tab_cp)
         val isAa = activeProtocol == Protocol.ANDROID_AUTO
 
-        fun styleTab(btn: MaterialButton?, active: Boolean, tintIcon: Boolean) {
-            btn ?: return
-            btn.backgroundTintList = ColorStateList.valueOf(if (active) ACCENT_DARK_BG else Color.TRANSPARENT)
-            btn.strokeColor = ColorStateList.valueOf(if (active) ACCENT else Color.TRANSPARENT)
-            btn.setTextColor(if (active) ACCENT else TEXT_DIM)
-            if (tintIcon) {
-                btn.iconTint = ColorStateList.valueOf(if (active) ACCENT else TEXT_DIM)
-            }
+        aaTab?.apply {
+            backgroundTintList = ColorStateList.valueOf(if (isAa) ACCENT_DARK_BG else Color.TRANSPARENT)
+            strokeColor = ColorStateList.valueOf(if (isAa) ACCENT else Color.TRANSPARENT)
+            setTextColor(if (isAa) ACCENT else TEXT_DIM)
+            iconTint = ColorStateList.valueOf(if (isAa) ACCENT else TEXT_DIM)
         }
-        styleTab(aaTab, isAa, tintIcon = true)
-        styleTab(cpTab, !isAa, tintIcon = false)
+        cpTab?.apply {
+            backgroundTintList = ColorStateList.valueOf(if (!isAa) CP_DARK_BG else Color.TRANSPARENT)
+            strokeColor = ColorStateList.valueOf(if (!isAa) CP_ACCENT else Color.TRANSPARENT)
+            setTextColor(if (!isAa) CP_ACCENT else TEXT_DIM)
+        }
+
+        // Distinct visual card atmosphere for Android Auto (Mint) vs Apple CarPlay (Sapphire Blue)
+        view.findViewById<View>(R.id.hero_connection_card)?.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(22).toFloat()
+            setColor(if (isAa) HERO_AA_BG else HERO_CP_BG)
+            setStroke(dp(2), if (isAa) HERO_AA_STROKE else HERO_CP_STROKE)
+        }
+
+        val fav = app.settings.homeStartupScreen
+        view.findViewById<MaterialButton>(R.id.home_startup_pin_btn)?.apply {
+            val isPinned = fav != "last"
+            text = when (fav) {
+                "aa" -> getString(R.string.qu_startup_pin_aa)
+                "carplay" -> getString(R.string.qu_startup_pin_carplay)
+                else -> getString(R.string.qu_startup_pin_last)
+            }
+            backgroundTintList = ColorStateList.valueOf(if (isPinned) AMBER_BG else SURFACE_HI)
+            strokeColor = ColorStateList.valueOf(if (isPinned) AMBER else OUTLINE)
+            setTextColor(if (isPinned) AMBER else TEXT_DIM)
+        }
+    }
+
+    private fun showStartupScreenPicker(view: View) {
+        val ctx = requireContext()
+        val keys = listOf("last", "aa", "carplay")
+        val labels = arrayOf(
+            getString(R.string.qu_startup_last),
+            getString(R.string.qu_startup_aa),
+            getString(R.string.qu_startup_carplay),
+        )
+        val curIdx = keys.indexOf(app.settings.homeStartupScreen).coerceAtLeast(0)
+        activeDialog?.dismiss()
+        activeDialog = MaterialAlertDialogBuilder(ctx, R.style.DarkAlertDialog)
+            .setTitle(R.string.qu_startup_screen_title)
+            .setSingleChoiceItems(labels, curIdx) { dlg, which ->
+                val chosen = keys[which]
+                app.settings.homeStartupScreen = chosen
+                app.settings.commit()
+                if (chosen == "aa") activeProtocol = Protocol.ANDROID_AUTO
+                if (chosen == "carplay") activeProtocol = Protocol.CARPLAY
+                updateProtocolTabs(view)
+                refreshAll(view)
+                Toast.makeText(
+                    ctx,
+                    getString(R.string.qu_startup_saved_toast, labels[which]),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                dlg.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun onPrimaryConnectTap(view: View) {
@@ -1077,7 +1140,10 @@ class HomeFragment : Fragment() {
         val usbPhone = findConnectedUsbPhone()
         val channelInfo = AapService.wifiDirectChannelInfo.value
 
+        val accent = activeAccent()
         resetWifiBtn?.visibility = if (choice == TransportChoice.WIFI_P2P && !manualConnectingActive) View.VISIBLE else View.GONE
+        (resetWifiBtn as? MaterialButton)?.iconTint = ColorStateList.valueOf(accent)
+        ring?.accentColor = accent
 
         if (activeProtocol == Protocol.CARPLAY) {
             val cpRunning = CarPlayBackgroundSession.hasSession()
@@ -1088,6 +1154,8 @@ class HomeFragment : Fragment() {
 
             primaryBtn?.setIconResource(R.drawable.ic_carplay)
             primaryBtn?.iconTint = null
+            primaryBtn?.backgroundTintList = ColorStateList.valueOf(CP_ACCENT)
+            primaryBtn?.setTextColor(CP_ON_ACCENT)
 
             when {
                 cpActive -> {
@@ -1114,9 +1182,9 @@ class HomeFragment : Fragment() {
                 }
                 cpRunning || manualConnectingActive -> {
                     val elapsed = ((SystemClock.elapsedRealtime() - connectingStartElapsedMs) / 1000L).toInt().coerceAtLeast(0)
-                    pill?.setTextColor(ACCENT)
+                    pill?.setTextColor(CP_ACCENT)
                     pill?.text = getString(R.string.core_status_connecting)
-                    badge?.setTextColor(ACCENT)
+                    badge?.setTextColor(CP_ACCENT)
                     badge?.text = when (choice) {
                         TransportChoice.CAR_HOTSPOT -> getString(R.string.cp_badge_conn_hotspot)
                         TransportChoice.WIFI_P2P -> getString(R.string.cp_badge_conn_p2p)
@@ -1137,9 +1205,9 @@ class HomeFragment : Fragment() {
                     ring?.subtitleText = getString(if (elapsed < 4) R.string.core_ring_negotiating else R.string.cp_ring_waiting_iphone)
                 }
                 else -> {
-                    pill?.setTextColor(ACCENT)
+                    pill?.setTextColor(CP_ACCENT)
                     pill?.text = getString(R.string.core_status_ready)
-                    badge?.setTextColor(if (appleUsb != null) ACCENT else TEXT_MAIN)
+                    badge?.setTextColor(if (appleUsb != null) CP_ACCENT else TEXT_MAIN)
                     badge?.text = when {
                         appleUsb != null -> getString(R.string.cp_badge_usb_detected)
                         choice == TransportChoice.CAR_HOTSPOT -> getString(R.string.cp_badge_hotspot)
@@ -1172,6 +1240,8 @@ class HomeFragment : Fragment() {
         val s = app.settings
         primaryBtn?.setIconResource(R.drawable.ic_android_auto)
         primaryBtn?.iconTint = ColorStateList.valueOf(ON_ACCENT)
+        primaryBtn?.backgroundTintList = ColorStateList.valueOf(ACCENT)
+        primaryBtn?.setTextColor(ON_ACCENT)
 
         when {
             app.commManager.isConnected -> {
@@ -1276,11 +1346,14 @@ class HomeFragment : Fragment() {
 
     private fun styleSecondaryUsbButton(btn: MaterialButton?, detected: Boolean, isApple: Boolean) {
         btn ?: return
+        val accent = if (isApple || activeProtocol == Protocol.CARPLAY) CP_ACCENT else ACCENT
+        val darkBg = if (isApple || activeProtocol == Protocol.CARPLAY) CP_DARK_BG else ACCENT_DARK_BG
+        btn.iconTint = ColorStateList.valueOf(accent)
         if (detected) {
             btn.text = getString(if (isApple) R.string.core_btn_usb_carplay else R.string.core_btn_usb_connect)
-            btn.backgroundTintList = ColorStateList.valueOf(ACCENT_DARK_BG)
-            btn.strokeColor = ColorStateList.valueOf(ACCENT)
-            btn.setTextColor(ACCENT)
+            btn.backgroundTintList = ColorStateList.valueOf(darkBg)
+            btn.strokeColor = ColorStateList.valueOf(accent)
+            btn.setTextColor(accent)
         } else {
             btn.text = getString(R.string.core_btn_usb_cable)
             btn.backgroundTintList = ColorStateList.valueOf(SURFACE_TOP)
@@ -1291,6 +1364,8 @@ class HomeFragment : Fragment() {
 
     private fun updateConnectionModeButtons(view: View) {
         val choice = currentTransportChoice()
+        val accent = activeAccent()
+        val darkBg = activeDarkBg()
         val wm = requireContext().applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         val wifiEnabled = wm?.isWifiEnabled == true
         val coexWarning = AapService.wifiCoexistenceWarning.value
@@ -1326,9 +1401,9 @@ class HomeFragment : Fragment() {
             btn ?: return
             btn.text = if (active) "●  $label" else label
             if (active) {
-                btn.backgroundTintList = ColorStateList.valueOf(ACCENT_DARK_BG)
-                btn.setTextColor(ACCENT)
-                btn.strokeColor = ColorStateList.valueOf(ACCENT)
+                btn.backgroundTintList = ColorStateList.valueOf(darkBg)
+                btn.setTextColor(accent)
+                btn.strokeColor = ColorStateList.valueOf(accent)
                 btn.strokeWidth = dp(2)
             } else {
                 btn.backgroundTintList = ColorStateList.valueOf(SURFACE_HI)
@@ -1401,8 +1476,10 @@ class HomeFragment : Fragment() {
         val isVertical = container.orientation == LinearLayout.VERTICAL
         val isCp = activeProtocol == Protocol.CARPLAY
 
-        view.findViewById<TextView>(R.id.paired_section_header)?.text =
-            getString(if (isCp) R.string.cp_paired_header else R.string.core_paired_header)
+        view.findViewById<TextView>(R.id.paired_section_header)?.apply {
+            text = getString(if (isCp) R.string.cp_paired_header else R.string.core_paired_header)
+            setTextColor(activeAccent())
+        }
 
         val savedAaName = app.settings.autoStartBluetoothDeviceName.takeIf { it.isNotBlank() }
         val savedCpAddr = LeapCarPlayPreferences.phoneAddress(requireContext())
@@ -1431,6 +1508,8 @@ class HomeFragment : Fragment() {
                         subtitle = subtitle,
                         highlighted = highlighted,
                         vertical = isVertical,
+                        cardAccent = if (targetIsCp) CP_ACCENT else ACCENT,
+                        cardDarkBg = if (targetIsCp) CP_DARK_BG else ACCENT_DARK_BG,
                         onClick = {
                             if (targetIsCp) {
                                 activeProtocol = Protocol.CARPLAY
@@ -1458,6 +1537,8 @@ class HomeFragment : Fragment() {
                         subtitle = getString(R.string.cp_paired_choose_sub),
                         highlighted = true,
                         vertical = isVertical,
+                        cardAccent = CP_ACCENT,
+                        cardDarkBg = CP_DARK_BG,
                         onClick = { showCarPlayPhonePicker() },
                     )
                 )
@@ -1469,6 +1550,8 @@ class HomeFragment : Fragment() {
                         subtitle = getString(R.string.cp_paired_usb_sub),
                         highlighted = findConnectedUsbPhone()?.second == true,
                         vertical = isVertical,
+                        cardAccent = CP_ACCENT,
+                        cardDarkBg = CP_DARK_BG,
                         onClick = { startCarPlayConnection(wireless = false, usbDevice = findConnectedUsbPhone()?.takeIf { it.second }?.first) },
                     )
                 )
@@ -1481,6 +1564,8 @@ class HomeFragment : Fragment() {
                         subtitle = getString(R.string.core_paired_fallback_aa_sub),
                         highlighted = true,
                         vertical = isVertical,
+                        cardAccent = ACCENT,
+                        cardDarkBg = ACCENT_DARK_BG,
                         onClick = { onPrimaryConnectTap(view) },
                     )
                 )
@@ -1492,6 +1577,8 @@ class HomeFragment : Fragment() {
                         subtitle = getString(R.string.core_paired_fallback_cp_sub),
                         highlighted = false,
                         vertical = isVertical,
+                        cardAccent = CP_ACCENT,
+                        cardDarkBg = CP_DARK_BG,
                         onClick = { selectProtocol(Protocol.CARPLAY, view) },
                     )
                 )
@@ -1507,6 +1594,8 @@ class HomeFragment : Fragment() {
                 highlighted = false,
                 lastCard = true,
                 vertical = isVertical,
+                cardAccent = activeAccent(),
+                cardDarkBg = activeDarkBg(),
                 onClick = { if (isCp && bonded.isNotEmpty()) showCarPlayPhonePicker() else openBluetoothSettings() },
             )
         )
@@ -1520,6 +1609,8 @@ class HomeFragment : Fragment() {
         highlighted: Boolean,
         lastCard: Boolean = false,
         vertical: Boolean = false,
+        cardAccent: Int = ACCENT,
+        cardDarkBg: Int = ACCENT_DARK_BG,
         onClick: () -> Unit,
     ): View {
         val ctx = requireContext()
@@ -1530,10 +1621,10 @@ class HomeFragment : Fragment() {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(18).toFloat()
-                setColor(if (highlighted) ACCENT_DARK_BG else CARD_BG)
+                setColor(if (highlighted) cardDarkBg else CARD_BG)
                 setStroke(
                     dp(if (highlighted) 2 else 1),
-                    if (highlighted) ACCENT else OUTLINE,
+                    if (highlighted) cardAccent else OUTLINE,
                 )
             }
             layoutParams = if (vertical) {
@@ -1553,13 +1644,14 @@ class HomeFragment : Fragment() {
         val iconContainerBg = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(14).toFloat()
-            setColor(if (highlighted) 0x2900E5C7 else 0xFF1A2534.toInt())
+            val iconHighlight = Color.argb(41, Color.red(cardAccent), Color.green(cardAccent), Color.blue(cardAccent))
+            setColor(if (highlighted) iconHighlight else 0xFF1A2534.toInt())
         }
         val iconView: View = if (iconRes != null) {
             ImageView(ctx).apply {
                 setImageResource(iconRes)
                 if (tintIcon) {
-                    imageTintList = ColorStateList.valueOf(if (highlighted) ACCENT else TEXT_MAIN)
+                    imageTintList = ColorStateList.valueOf(if (highlighted) cardAccent else TEXT_MAIN)
                 }
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
                 setPadding(dp(11), dp(11), dp(11), dp(11))
@@ -1571,7 +1663,7 @@ class HomeFragment : Fragment() {
                 text = "+"
                 textSize = 24f
                 gravity = Gravity.CENTER
-                setTextColor(ACCENT)
+                setTextColor(cardAccent)
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                 background = iconContainerBg
                 layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(14) }
@@ -1598,7 +1690,7 @@ class HomeFragment : Fragment() {
                 text = subtitle
                 textSize = 14f
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                setTextColor(if (highlighted) ACCENT else TEXT_DIM)
+                setTextColor(if (highlighted) cardAccent else TEXT_DIM)
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
             }
@@ -1758,6 +1850,15 @@ class HomeFragment : Fragment() {
         private const val ACCENT = 0xFF00E5C7.toInt()
         private const val ACCENT_DARK_BG = 0xFF0E2C30.toInt()
         private const val ON_ACCENT = 0xFF04150E.toInt()
+        private const val CP_ACCENT = 0xFF3B9BFF.toInt()
+        private const val CP_DARK_BG = 0xFF102440.toInt()
+        private const val CP_ON_ACCENT = 0xFFFFFFFF.toInt()
+        private const val HERO_AA_BG = 0xFF0E1B24.toInt()
+        private const val HERO_AA_STROKE = 0xFF1B4A4D.toInt()
+        private const val HERO_CP_BG = 0xFF0E1728.toInt()
+        private const val HERO_CP_STROKE = 0xFF234E87.toInt()
+        private const val AMBER = 0xFFFFB547.toInt()
+        private const val AMBER_BG = 0x24FFB547.toInt()
         private const val OK_GREEN = 0xFF3AD29F.toInt()
         private const val CARD_BG = 0xFF101824.toInt()
         private const val SURFACE_HI = 0xFF15202E.toInt()

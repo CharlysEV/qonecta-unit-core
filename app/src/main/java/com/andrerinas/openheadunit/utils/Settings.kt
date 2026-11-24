@@ -1217,6 +1217,13 @@ class Settings(private val context: Context) {
         const val KEY_PANEL_DEMO = "qu-panel-demo"
         /** Densidad de AA por defecto en la unidad (la de Qonecta+ en el C10). 0 = la de la unidad. */
         const val DEFAULT_DPI_PIXEL_DENSITY = 200
+        const val KEY_HOME_STARTUP_SCREEN = "qu-home-startup-screen"
+
+        fun resolveInitialHomeProtocol(startupScreen: String, lastHomeProtocol: String): String = when (startupScreen) {
+            "carplay" -> "carplay"
+            "aa" -> "aa"
+            else -> if (lastHomeProtocol == "carplay") "carplay" else "aa"
+        }
 
         const val AUTO_CONNECT_LAST_SESSION = "last-session"
         const val AUTO_CONNECT_SELF_MODE = "self-mode"
@@ -1710,5 +1717,19 @@ class Settings(private val context: Context) {
     var lastHomeProtocol: String
         get() = prefs.getString("qu-last-home-protocol", "aa") ?: "aa"
         set(value) = prefs.edit().putString("qu-last-home-protocol", if (value == "carplay") "carplay" else "aa").apply()
+
+    /** Favorite startup screen: "last", "aa", or "carplay". */
+    var homeStartupScreen: String
+        get() = when (prefs.getString(KEY_HOME_STARTUP_SCREEN, "last")) {
+            "aa", "carplay" -> prefs.getString(KEY_HOME_STARTUP_SCREEN, "last")!!
+            else -> "last"
+        }
+        set(value) {
+            val normalized = when (value) {
+                "aa", "carplay" -> value
+                else -> "last"
+            }
+            prefs.edit().putString(KEY_HOME_STARTUP_SCREEN, normalized).apply()
+        }
 
 }
