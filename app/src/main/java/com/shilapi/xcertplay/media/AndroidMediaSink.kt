@@ -743,10 +743,13 @@ private class AudioRenderer(
             MediaCodec.createDecoderByType(mime).also {
                 it.configure(mediaFormat, null, null, 0)
                 it.start()
-                Log.i(TAG, "audio decoder configured mime=$mime name=${it.name}")
+                val msg = "audio decoder configured mime=$mime name=${it.name}"
+                Log.i(TAG, msg)
+                report("Audio: decoder mime=$mime name=${it.name}")
             }
         } catch (error: Exception) {
             Log.e(TAG, "audio decoder configuration failed mime=$mime", error)
+            report("Audio: decoderFailed mime=$mime error=${error.javaClass.simpleName}")
             null
         }
     }
@@ -758,6 +761,7 @@ private class AudioRenderer(
         val minBuffer = AudioTrack.getMinBufferSize(format.sampleRate, channelMask, encoding)
         if (minBuffer <= 0) {
             Log.e(TAG, "AudioTrack buffer size unavailable rate=${format.sampleRate} channels=${format.channels}")
+            report("Audio: trackMinBufInvalid rate=${format.sampleRate} channels=${format.channels} min=$minBuffer")
             return
         }
         val plan = MediaAudioBuffer.plan(format.audioType, format.sampleRate, format.channels, minBuffer, mediaBufferMillis)
@@ -778,10 +782,12 @@ private class AudioRenderer(
                 .build()
         } catch (error: Exception) {
             Log.e(TAG, "AudioTrack creation failed audioType=${format.audioType}", error)
+            report("Audio: trackCreateFailed audioType=${format.audioType} error=${error.javaClass.simpleName}")
             return
         }
         if (built.state != AudioTrack.STATE_INITIALIZED) {
             Log.e(TAG, "AudioTrack failed to initialize audioType=${format.audioType} state=${built.state}")
+            report("Audio: trackInitFailed audioType=${format.audioType} state=${built.state}")
             runCatching { built.release() }
             return
         }
@@ -826,12 +832,12 @@ private class AudioRenderer(
             .setContentType(contentType)
             .build()
             .also {
-                Log.i(
-                    TAG,
+                val routeMsg =
                     "audio route type=${format.payloadType} audioType=${format.audioType} " +
                         "mode=$mode channel=${selection.channel} " +
-                        "usage=$usage contentType=$contentType",
-                )
+                        "usage=$usage contentType=$contentType"
+                Log.i(TAG, routeMsg)
+                report("Audio: route $routeMsg")
             }
     }
 
@@ -1021,11 +1027,9 @@ private class AudioRenderer(
         if (!firstPcmLogged && length > 0) {
             firstPcmLogged = true
             val end = minOf(data.size, offset + minOf(length, 16))
-            Log.i(
-                TAG,
-                "audio first PCM type=${format.payloadType} bytes=$length " +
-                    "head=${data.copyOfRange(offset, end).toHexString()}",
-            )
+            val msg = "audio first PCM type=${format.payloadType} bytes=$length head=${data.copyOfRange(offset, end).toHexString()}"
+            Log.i(TAG, msg)
+            report("Audio: firstPcm type=${format.payloadType} audioType=${format.audioType} bytes=$length")
         }
         if (!fadeApplied) {
             applyFadeIn(data, offset, length)

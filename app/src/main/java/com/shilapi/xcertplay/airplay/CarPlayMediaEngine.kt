@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.airplay
 
 import android.util.Log
+import com.andrerinas.openheadunit.utils.AppLog
 import com.shilapi.xcertplay.transport.BlockingDuplexByteStream
 import java.io.Closeable
 import java.io.File
@@ -118,12 +119,12 @@ class CarPlayMediaEngine(
             type,
             audioType,
         )
-        Log.i(
-            TAG,
+        val audioFmtMsg =
             "airplay audio format type=$type audioType=$audioType codec=${format.codec} " +
                 "rate=${format.sampleRate} channels=${format.channels} " +
-                "micPort=${(stream["dataPort"] as? Number)?.toInt() ?: 0}",
-        )
+                "micPort=${(stream["dataPort"] as? Number)?.toInt() ?: 0}"
+        Log.i(TAG, audioFmtMsg)
+        runCatching { AppLog.i("[CarPlayMedia] $audioFmtMsg") }
         val connectionId = stream["streamConnectionID"]
         val latencyMs = (stream["audioLatencyMs"] as? Number)?.toInt() ?: 0
         val meta = AudioMeta(type, format, connectionId, latencyMs)

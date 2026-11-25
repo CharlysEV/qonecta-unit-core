@@ -5,6 +5,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.util.Log
+import com.andrerinas.openheadunit.utils.AppLog
 
 /**
  * Unified single-request Android AudioFocus coordinator for Apple CarPlay.
@@ -126,7 +127,10 @@ internal class CarPlayAudioFocusController(
                 .build()
             val result = runCatching { manager.requestAudioFocus(req) }
                 .getOrDefault(AudioManager.AUDIOFOCUS_REQUEST_FAILED)
-            Log.i(TAG, "CarPlay audio focus request gain=$focusGain result=$result")
+            val channelsSnapshot = synchronized(lock) { activeChannels.values.toSet() }
+            val focusMsg = "CarPlay audio focus request gain=$focusGain result=$result channels=$channelsSnapshot"
+            Log.i(TAG, focusMsg)
+            runCatching { AppLog.i("[CarPlayAudioFocus] $focusMsg") }
             synchronized(lock) {
                 if (generation == requestGeneration && result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                     currentRequest = req
@@ -141,7 +145,9 @@ internal class CarPlayAudioFocusController(
             val result = runCatching {
                 manager.requestAudioFocus(listener, AudioManager.STREAM_MUSIC, focusGain)
             }.getOrDefault(AudioManager.AUDIOFOCUS_REQUEST_FAILED)
-            Log.i(TAG, "CarPlay audio focus request (legacy) gain=$focusGain result=$result")
+            val legacyMsg = "CarPlay audio focus request (legacy) gain=$focusGain result=$result"
+            Log.i(TAG, legacyMsg)
+            runCatching { AppLog.i("[CarPlayAudioFocus] $legacyMsg") }
             if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                 synchronized(lock) {
                     if (generation == requestGeneration) currentFocusGain = AudioManager.AUDIOFOCUS_NONE
@@ -172,7 +178,9 @@ internal class CarPlayAudioFocusController(
             }
         }
         if (shouldYield) {
-            Log.i(TAG, "CarPlay yielding audio focus to external car audio ($change)")
+            val yieldMsg = "CarPlay yielding audio focus to external car audio ($change)"
+            Log.i(TAG, yieldMsg)
+            runCatching { AppLog.w("[CarPlayAudioFocus] $yieldMsg") }
             audioManager?.let { abandonQuietly(it, oldRequest) }
             runCatching { onExternalFocusLoss() }
         }

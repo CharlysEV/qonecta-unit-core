@@ -33,6 +33,7 @@ import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import com.andrerinas.openheadunit.utils.AppLog
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -2928,7 +2929,11 @@ class CarPlayHostActivity : ComponentActivity() {
             },
             mediaBufferMillis = AirPlayPersistence.loadMediaBufferMillis(this),
             onAudioDiagnostic = { message ->
+                val redacted = DiagnosticRedactor.redact(message)
                 diagnosticLog?.append(formattedLogLine(message, System.currentTimeMillis()))
+                if (redacted != null) {
+                    runCatching { AppLog.i("[CarPlayAudio] $redacted") }
+                }
             },
             audioManager = audioManager,
             onExternalAudioFocusLost = {
