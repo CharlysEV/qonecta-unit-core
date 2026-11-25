@@ -123,12 +123,26 @@ class MainActivity : BaseActivity() {
         logLaunchSource()
         clearBootLoopGuardIfOpenedByHand()
 
+        if (shouldReturnToCarPlayHome(intent)) {
+            suppressCarPlayAutoResumeOnce = true
+        }
+
         // If an Android Auto session is active, bring the projection activity to front
         if (App.provide(this).commManager.isConnected && !App.isPiPActive) {
             AppLog.i("MainActivity: Active session detected in onCreate, bringing projection to front")
             bringProjectionToFront()
 
             // If we are auto-forwarding, hide the splash immediately to avoid flashing it twice
+            if (savedInstanceState == null) {
+                findViewById<View>(R.id.splash_overlay)?.visibility = View.GONE
+            }
+        } else if (!suppressCarPlayAutoResumeOnce &&
+            com.shilapi.xcertplay.CarPlayBackgroundSession.hasSession() &&
+            !com.shilapi.xcertplay.CarPlayHostActivity.isForeground
+        ) {
+            AppLog.i("MainActivity: Active CarPlay session detected in onCreate, bringing CarPlayHostActivity to front")
+            bringCarPlayToFront()
+
             if (savedInstanceState == null) {
                 findViewById<View>(R.id.splash_overlay)?.visibility = View.GONE
             }
@@ -697,11 +711,14 @@ class MainActivity : BaseActivity() {
         }
     }
 
+    private var suppressCarPlayAutoResumeOnce = false
+
     override fun onStart() {
         super.onStart()
     }
 
     override fun onStop() {
+        suppressCarPlayAutoResumeOnce = false
         super.onStop()
         // Free media resources whenever the activity is backgrounded. Covers user
         // pressing Home, AapProjectionActivity coming to front (success), and
@@ -723,6 +740,7 @@ class MainActivity : BaseActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        suppressCarPlayAutoResumeOnce = shouldReturnToCarPlayHome(intent)
         handleLaunchIntent(intent)
     }
 
@@ -863,7 +881,8 @@ class MainActivity : BaseActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionRequestCode &&
-            grantResults.any { it == PackageManager.PERMISSION_GRANTED }
+            grantResults.any { it == PackageManager.PERMISSION_GRANTED } &&
+            !com.shilapi.xcertplay.CarPlayBackgroundSession.hasSession()
         ) {
             AppLog.i("MainActivity: Runtime permissions granted — notifying AapService to arm wireless transport.")
             runCatching {
@@ -894,7 +913,23 @@ class MainActivity : BaseActivity() {
         if (App.provide(this).commManager.isConnected && !App.isPiPActive && !AapProjectionActivity.isForeground) {
             AppLog.i("MainActivity: Active session detected, bringing projection to front")
             bringProjectionToFront()
+        } else if (!suppressCarPlayAutoResumeOnce &&
+            com.shilapi.xcertplay.CarPlayBackgroundSession.hasSession() &&
+            !com.shilapi.xcertplay.CarPlayHostActivity.isForeground
+        ) {
+            AppLog.i("MainActivity: Active CarPlay session detected, bringing CarPlayHostActivity to front")
+            bringCarPlayToFront()
         }
+    }
+
+    private fun shouldReturnToCarPlayHome(intent: Intent?): Boolean =
+        intent?.getStringExtra("extra_home_protocol") == "carplay"
+
+    private fun bringCarPlayToFront() {
+        val cpIntent = Intent(this, com.shilapi.xcertplay.CarPlayHostActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        startActivity(cpIntent)
     }
 
     /**

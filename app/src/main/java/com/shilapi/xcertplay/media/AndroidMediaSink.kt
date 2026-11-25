@@ -440,13 +440,17 @@ private class VideoDecoder(
             try {
                 codec.setOutputSurface(surface)
                 Log.i(TAG, "video decoder output surface updated")
+                requestKeyFrameIfDue()
                 return
             } catch (error: Exception) {
                 Log.w(TAG, "video decoder output surface update failed; reconfiguring", error)
             }
         }
         releaseDecoder()
-        lastConfig?.let(::configureDecoder)
+        lastConfig?.let {
+            configureDecoder(it)
+            requestKeyFrameIfDue()
+        }
     }
 
     private fun feed(nalus: ByteArray) {

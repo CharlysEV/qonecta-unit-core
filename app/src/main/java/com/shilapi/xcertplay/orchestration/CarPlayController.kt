@@ -309,8 +309,14 @@ class CarPlayController(
     ) {
         uiListener = listener
         uiStatusReporter = reportStatus
+        val currentSession = activeSession
         mainHandler.post {
-            if (uiListener === listener) lastReportedStatus?.let(reportStatus)
+            if (uiListener === listener) {
+                lastReportedStatus?.let(reportStatus)
+                if (!closed && currentSession != null && activeSession === currentSession) {
+                    listener.onSessionActive(currentSession)
+                }
+            }
         }
     }
 

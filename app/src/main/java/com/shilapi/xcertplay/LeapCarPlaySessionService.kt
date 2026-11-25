@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import com.andrerinas.openheadunit.R
+import com.andrerinas.openheadunit.utils.AppLog
 
 /** Keeps an explicitly started connection alive when another car app is in the foreground. */
 class LeapCarPlaySessionService : Service() {
@@ -49,9 +50,10 @@ class LeapCarPlaySessionService : Service() {
         return START_NOT_STICKY
     }
     override fun onTaskRemoved(rootIntent: Intent?) {
-        CarPlayBackgroundSession.stop()
-        runCatching { stopService(Intent(this, com.shilapi.xcertplay.network.CarPlayVpnService::class.java)) }
-        stopSelf()
+        // Keep CarPlay alive when LeapOS switches away (e.g. FM Radio) or clears transient tasks.
+        // Explicit user disconnect still tears down via ACTION_STOP or onDestroy().
+        runCatching { AppLog.i("LeapCarPlaySessionService: onTaskRemoved — keeping active CarPlay session alive") }
+        super.onTaskRemoved(rootIntent)
     }
     override fun onDestroy() {
         CarPlayBackgroundSession.stop()

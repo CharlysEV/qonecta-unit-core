@@ -401,7 +401,10 @@ class CarPlayHostActivity : ComponentActivity() {
         }
         // Yield Android Auto wireless P2P/BT/active session before CarPlay claims the radios or USB,
         // without cold-starting AapService if it is not running.
-        if (!simulateIphone && com.andrerinas.openheadunit.aap.AapService.isServiceRunning()) {
+        if (!simulateIphone &&
+            !CarPlayBackgroundSession.hasSession() &&
+            com.andrerinas.openheadunit.aap.AapService.isServiceRunning()
+        ) {
             Thread({
                 com.andrerinas.openheadunit.aap.AapService.releaseWirelessForHandoff(1200L)
             }, "CarPlay-AaHandoff").start()
@@ -587,6 +590,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        isForeground = true
         locationPermissionAvailable = hasFineLocationPermission()
         if (locationReportingEnabled && !locationPermissionAvailable && !menuOpen) {
             requestLocationPermission()
@@ -594,6 +598,11 @@ class CarPlayHostActivity : ComponentActivity() {
         wirelessPermissionsReady = !wirelessEnabled || hasRequiredWirelessPermissions()
         maybeStartCarPlay()
         applyFullscreenMode()
+    }
+
+    override fun onPause() {
+        isForeground = false
+        super.onPause()
     }
 
     override fun onStart() {
@@ -680,7 +689,8 @@ class CarPlayHostActivity : ComponentActivity() {
         // Always tear down simulator resources (and any non-background-owned sink) on Activity destroy.
         val simToClose = simulator
         simulator = null
-        val ownedByBackground = CarPlayBackgroundSession.hasSession() && CarPlayBackgroundSession.isOwner(this)
+        val ownedByBackground = CarPlayBackgroundSession.hasSession() &&
+            (CarPlayBackgroundSession.isOwner(this) || CarPlayBackgroundSession.isCurrentSink(sink))
         if (!ownedByBackground) {
             com.andrerinas.openheadunit.cluster.ClusterMapController.stop(
                 com.andrerinas.openheadunit.cluster.ClusterMapController.Mode.CARPLAY,
@@ -3238,6 +3248,13 @@ class CarPlayHostActivity : ComponentActivity() {
                 "Display updated while handshake is reset: " +
                     "${previous.width}x${previous.height} -> ${size.width}x${size.height}",
             )
+        } else if (CarPlayBackgroundSession.active &&
+            (previous.width > previous.height) == (size.width > size.height)
+        ) {
+            appendLog(
+                "Display size jitter ignored while CarPlay session is active: " +
+                    "${previous.width}x${previous.height} -> ${size.width}x${size.height}",
+            )
         } else {
             restartCarPlay(
                 "Display changed ${previous.width}x${previous.height} -> ${size.width}x${size.height}",
@@ -3699,31 +3716,34 @@ class CarPlayHostActivity : ComponentActivity() {
         is CarPlayStatus.Failed -> "Failed: ${message}"
     }
 
-    private companion object {
-        const val TAG = "xcertplay-usb"
-        const val SCREEN_TYPE_MAIN = 110
-        const val SCREEN_TYPE_ALT = 111
-        const val LOG_RETENTION_MILLIS = 5 * 60_000L
-        const val DISPLAY_CHANGE_DEBOUNCE_MILLIS = 500L
-        const val RECONNECT_DELAY_MILLIS = 2_000L
-        const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
-        const val MAX_AUTO_RECONNECT_ATTEMPTS = 8
-        const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
-        const val AUDIO_CAPTURE_MARKER = "audio-capture.enabled"
-        const val AUDIO_CAPTURE_DIRECTORY = "audio-captures"
-        const val PROTOCOL_TRACE_PREFIX = "TRACE "
-        const val THREE_FINGER_COUNT = 3
-        const val THREE_FINGER_SWIPE_DISTANCE_DP = 72
-        const val THREE_FINGER_SWIPE_DIRECTION_RATIO = 1.15f
-        const val MAX_SETTINGS_MENU_WIDTH_PX = 1200
-        val MENU_BACKGROUND = Color.rgb(12, 16, 19)
-        val MENU_SECONDARY = Color.rgb(170, 180, 190)
-        val MENU_ACCENT = Color.rgb(127, 205, 154)
-        val MENU_ACCENT_TRACK = Color.rgb(78, 143, 102)
-        val MENU_TRACK_OFF = Color.rgb(64, 74, 80)
-        val MENU_BUTTON_TEXT = Color.rgb(8, 17, 11)
-        val MENU_DANGER = Color.rgb(190, 45, 45)
-        val NO_VIDEO_BACKGROUND = Color.rgb(0x16, 0x16, 0x18)
+    companion object {
+        @Volatile
+        var isForeground: Boolean = false
+
+        private const val TAG = "xcertplay-usb"
+        private const val SCREEN_TYPE_MAIN = 110
+        private const val SCREEN_TYPE_ALT = 111
+        private const val LOG_RETENTION_MILLIS = 5 * 60_000L
+        private const val DISPLAY_CHANGE_DEBOUNCE_MILLIS = 500L
+        private const val RECONNECT_DELAY_MILLIS = 2_000L
+        private const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
+        private const val MAX_AUTO_RECONNECT_ATTEMPTS = 8
+        private const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
+        private const val AUDIO_CAPTURE_MARKER = "audio-capture.enabled"
+        private const val AUDIO_CAPTURE_DIRECTORY = "audio-captures"
+        private const val PROTOCOL_TRACE_PREFIX = "TRACE "
+        private const val THREE_FINGER_COUNT = 3
+        private const val THREE_FINGER_SWIPE_DISTANCE_DP = 72
+        private const val THREE_FINGER_SWIPE_DIRECTION_RATIO = 1.15f
+        private const val MAX_SETTINGS_MENU_WIDTH_PX = 1200
+        private val MENU_BACKGROUND = Color.rgb(12, 16, 19)
+        private val MENU_SECONDARY = Color.rgb(170, 180, 190)
+        private val MENU_ACCENT = Color.rgb(127, 205, 154)
+        private val MENU_ACCENT_TRACK = Color.rgb(78, 143, 102)
+        private val MENU_TRACK_OFF = Color.rgb(64, 74, 80)
+        private val MENU_BUTTON_TEXT = Color.rgb(8, 17, 11)
+        private val MENU_DANGER = Color.rgb(190, 45, 45)
+        private val NO_VIDEO_BACKGROUND = Color.rgb(0x16, 0x16, 0x18)
     }
 
     private data class DisplaySize(val width: Int, val height: Int)
@@ -3744,6 +3764,7 @@ internal object CarPlayBackgroundSession {
     private var stopping = false
     private var owner: Any? = null
     @Synchronized fun isOwner(candidate: Any): Boolean = owner === candidate
+    @Synchronized fun isCurrentSink(candidate: AndroidMediaSink?): Boolean = candidate != null && sink === candidate
     @Synchronized fun hasSession(): Boolean = stopAction != null || stopping
     private val stopWaiters = mutableListOf<() -> Unit>()
 
