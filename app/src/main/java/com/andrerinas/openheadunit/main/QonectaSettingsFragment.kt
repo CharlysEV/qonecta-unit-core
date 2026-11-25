@@ -12,6 +12,9 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -1131,6 +1134,139 @@ class QonectaSettingsFragment : Fragment() {
                 settings.syncMediaSessionWithAaMetadata = checked
                 flashSaved()
             }
+            addDivider(card)
+            addSwitchRow(
+                card,
+                title = getString(R.string.attach_hw_dsp_equalizer),
+                subtitle = getString(R.string.attach_hw_dsp_equalizer_description),
+                checked = settings.attachHwDspEqualizer,
+            ) { checked ->
+                settings.attachHwDspEqualizer = checked
+                flashSaved(reconnectNeeded = true)
+            }
+            addDivider(card)
+            val latencyValues = listOf(1, 2, 4, 8)
+            addSegmentedRow(
+                card,
+                title = getString(R.string.audio_latency_multiplier),
+                subtitle = "${settings.audioLatencyMultiplier}x",
+                options = listOf("1x", "2x", "4x", "8x"),
+                selectedIndex = latencyValues.indexOf(settings.audioLatencyMultiplier).let { if (it >= 0) it else 3 },
+            ) { idx ->
+                settings.audioLatencyMultiplier = latencyValues[idx]
+                flashSaved(reconnectNeeded = true)
+                renderActiveTab(preserveScroll = true)
+            }
+            addDivider(card)
+            val queueValueText = if (settings.audioQueueCapacity == 0) {
+                getString(R.string.audio_queue_unbounded)
+            } else {
+                getString(R.string.audio_queue_chunks, settings.audioQueueCapacity)
+            }
+            addActionRow(
+                card,
+                title = getString(R.string.audio_queue_capacity),
+                subtitle = null,
+                valueText = queueValueText,
+            ) {
+                val options = arrayOf(
+                    getString(R.string.audio_queue_low),
+                    getString(R.string.audio_queue_balanced),
+                    getString(R.string.audio_queue_high),
+                    getString(R.string.audio_queue_backlog),
+                )
+                val values = intArrayOf(10, 20, 50, 0)
+                val currentIdx = values.indexOf(settings.audioQueueCapacity).coerceAtLeast(0)
+                MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                    .setTitle(R.string.audio_queue_capacity)
+                    .setSingleChoiceItems(options, currentIdx) { dlg, which ->
+                        settings.audioQueueCapacity = values[which]
+                        flashSaved(reconnectNeeded = true)
+                        dlg.dismiss()
+                        renderActiveTab(preserveScroll = true)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+        }
+
+        addCard(root, getString(R.string.microphone_settings)) { card ->
+            val rates = Settings.MicSampleRates
+            addActionRow(
+                card,
+                title = getString(R.string.mic_sample_rate),
+                subtitle = null,
+                valueText = "${settings.micSampleRate} Hz",
+            ) {
+                val labels = rates.map { "$it Hz" }.toTypedArray()
+                val curIdx = rates.indexOf(settings.micSampleRate).coerceAtLeast(0)
+                MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                    .setTitle(R.string.mic_sample_rate)
+                    .setSingleChoiceItems(labels, curIdx) { dlg, which ->
+                        settings.micSampleRate = rates[which]
+                        flashSaved(reconnectNeeded = true)
+                        dlg.dismiss()
+                        renderActiveTab(preserveScroll = true)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+            addDivider(card)
+            val micSources = resources.getStringArray(R.array.mic_input_sources)
+            addActionRow(
+                card,
+                title = getString(R.string.mic_input_source),
+                subtitle = null,
+                valueText = micSources.getOrElse(settings.micInputSource) { getString(R.string.not_set) },
+            ) {
+                val curIdx = settings.micInputSource.coerceIn(0, (micSources.size - 1).coerceAtLeast(0))
+                MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
+                    .setTitle(R.string.mic_input_source)
+                    .setSingleChoiceItems(micSources, curIdx) { dlg, which ->
+                        settings.micInputSource = which
+                        flashSaved(reconnectNeeded = true)
+                        dlg.dismiss()
+                        renderActiveTab(preserveScroll = true)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+            addDivider(card)
+            val aecAvailable = AcousticEchoCanceler.isAvailable()
+            addSwitchRow(
+                card,
+                title = getString(R.string.mic_echo_canceler),
+                subtitle = getString(if (aecAvailable) R.string.mic_echo_canceler_description else R.string.mic_feature_unsupported),
+                checked = settings.micEchoCanceler,
+                enabled = aecAvailable,
+            ) { checked ->
+                settings.micEchoCanceler = checked
+                flashSaved(reconnectNeeded = true)
+            }
+            addDivider(card)
+            val nsAvailable = NoiseSuppressor.isAvailable()
+            addSwitchRow(
+                card,
+                title = getString(R.string.mic_noise_suppressor),
+                subtitle = getString(if (nsAvailable) R.string.mic_noise_suppressor_description else R.string.mic_feature_unsupported),
+                checked = settings.micNoiseSuppressor,
+                enabled = nsAvailable,
+            ) { checked ->
+                settings.micNoiseSuppressor = checked
+                flashSaved(reconnectNeeded = true)
+            }
+            addDivider(card)
+            val agcAvailable = AutomaticGainControl.isAvailable()
+            addSwitchRow(
+                card,
+                title = getString(R.string.mic_auto_gain_control),
+                subtitle = getString(if (agcAvailable) R.string.mic_auto_gain_control_description else R.string.mic_feature_unsupported),
+                checked = settings.micAutoGainControl,
+                enabled = agcAvailable,
+            ) { checked ->
+                settings.micAutoGainControl = checked
+                flashSaved(reconnectNeeded = true)
+            }
         }
 
         addCard(root, getString(R.string.qu_set_sec_audio_cp)) { card ->
@@ -1894,6 +2030,7 @@ class QonectaSettingsFragment : Fragment() {
         title: String,
         subtitle: String?,
         checked: Boolean,
+        enabled: Boolean = true,
         onChanged: (Boolean) -> Unit,
     ) {
         val ctx = requireContext()
@@ -1901,6 +2038,8 @@ class QonectaSettingsFragment : Fragment() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(8), 0, dp(8))
+            isEnabled = enabled
+            alpha = if (enabled) 1f else 0.55f
         }
         val textCol = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -1926,6 +2065,7 @@ class QonectaSettingsFragment : Fragment() {
 
         val sw = SwitchCompat(ctx).apply {
             isChecked = checked
+            isEnabled = enabled
             minHeight = dp(48)
             fun applyTint(on: Boolean) {
                 thumbTintList = ColorStateList.valueOf(if (on) ACCENT else 0xFF8FA5BA.toInt())
@@ -1938,7 +2078,7 @@ class QonectaSettingsFragment : Fragment() {
             }
         }
         row.addView(sw)
-        row.setOnClickListener { sw.toggle() }
+        row.setOnClickListener { if (enabled) sw.toggle() }
         parent.addView(row)
     }
 
