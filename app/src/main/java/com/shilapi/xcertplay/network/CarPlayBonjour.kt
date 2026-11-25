@@ -68,7 +68,7 @@ object CarPlayBonjourProtocol {
         identity: AirPlayIdentity,
     ): Map<String, String> = linkedMapOf(
         "deviceid" to config.deviceId,
-        "features" to "0x44540380,0x61",
+        "features" to com.shilapi.xcertplay.airplay.AirPlayInfoPlist.bonjourFeaturesTxt(config.disableAudioOutput),
         "flags" to "0x4",
         "model" to config.model,
         "srcvers" to config.sourceVersion,

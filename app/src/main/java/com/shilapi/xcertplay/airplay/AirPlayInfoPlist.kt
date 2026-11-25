@@ -24,6 +24,16 @@ object AirPlayInfoPlist {
     private const val PRIORITY_NICE_TO_HAVE = 100
     private const val CONSTRAINT_ANYTIME = 100
 
+    fun featuresMask(disableAudioOutput: Boolean): Long =
+        if (disableAudioOutput) CARPLAY_FEATURES_NO_AUDIO else CARPLAY_FEATURES
+
+    fun bonjourFeaturesTxt(disableAudioOutput: Boolean): String {
+        val mask = featuresMask(disableAudioOutput)
+        val low = mask and 0xffffffffL
+        val high = mask ushr 32
+        return if (high == 0L) "0x${low.toString(16)}" else "0x${low.toString(16)},0x${high.toString(16)}"
+    }
+
     fun build(config: AirPlayConfig): Map<String, Any?> {
         val displays = arrayListOf<Any?>(
             displayEntry(config.main, STREAM_TYPE_MAIN_SCREEN, MAIN_UUID),
@@ -32,7 +42,7 @@ object AirPlayInfoPlist {
 
         val info = linkedMapOf<String, Any?>(
             "sourceVersion" to config.sourceVersion,
-            "features" to if (config.disableAudioOutput) CARPLAY_FEATURES_NO_AUDIO else CARPLAY_FEATURES,
+            "features" to featuresMask(config.disableAudioOutput),
             "statusFlags" to 4L,
             "model" to config.model,
             "manufacturer" to config.manufacturer,
@@ -126,8 +136,8 @@ object AirPlayInfoPlist {
         val pcmMono = 0x154 or 0x4400
         val opus = 0x70000000
         val aacLc = 0xc00000
-        val pcmInput = if (microphone) pcmMono else null
-        val wirelessInput = if (microphone) pcmMono or opus else null
+        val pcmInput = pcmMono
+        val wirelessInput = pcmMono or opus
 
         return listOf(
             format(100, "compatibility", pcm, pcmInput),

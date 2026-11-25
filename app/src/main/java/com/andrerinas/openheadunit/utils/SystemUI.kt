@@ -72,7 +72,9 @@ object SystemUI {
                 }
                 Settings.FullscreenMode.STATUS_ONLY -> {
                     flags = flags or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN
-                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                        flags = flags or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    } else {
                         window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
                         flags = flags or View.SYSTEM_UI_FLAG_LOW_PROFILE
                     }

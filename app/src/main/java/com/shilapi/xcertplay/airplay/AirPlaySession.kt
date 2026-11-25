@@ -71,6 +71,8 @@ class AirPlaySession(
 
     private val closed = AtomicBoolean(false)
     private val notified = AtomicBoolean(false)
+    @Volatile private var sessionActive = false
+    private val audioRouteModeScheduled = AtomicBoolean(false)
     @Volatile private var eventServer: ServerSocket? = null
     @Volatile private var eventSocket: Socket? = null
     @Volatile private var eventCipher: ControlCipher? = null
@@ -346,7 +348,9 @@ class AirPlaySession(
                 // Once projection is active, the iPhone sends periodic /feedback heartbeats (~1-2s).
                 // A bounded SO_TIMEOUT detects silent Wi-Fi drops instead of hanging for Linux's 2h keepalive.
                 runCatching { socket.soTimeout = CONTROL_SOCKET_TIMEOUT_MILLIS }
+                sessionActive = true
                 listener.onSessionActive(this)
+                scheduleInitialAudioRouteModeIfReady()
                 return RtspMessage.Response(status = 200)
             }
             "TEARDOWN" -> return handleTeardown(request)
@@ -473,6 +477,7 @@ class AirPlaySession(
         features.add("viewAreas")
         if (config.cluster != null) features.add("altScreen")
         response["enabledFeatures"] = features
+        debugLog("airplay SETUP proposedFeatures=${dict["features"]} enabledFeatures=$features")
         return RtspMessage.Response(
             headers = mapOf("Content-Type" to PLIST_CONTENT_TYPE),
             body = BplistCodec.encode(response),
@@ -658,6 +663,7 @@ class AirPlaySession(
                 eventCipher = cipherInstance
                 sendPendingNightModeLocked()
             }
+            scheduleInitialAudioRouteModeIfReady()
             runEventRead(socket, cipherInstance)
         } catch (error: Exception) {
             if (!closed.get()) {
@@ -728,17 +734,35 @@ class AirPlaySession(
         }
     }
 
+    private fun scheduleInitialAudioRouteModeIfReady() {
+        if (!sessionActive || closed.get()) return
+        if (eventSocket == null || eventCipher == null) return
+        if (!audioRouteModeScheduled.compareAndSet(false, true)) return
+        spawnEvent("airplay-audio-route") {
+            try {
+                Thread.sleep(INITIAL_AUDIO_ROUTE_DELAY_MILLIS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return@spawnEvent
+            }
+            if (closed.get()) return@spawnEvent
+            val sent = sendCommand(buildAudioRouteChangeModesCommand(config.disableAudioOutput))
+            val route = if (config.disableAudioOutput) "native_bt" else "airplay"
+            debugLog("airplay audio changeModes requested=$route sent=$sent")
+        }
+    }
+
     private fun spawnEvent(name: String, body: () -> Unit) {
         val thread = Thread(body, name).apply { isDaemon = true }
         eventThreads.add(thread)
         thread.start()
     }
 
-    private companion object {
-        const val TAG = "xcertplay-usb"
-        const val PLIST_CONTENT_TYPE = "application/x-apple-binary-plist"
-        const val PAIRING_CONTENT_TYPE = "application/pairing+tlv8"
-        const val OCTET_CONTENT_TYPE = "application/octet-stream"
+    internal companion object {
+        private const val TAG = "xcertplay-usb"
+        private const val PLIST_CONTENT_TYPE = "application/x-apple-binary-plist"
+        private const val PAIRING_CONTENT_TYPE = "application/pairing+tlv8"
+        private const val OCTET_CONTENT_TYPE = "application/octet-stream"
 
         const val STREAM_TYPE_MAIN_SCREEN = 110
         const val STREAM_TYPE_ALT_SCREEN = 111
@@ -747,12 +771,30 @@ class AirPlaySession(
         const val STREAM_TYPE_MAIN_HIGH_AUDIO = 102
         const val STREAM_TYPE_DATA = 130
 
-        const val READ_CHUNK_BYTES = 16 * 1024
-        const val MAX_CONTROL_BUFFER_BYTES = 4 * 1024 * 1024
-        const val HANDSHAKE_SOCKET_TIMEOUT_MILLIS = 15_000
-        const val CONTROL_SOCKET_TIMEOUT_MILLIS = 15_000
-        const val EVENT_READY_POLL_MILLIS = 25L
-        const val NANOS_PER_MILLISECOND = 1_000_000L
+        private const val READ_CHUNK_BYTES = 16 * 1024
+        private const val MAX_CONTROL_BUFFER_BYTES = 4 * 1024 * 1024
+        private const val HANDSHAKE_SOCKET_TIMEOUT_MILLIS = 15_000
+        private const val CONTROL_SOCKET_TIMEOUT_MILLIS = 15_000
+        private const val EVENT_READY_POLL_MILLIS = 25L
+        private const val INITIAL_AUDIO_ROUTE_DELAY_MILLIS = 450L
+        private const val NANOS_PER_MILLISECOND = 1_000_000L
+
+        internal fun buildAudioRouteChangeModesCommand(disableAudioOutput: Boolean): Map<String, Any?> {
+            val resource = linkedMapOf<String, Any?>(
+                "resourceID" to 2,
+                "transferType" to if (disableAudioOutput) 1 else 2,
+            )
+            if (disableAudioOutput) {
+                resource["transferPriority"] = 100
+                resource["takeConstraint"] = 100
+                resource["borrowConstraint"] = 100
+                resource["unborrowConstraint"] = 100
+            }
+            return linkedMapOf(
+                "type" to "changeModes",
+                "params" to linkedMapOf("resources" to listOf(resource)),
+            )
+        }
     }
 }
 
