@@ -377,11 +377,12 @@ class AirPlaySession(
                     }
                     debugLog("airplay /info request=$requestInfo")
                 }
-                Log.i(
-                    TAG,
-                    "airplay /info features=${info["features"]} " +
+                val featuresHex = (info["features"] as? Number)?.toLong()?.let { "0x${it.toString(16)}" } ?: "${info["features"]}"
+                debugLog(
+                    "airplay /info features=$featuresHex " +
                         "audioFormats=${(info["audioFormats"] as? List<*>)?.size ?: 0} " +
-                        "audioLatencies=${(info["audioLatencies"] as? List<*>)?.size ?: 0}",
+                        "audioLatencies=${(info["audioLatencies"] as? List<*>)?.size ?: 0} " +
+                        "mic=${config.microphone} disableAudio=${config.disableAudioOutput}",
                 )
                 debugLog("airplay /info displays=${info["displays"]}")
                 RtspMessage.Response(
@@ -531,6 +532,9 @@ class AirPlaySession(
         val type = string(body["type"])
         val params = asMap(body["params"]) ?: emptyMap()
         debugLog("airplay command type=$type keys=${params.keys.sorted()}")
+        if (type == "modesChanged" || type == "changeModes") {
+            debugLog("airplay $type resources=${params["resources"]} appStates=${params["appStates"]}")
+        }
         if (type == "requestUI") listener.onHostUiRequested(this)
         listener.onCommand(this, type, params)
         return RtspMessage.Response(status = 200)

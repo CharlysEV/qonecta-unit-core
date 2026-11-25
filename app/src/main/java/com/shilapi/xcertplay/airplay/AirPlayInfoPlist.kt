@@ -103,7 +103,7 @@ object AirPlayInfoPlist {
         return listOf(
             base(100), base(100, "default"), base(100, "media"), base(100, "telephony"),
             base(100, "speechRecognition"), base(100, "alert"), base(101), base(101, "default"),
-            base(102, "default"),
+            base(102), base(102, "default"), base(102, "media"),
         )
     }
 
@@ -121,12 +121,11 @@ object AirPlayInfoPlist {
             return entry
         }
 
-        val is48 = entertainmentRate == 48000
         val pcmVoice = 0x3fc
-        val pcm = pcmVoice or (if (is48) 0xc000 else 0xc00)
-        val pcmMono = 0x154 or (if (is48) 0x4000 else 0x400)
+        val pcm = pcmVoice or 0xcc00
+        val pcmMono = 0x154 or 0x4400
         val opus = 0x70000000
-        val aacLc = if (is48) 0x800000 else 0x400000
+        val aacLc = 0xc00000
         val pcmInput = if (microphone) pcmMono else null
         val wirelessInput = if (microphone) pcmMono or opus else null
 
