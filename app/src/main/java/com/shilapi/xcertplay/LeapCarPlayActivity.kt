@@ -837,6 +837,62 @@ class LeapCarPlayActivity : ComponentActivity() {
                 .apply { setPadding(0, 0, 0, dp(18)) }
         )
 
+        if (CarPlayBackgroundSession.hasSession()) {
+            section(content, getString(R.string.cp_sec_session)) { card ->
+                val activity = this@LeapCarPlayActivity
+                card.addView(
+                    settingsButton(getString(R.string.cp_btn_home_menu)) {
+                        activity.startActivity(
+                            Intent(activity, com.andrerinas.openheadunit.main.MainActivity::class.java)
+                                .putExtra("extra_home_protocol", "carplay")
+                                .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        )
+                        activity.finish()
+                    },
+                    matchButton(0, 56)
+                )
+                card.addView(
+                    settingsButton(getString(R.string.cp_btn_session_reconnect)) {
+                        CarPlayBackgroundSession.stop {
+                            activity.runOnUiThread {
+                                activity.startActivity(
+                                    Intent(activity, CarPlayHostActivity::class.java)
+                                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                )
+                                activity.finish()
+                            }
+                        }
+                    },
+                    matchButton(10, 56)
+                )
+                card.addView(
+                    Button(activity).apply {
+                        text = getString(R.string.cp_btn_disconnect_session)
+                        isAllCaps = false
+                        textSize = 15.5f
+                        typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                        setTextColor(0xFFFF6B7A.toInt())
+                        background = rippleRounded(0xFF281218.toInt(), 0xFFFF6B7A.toInt(), radiusDp = 14, strokeDp = 1)
+                        setPadding(dp(18), 0, dp(18), 0)
+                        stateListAnimator = null
+                        setOnClickListener {
+                            CarPlayBackgroundSession.stop {
+                                activity.runOnUiThread {
+                                    activity.startActivity(
+                                        Intent(activity, com.andrerinas.openheadunit.main.MainActivity::class.java)
+                                            .putExtra("extra_home_protocol", "carplay")
+                                            .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                    )
+                                    activity.finish()
+                                }
+                            }
+                        }
+                    },
+                    matchButton(10, 56)
+                )
+            }
+        }
+
         section(content, getString(R.string.cp_sec_auto)) { card ->
             toggle(
                 card,

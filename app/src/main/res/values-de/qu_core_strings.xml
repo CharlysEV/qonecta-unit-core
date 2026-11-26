@@ -198,9 +198,15 @@
     <string name="cp_res_80">80 % · mittlere Last</string>
     <string name="cp_res_60">60 % · leichteste Last</string>
     <string name="cp_opt_buffer">Musikpuffer</string>
-    <string name="cp_buf_300">300 ms · Standard</string>
-    <string name="cp_buf_500">500 ms · ausgewogen</string>
+    <string name="cp_buf_300">500 ms · niedrige Latenz</string>
+    <string name="cp_buf_500">700 ms · empfohlen (Standard)</string>
     <string name="cp_buf_1000">1000 ms · höchste Stabilität</string>
+    <string name="cp_sec_session">CarPlay-Sitzung</string>
+    <string name="cp_btn_home_menu">🏠 Qonecta-Hauptmenü</string>
+    <string name="cp_btn_session_reconnect">🔄 Änderungen anwenden &amp; neu verbinden</string>
+    <string name="cp_btn_disconnect_session">⏹ CarPlay trennen</string>
+    <string name="qu_set_home_menu_short">🏠 Startmenü</string>
+    <string name="qu_set_disconnect_short">⏹ Trennen</string>
     <string name="cp_opt_fps">Bildwiederholrate</string>
     <string name="cp_fps_30">30 fps · sparsamer</string>
     <string name="cp_fps_60">60 fps · flüssiger</string>

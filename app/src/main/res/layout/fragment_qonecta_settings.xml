@@ -63,6 +63,7 @@
             android:id="@+id/qset_saved_badge"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginEnd="10dp"
             android:paddingHorizontal="14dp"
             android:paddingVertical="6dp"
             android:background="@drawable/bg_pill_translucent"
@@ -71,6 +72,44 @@
             android:textStyle="bold"
             android:textColor="@color/hql_accent"
             android:visibility="invisible" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/qset_home_button"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginEnd="8dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="@string/qu_set_home_menu_short"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textAllCaps="false"
+            android:textColor="@color/hql_text"
+            app:backgroundTint="@color/hql_surface_hi"
+            app:strokeColor="@color/hql_outline_strong"
+            app:strokeWidth="1.5dp"
+            app:cornerRadius="14dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/qset_disconnect_button"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="@string/qu_set_disconnect_short"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textAllCaps="false"
+            android:textColor="@color/hql_error"
+            app:backgroundTint="@color/hql_error_container"
+            app:strokeColor="@color/hql_error"
+            app:strokeWidth="1.5dp"
+            app:cornerRadius="14dp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <View

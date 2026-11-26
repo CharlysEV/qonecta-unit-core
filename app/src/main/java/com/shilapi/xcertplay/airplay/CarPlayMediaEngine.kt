@@ -8,6 +8,7 @@ import java.io.File
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.math.BigInteger
 import java.util.concurrent.ConcurrentHashMap
 
@@ -133,7 +134,13 @@ class CarPlayMediaEngine(
 
         val capture = audioCaptureDirectory?.let { AudioPacketCapture(it, type) }
         if (capture != null) audioCaptures[type] = capture
-        val audio = AudioStream(key, type, session::logDebug)
+        val peerCtrlPort = (stream["controlPort"] as? Number)?.toInt() ?: 0
+        val peerCtrlAddr = if (peerCtrlPort in 1..65535 && session.remoteAddress != null) {
+            InetSocketAddress(session.remoteAddress, peerCtrlPort)
+        } else {
+            null
+        }
+        val audio = AudioStream(key, type, session::logDebug, initialPeerControlAddress = peerCtrlAddr)
         val (dataPort, controlPort) = audio.listen(
             object : AudioStream.Listener {
                 override fun onStarted(firstSample: Int) {

@@ -1,15 +1,16 @@
 package com.shilapi.xcertplay.media
 
 /**
- * Jitter buffer for CarPlay music. Wireless CarPlay delivers audio over the same Wi-Fi link as
- * video; radio gaps of several hundred milliseconds are normal, so music needs a buffer that
- * outlasts them. Calls, Siri and navigation prompts keep the small low-latency buffer.
+ * Jitter buffer for CarPlay music. Wireless CarPlay on iOS delivers AAC-LC audio in bursts
+ * separated by ~450-575 ms Wi-Fi gaps; music therefore defaults to 700 ms prebuffer with 700 ms
+ * of extra AudioTrack headroom so a full 500 ms catch-up burst fits without blocking write().
+ * Calls, Siri and navigation prompts keep the small low-latency buffer.
  */
 object MediaAudioBuffer {
-    const val DEFAULT_MILLIS = 300
-    val presets = listOf(DEFAULT_MILLIS, 500, 1000)
+    const val DEFAULT_MILLIS = 700
+    val presets = listOf(500, DEFAULT_MILLIS, 1000)
 
-    private const val HEADROOM_MILLIS = 200 // room above the start level so bursts after a gap fit
+    private const val HEADROOM_MILLIS = 700 // room above start level so 500 ms Wi-Fi catch-up bursts never stall write()
     private const val MIN_TRACK_BUFFER_BYTES = 16 * 1024
     private const val MIN_START_BUFFER_BYTES = 4 * 1024
 
@@ -24,9 +25,10 @@ object MediaAudioBuffer {
             startBytes = maxOf(minBufferBytes, MIN_START_BUFFER_BYTES),
         )
         if (audioType != "media") return lowLatency
+        val sanitized = sanitize(mediaMillis)
         val bytesPerSecond = sampleRate.toLong() * channels.coerceIn(1, 2) * 2
-        val start = (bytesPerSecond * sanitize(mediaMillis) / 1000).toInt()
-        val capacity = (bytesPerSecond * (sanitize(mediaMillis) + HEADROOM_MILLIS) / 1000).toInt()
+        val start = (bytesPerSecond * sanitized / 1000).toInt()
+        val capacity = (bytesPerSecond * (sanitized + HEADROOM_MILLIS) / 1000).toInt()
         return Plan(
             trackBufferBytes = maxOf(capacity, lowLatency.trackBufferBytes),
             startBytes = maxOf(start, lowLatency.startBytes),

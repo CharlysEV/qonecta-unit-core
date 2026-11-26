@@ -208,6 +208,15 @@ class QonectaSettingsFragment : Fragment() {
             requireActivity().finish()
         }
 
+        view.findViewById<View>(R.id.qset_home_button)?.setOnClickListener {
+            openHomeMenuFromSettings()
+        }
+
+        view.findViewById<View>(R.id.qset_disconnect_button)?.setOnClickListener {
+            disconnectActiveSessionAndGoHome()
+        }
+        refreshSessionActionButtons(view)
+
         // Receive DPI return result cleanly
         findNavController().currentBackStackEntry
             ?.savedStateHandle
@@ -239,7 +248,49 @@ class QonectaSettingsFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
+        view?.let { refreshSessionActionButtons(it) }
         renderActiveTab(preserveScroll = true)
+    }
+
+    private fun refreshSessionActionButtons(root: View) {
+        val ctx = context ?: return
+        val hasCp = com.shilapi.xcertplay.CarPlayBackgroundSession.hasSession()
+        val hasAa = App.provide(ctx).commManager.isConnected
+        root.findViewById<View>(R.id.qset_disconnect_button)?.visibility =
+            if (hasCp || hasAa) View.VISIBLE else View.GONE
+    }
+
+    private fun openHomeMenuFromSettings() {
+        val act = activity ?: return
+        val i = Intent(act, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        if (com.shilapi.xcertplay.CarPlayBackgroundSession.hasSession()) {
+            i.putExtra("extra_home_protocol", "carplay")
+        }
+        startActivity(i)
+        act.finish()
+    }
+
+    private fun disconnectActiveSessionAndGoHome() {
+        val act = activity ?: return
+        val app = App.provide(act)
+        if (app.commManager.isConnected) {
+            runCatching {
+                ContextCompat.startForegroundService(
+                    act,
+                    Intent(act, com.andrerinas.openheadunit.aap.AapService::class.java).apply {
+                        action = com.andrerinas.openheadunit.aap.AapService.ACTION_DISCONNECT
+                    },
+                )
+            }
+        }
+        if (com.shilapi.xcertplay.CarPlayBackgroundSession.hasSession()) {
+            com.shilapi.xcertplay.CarPlayBackgroundSession.stop {
+                act.runOnUiThread { openHomeMenuFromSettings() }
+            }
+        } else {
+            openHomeMenuFromSettings()
+        }
     }
 
     private fun configurePaneLayout() {
@@ -1275,7 +1326,7 @@ class QonectaSettingsFragment : Fragment() {
                 card,
                 title = getString(R.string.cp_opt_buffer),
                 subtitle = null,
-                options = listOf("300 ms", "500 ms", "1000 ms"),
+                options = listOf("500 ms", "700 ms", "1000 ms"),
                 selectedIndex = presets.indexOf(AirPlayPersistence.loadMediaBufferMillis(requireContext())).coerceAtLeast(0),
             ) { idx ->
                 AirPlayPersistence.saveMediaBufferMillis(requireContext(), presets[idx])

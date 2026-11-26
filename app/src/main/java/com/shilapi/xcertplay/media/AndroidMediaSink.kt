@@ -693,6 +693,9 @@ private class AudioRenderer(
     }
 
     private fun run() {
+        runCatching {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
+        }
         try {
             when (format.codec) {
                 AudioCodecKind.AAC_LC -> configureCodec(MediaFormat.MIMETYPE_AUDIO_AAC)
@@ -701,7 +704,17 @@ private class AudioRenderer(
             }
             createTrack()
             while (running) {
-                queue.poll(AUDIO_POLL_MILLIS, TimeUnit.MILLISECONDS)?.let(::handle)
+                val first = queue.poll(AUDIO_POLL_MILLIS, TimeUnit.MILLISECONDS)
+                if (first != null) {
+                    handle(first)
+                    // Drain catch-up burst packets promptly so 500 ms Wi-Fi bursts decode cleanly.
+                    var burst = 1
+                    while (running && burst < MAX_BURST_DRAIN) {
+                        val next = queue.poll() ?: break
+                        handle(next)
+                        burst++
+                    }
+                }
                 // Output becomes ready asynchronously, including after the last packet of a burst.
                 // Waiting for the next UDP packet can strand decoded sound for hundreds of ms.
                 codec?.let(::drainCodec)
@@ -1174,8 +1187,9 @@ private class AudioRenderer(
         const val INPUT_TIMEOUT_US = 10_000L
         const val AUDIO_POLL_MILLIS = 10L
         const val BUFFER_TAIL_WAIT_NS = 500_000_000L
-        // Holds a burst after a Wi-Fi gap (~4 s of AAC) instead of dropping it.
-        const val MAX_QUEUED_PACKETS = 192
+        // Holds a burst after a Wi-Fi gap (~6 s of AAC) instead of dropping it.
+        const val MAX_QUEUED_PACKETS = 256
+        const val MAX_BURST_DRAIN = 8
         const val PREBUFFER_WRITE_CHUNK_BYTES = 2 * 1024
         const val STATS_TAG = "LeapCarPlay-AudioStats"
         const val STATS_WINDOW_NS = 5_000_000_000L
