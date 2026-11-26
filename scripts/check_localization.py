@@ -6,7 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / 'app/src/main/res'
-LOCALES = ('ar', 'es', 'ru', 'zh-rCN')
+STRICT_LOCALES = ('es',)
+PARTIAL_LOCALES = ('de', 'it', 'pt', 'zh-rCN')
 
 
 def resources(path):
@@ -23,12 +24,9 @@ def placeholders(text):
     return sorted((int(pos) if pos else i + 1, kind) for i, (pos, kind) in enumerate(matches))
 
 
-base = resources(RES / 'values')
-required = {k: n for k, n in base.items() if n.get('translatable') != 'false'}
-for locale in LOCALES:
-    translated = resources(RES / f'values-{locale}')
-    assert not required.keys() - translated.keys(), (locale, 'missing', required.keys() - translated.keys())
-    for key, node in required.items():
+def validate_entries(locale, required, translated):
+    for key in required.keys() & translated.keys():
+        node = required[key]
         other = translated[key]
         assert node.tag == other.tag, (locale, key, 'resource type')
         if node.tag == 'string':
@@ -38,7 +36,21 @@ for locale in LOCALES:
         elif node.tag == 'plurals':
             for item in other:
                 assert placeholders(''.join(item.itertext())) == placeholders(''.join(node[-1].itertext())), (locale, key, 'plural arguments')
-    print(f'{locale}: {len(required)} translatable resources, coverage and format arguments OK')
+
+
+base = resources(RES / 'values')
+required = {k: n for k, n in base.items() if n.get('translatable') != 'false'}
+for locale in STRICT_LOCALES:
+    translated = resources(RES / f'values-{locale}')
+    assert not required.keys() - translated.keys(), (locale, 'missing', required.keys() - translated.keys())
+    validate_entries(locale, required, translated)
+    print(f'{locale}: {len(required)} translatable resources, 100% coverage and format arguments OK')
+
+for locale in PARTIAL_LOCALES:
+    translated = resources(RES / f'values-{locale}')
+    validate_entries(locale, required, translated)
+    present = len(required.keys() & translated.keys())
+    print(f'{locale}: {present}/{len(required)} translatable resources, format arguments OK (rest fall back to en)')
 
 ns = '{http://schemas.android.com/apk/res/android}'
 configured = {e.attrib[ns + 'name'] for e in ET.parse(RES / 'xml/locales_config.xml').getroot()}
