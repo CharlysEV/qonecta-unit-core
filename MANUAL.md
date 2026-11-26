@@ -1,8 +1,11 @@
-# Qonecta Unit CORE · Manual de usuario
+# Qonecta Unit CORE (`v1.1.8-core`) · Manual de usuario
 
-**Idiomas:** **Español** · [Português](MANUAL.pt.md) · [English](MANUAL.en.md) · [Italiano](MANUAL.it.md) · [Deutsch](MANUAL.de.md)
+**Idiomas:** **Español** · [Português](MANUAL.pt.md) · [English](MANUAL.en.md) · [Italiano](MANUAL.it.md) · [Deutsch](MANUAL.de.md) · [简体中文](https://qonecta.app/manual?lang=zh&edition=core)
 
-Guía para conductores de **Qonecta Unit CORE** (`v1.0.0-core`), desarrollada por **[CharlysEV](https://github.com/CharlysEV)** ([CharlysEV/qonecta-unit-core](https://github.com/CharlysEV/qonecta-unit-core)).
+Guía para conductores de **Qonecta Unit CORE** (`v1.1.8-core`), desarrollada por **[CharlysEV](https://github.com/CharlysEV)** ([CharlysEV/qonecta-unit-core](https://github.com/CharlysEV/qonecta-unit-core)).
+
+- 🌐 **Portal oficial e instalador Vivaldi (`/go`):** [https://qonecta.app](https://qonecta.app) · [https://qonecta.app/go](https://qonecta.app/go)
+- 📖 **Manual web ilustrado:** [https://qonecta.app/manual](https://qonecta.app/manual?lang=es&edition=core)
 
 > [!IMPORTANT]
 > **Edición clásica / CORE — SOLO Android Auto y Apple CarPlay:**
@@ -37,23 +40,25 @@ Guía para conductores de **Qonecta Unit CORE** (`v1.0.0-core`), desarrollada po
 | **Modos de conexión** | Wi-Fi Direct 5 GHz · Hotspot · Cable USB de datos |
 | **Segunda pantalla (Cuadro)** | Opcional (`Cuadro: OFF` por defecto para máxima seguridad; activable en 1 toque) |
 | **Edición CORE** | **Sin sistema Extendido**, sin permisos de micrófono (`RECORD_AUDIO` eliminado), sin servicios al arrancar el coche |
-| **Idiomas de menú** | Español, Português, English, Italiano, Deutsch (y selección manual en Ajustes) |
+| **Idiomas de menú** | Español, Português, English, Italiano, Deutsch y **Chino Simplificado (`简体中文` / `zh-rCN`)** |
+| **Estabilidad AA / CarPlay** | Fallback automático AA `1080p H.264`, buffer de música CarPlay (`700 ms`), reanudación tras Radio y controles 3 dedos |
+| **Diagnóstico 100 % USB** | Exportación `.txt` con carpeta USB recordada (audio CarPlay AAC/Opus/LPCM, `AudioFocus` y Bluetooth) sin escribir memoria interna |
 
 **Qué necesitas:**
-- Un **Leapmotor C10** (u otra unidad Android compatible) donde puedas instalar APKs.
-- Un **pendrive USB** formateado en FAT32/exFAT (solo para la primera instalación o actualizaciones) o descarga directa.
-- Tu teléfono **Android** (con la app *Android Auto* actualizada) o tu **iPhone**.
+- Un **Leapmotor C10 / B10 / B05 / B03X / T03 / C16** (u otra unidad Android compatible) donde puedas instalar APKs.
+- Un **pendrive USB** formateado en `FAT32` *(conectar el móvil por cable no sirve como unidad de instalación)*.
+- Tu teléfono **Android** (con *Android Auto*) o tu **iPhone**.
 
 ---
 
 ## 2. Instalación en el Leapmotor C10
 
-1. Descarga el archivo `QonectaUnit_1.0.0-core.apk` desde **[GitHub Releases](https://github.com/CharlysEV/qonecta-unit-core/releases)**.
-2. Cópialo a un pendrive USB y conéctalo al **puerto USB de datos** del coche.
-3. Abre el explorador de archivos del coche (o Vivaldi / gestor instalado) y toca el archivo `.apk` para instalarlo.
+1. Descarga `QonectaUnit_1.1.8-core.apk` desde **[GitHub Releases](https://github.com/CharlysEV/qonecta-unit-core/releases)** o **[qonecta.app](https://qonecta.app)**.
+2. Cópialo a la raíz de un pendrive USB **`FAT32`** y conéctalo al **puerto USB de datos** del coche.
+3. Abre **Vivaldi** en el coche, entra en **`https://qonecta.app/go`**, pulsa **«Abrir Explorador de Archivos»**, entra en `☰` → tu pendrive USB y toca el icono **`⤢`** junto al `.apk` *(no toques el texto del nombre)* para instalarlo.
    - *Nota:* el paquete usa el ID compatible con la pantalla del C10 para aparecer en el cajón de apps.
 4. Abre **Qonecta Unit CORE** y concede los permisos solicitados (**Dispositivos cercanos / Bluetooth** y **Ubicación** para Wi-Fi Direct).
-5. Para futuras actualizaciones puedes pulsar directamente el botón **«Archivos»** en la barra superior de Qonecta Unit CORE.
+5. En **Avanzado y Diagnóstico** puedes activar la píldora flotante **«← Volver a Qonecta»** y exportar informes redactados directamente al pendrive USB en 1 toque.
 
 ---
 
@@ -112,7 +117,7 @@ Por seguridad y ligereza, la segunda pantalla viene **desactivada por defecto (`
 
 ## 6. Ajustes útiles e idioma
 
-- **Cambiar idioma:** entra en **Ajustes → Idioma** para elegir **Español, Português, English, Italiano, Deutsch** o el idioma automático del sistema. El cambio se aplica tanto a **Android Auto** como a **Apple CarPlay**.
+- **Cambiar idioma:** entra en **Ajustes → Idioma** para elegir **Español, Português, English, Italiano, Deutsch, 简体中文** o el idioma automático del sistema. El cambio se aplica tanto a **Android Auto** como a **Apple CarPlay**.
 - **Tamaño de pantalla / DPI:** en **Ajustes** (Android Auto) o **Ajustes de CarPlay → Tamaño de iconos y texto** puedes ajustar la escala de iconos a tu gusto.
 - **Cierre limpio:** el botón **«Cerrar»** de la portada detiene por completo Android Auto, CarPlay y el cuadro para no dejar nada en segundo plano.
 
