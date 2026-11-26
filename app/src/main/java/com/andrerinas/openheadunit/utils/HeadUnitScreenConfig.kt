@@ -128,6 +128,7 @@ object HeadUnitScreenConfig {
             AppLog.i("[UI_DEBUG] HeadUnitScreenConfig: Settings changed ($lastSettingsHash -> $currentHash). Unlocking resolution.")
             unlockResolution()
         }
+        HighResFallbackPolicy.onResolutionSettingChanged(settings.resolutionId)
 
         isInitialized = true
         lastSettingsHash = currentHash
@@ -319,6 +320,12 @@ object HeadUnitScreenConfig {
         val panelCeiling = autoResolutionForPanel(realScreenWidthPx, realScreenHeightPx, isPortraitDisplay, canNegotiateHevc)
         if (pixelsOf(negotiatedResolutionType) > pixelsOf(panelCeiling)) {
             negotiatedResolutionType = panelCeiling
+        }
+        if (HighResFallbackPolicy.isHighRes(negotiatedResolutionType) &&
+            HighResFallbackPolicy.shouldForce1080pFallback(currentSettings.resolutionId)) {
+            val downgraded = HighResFallbackPolicy.fallback1080pFor(negotiatedResolutionType)
+            AppLog.w("[RES_FALLBACK] Downgrading AA resolution $negotiatedResolutionType -> $downgraded after consecutive pre-video failures")
+            negotiatedResolutionType = downgraded
         }
         AppLog.i(
             "[RES_CAP] resolutionId=${currentSettings.resolutionId} " +

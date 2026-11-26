@@ -13,6 +13,7 @@ import com.andrerinas.openheadunit.aap.protocol.proto.Sensors
 import com.andrerinas.openheadunit.decoder.VideoDecoder
 import com.andrerinas.openheadunit.utils.AppLog
 import com.andrerinas.openheadunit.utils.HeadUnitScreenConfig
+import com.andrerinas.openheadunit.utils.HighResFallbackPolicy
 import com.google.protobuf.Message
 
 class ServiceDiscoveryResponse(private val context: Context)
@@ -82,11 +83,15 @@ class ServiceDiscoveryResponse(private val context: Context)
                     val negotiatedResolution = HeadUnitScreenConfig.negotiatedResolutionType
                     val phoneWidthMargin = HeadUnitScreenConfig.getWidthMargin()
                     val phoneHeightMargin = HeadUnitScreenConfig.getHeightMargin()
+                    val forceH264Fallback = HighResFallbackPolicy.shouldForce1080pFallback(settings.resolutionId)
 
                     // Enforce H.265 for 1440p resolution as required by Android Auto: a 1440p H.264
                     // profile gets no picture (#35). Any hardware HEVC decoder qualifies, as for the
                     // resolution choice itself; software HEVC only when the user explicitly selected it.
-                    val effectiveCodec = if ((negotiatedResolution == Control.Service.MediaSinkService.VideoConfiguration.VideoCodecResolutionType._2560x1440 ||
+                    val effectiveCodec = if (forceH264Fallback) {
+                        AppLog.w("[RES_FALLBACK] Using H.264 for automatic 1080p fallback session")
+                        Media.MediaCodecType.MEDIA_CODEC_VIDEO_H264_BP
+                    } else if ((negotiatedResolution == Control.Service.MediaSinkService.VideoConfiguration.VideoCodecResolutionType._2560x1440 ||
                         negotiatedResolution == Control.Service.MediaSinkService.VideoConfiguration.VideoCodecResolutionType._1440x2560) &&
                         settings.videoCodec != "H.264" && hevcAvailableForUserChoice) {
                         AppLog.i("Resolution is 1440p -> Enforcing H.265 codec")
@@ -115,6 +120,7 @@ class ServiceDiscoveryResponse(private val context: Context)
                         setMarginHeight(phoneHeightMargin)
                         setVideoCodecType(effectiveCodec)
                     }.build())
+                    HighResFallbackPolicy.onServiceDiscoverySent(settings.resolutionId, negotiatedResolution)
                 }.build()
             }.build()
 

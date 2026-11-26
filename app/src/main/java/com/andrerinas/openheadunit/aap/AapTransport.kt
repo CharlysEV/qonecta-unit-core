@@ -548,6 +548,10 @@ class AapTransport(
         onQuit = null
 
         AppLog.i("AapTransport quitting (clean=$clean)")
+        if (com.andrerinas.openheadunit.utils.HighResFallbackPolicy.onTransportQuit()) {
+            com.andrerinas.openheadunit.utils.HeadUnitScreenConfig.unlockResolution()
+            AppLog.w("[RES_FALLBACK] 2K/4K AA session failed 2x before first video frame -> unlocking resolution for automatic 1080p H.264 fallback")
+        }
         cb?.invoke(clean)
         micRecorder.stop()
         micRecorder.listener = null
@@ -910,6 +914,7 @@ class AapTransport(
         synchronized(this) {
             if (mainVideoStreaming) return
             mainVideoStreaming = true
+            com.andrerinas.openheadunit.utils.HighResFallbackPolicy.onMainVideoDataReceived()
             if (!clusterFocusPending) return
         }
         sendHandler?.postDelayed(releaseClusterFocusRunnable, CLUSTER_FOCUS_DELAY_MS)
