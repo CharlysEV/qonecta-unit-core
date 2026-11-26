@@ -59,6 +59,12 @@ class LocaleHelperTest {
         assertEquals("es", SettingsBackupManager.parseImportJson(exported).values["app-language"])
     }
 
+    @Test fun availableLocalesIncludesSimplifiedChinese() {
+        val locales = LocaleHelper.getAvailableLocales(context)
+        assertTrue(locales.contains(Locale.SIMPLIFIED_CHINESE))
+        assertEquals("简体中文", LocaleHelper.getDisplayName(Locale.SIMPLIFIED_CHINESE))
+    }
+
     @Test
     @Config(sdk = [29], qualifiers = "en")
     fun olderAndroidSwitchesResourcesAndRtlWithoutChangingTheProcessDefault() {

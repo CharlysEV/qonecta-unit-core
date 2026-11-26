@@ -19,7 +19,7 @@ object LocaleHelper {
      *
      * English is always included as it's the default language in the base "values/" folder.
      */
-    /** Official 5 fully-localized Qonecta Unit CORE languages (ES, EN, DE, IT, PT). */
+    /** Official 6 fully-localized Qonecta Unit CORE languages (ES, EN, DE, IT, PT, ZH-CN). */
     fun getAvailableLocales(context: Context): List<Locale> {
         return listOf(
             Locale("es"),
@@ -27,6 +27,7 @@ object LocaleHelper {
             Locale.GERMAN,
             Locale.ITALIAN,
             Locale("pt"),
+            Locale.SIMPLIFIED_CHINESE,
         )
     }
 
@@ -74,6 +75,9 @@ object LocaleHelper {
      * Gets the display name for a locale in its own language.
      */
     fun getDisplayName(locale: Locale): String {
+        if (locale.language.equals("zh", ignoreCase = true)) {
+            return "简体中文"
+        }
         val displayName = locale.getDisplayName(locale)
         // Capitalize first letter
         return displayName.replaceFirstChar {
